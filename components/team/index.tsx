@@ -44,6 +44,10 @@ export type TeamProps = {
    */
   name: string;
   /**
+   * Optional total score displayed alongside the team name.
+   */
+  score?: number | null;
+  /**
    * Optional team color to render next to the name.
    */
   color?: string | null;
@@ -81,6 +85,7 @@ function getGridColumns(count: number) {
 export default function Team({
   name,
   color,
+  score,
   members,
   className,
   emptyLabel = "No members in this team yet.",
@@ -192,6 +197,11 @@ export default function Team({
             >
               {name}
             </h2>
+            {typeof score === "number" ? (
+              <span className="text-lg font-semibold text-emerald-500 dark:text-emerald-300">
+                {score}
+              </span>
+            ) : null}
           </div>
           {description ? (
             <p

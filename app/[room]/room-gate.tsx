@@ -254,6 +254,10 @@ export default function RoomGate({ roomSlug }: RoomGateProps) {
                   id: docSnap.id,
                   name: (docSnap.data().name as string | undefined) ?? `Team ${docSnap.id}`,
                   color: (docSnap.data().color as string | undefined) ?? null,
+                  scoreTotal:
+                    typeof docSnap.data().scoreTotal === "number"
+                      ? (docSnap.data().scoreTotal as number)
+                      : 0,
                   members: [],
                 }));
                 applyRoster();

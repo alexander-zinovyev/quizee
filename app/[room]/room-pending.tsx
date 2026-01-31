@@ -77,6 +77,7 @@ export default function RoomPending({
       rosterCards={rosterCards}
       roomSlug={roomSlug}
       isHost={isHost}
+      showScores={false}
       onStart={onStart}
       isStartDisabled={isStartDisabled}
     />

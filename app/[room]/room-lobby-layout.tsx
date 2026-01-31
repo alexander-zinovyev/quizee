@@ -43,6 +43,7 @@ type RoomLobbyLayoutProps = {
   rosterCards: RosterCard[];
   roomSlug: string;
   isHost: boolean;
+  showScores?: boolean;
   onStart?: () => void;
   isStartDisabled?: boolean;
   allowTeamEditing?: boolean;
@@ -130,6 +131,7 @@ export default function RoomLobbyLayout({
   rosterCards,
   roomSlug,
   isHost,
+  showScores = false,
   onStart,
   isStartDisabled = false,
   allowTeamEditing = true,
@@ -441,6 +443,11 @@ export default function RoomLobbyLayout({
                         aria-hidden
                       />
                       <span className="break-words leading-snug">{team.name}</span>
+                      {showScores ? (
+                        <span className="text-[0.75rem] font-semibold text-emerald-500 dark:text-emerald-300">
+                          {team.scoreTotal ?? 0}
+                        </span>
+                      ) : null}
                     </div>
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-[0.7rem] text-zinc-500">

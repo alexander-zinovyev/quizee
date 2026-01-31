@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   onSnapshot,
   orderBy,
@@ -393,8 +394,7 @@ export default function RoomContent({
               }
             } else if (!imageUnsubs.has(meta.id)) {
               const imagesQuery = query(
-                collection(db, "rooms", roomSlug, "rounds", meta.id, "images"),
-                orderBy("order", "asc")
+                collection(db, "rooms", roomSlug, "rounds", meta.id, "images")
               );
 
               const unsubscribeImages = onSnapshot(
@@ -1333,10 +1333,32 @@ export default function RoomContent({
     const db = getClientFirestore();
     const batch = writeBatch(db);
 
-    Object.entries(answersForRound).forEach(([teamId, answers]) => {
-      const correctCount = Object.values(answers).filter((ans) => ans.correct === true).length;
-      const scoreRef = doc(db, "rooms", roomSlug, "teams", teamId, "scores", roundId);
+    const teamUpdates = await Promise.all(
+      Object.entries(answersForRound).map(async ([teamId, answers]) => {
+        const correctCount = Object.values(answers).filter((ans) => ans.correct === true).length;
+        const scoreRef = doc(db, "rooms", roomSlug, "teams", teamId, "scores", roundId);
+        const teamRef = doc(db, "rooms", roomSlug, "teams", teamId);
+        const [scoreSnap, teamSnap] = await Promise.all([
+          getDoc(scoreRef),
+          getDoc(teamRef),
+        ]);
+        const previousScore =
+          scoreSnap.exists() && typeof scoreSnap.data().score === "number"
+            ? (scoreSnap.data().score as number)
+            : 0;
+        const currentTotal =
+          teamSnap.exists() && typeof teamSnap.data().scoreTotal === "number"
+            ? (teamSnap.data().scoreTotal as number)
+            : 0;
+        const nextTotal = Math.max(0, currentTotal - previousScore + correctCount);
+
+        return { teamId, correctCount, scoreRef, teamRef, nextTotal };
+      })
+    );
+
+    teamUpdates.forEach(({ teamId, correctCount, scoreRef, teamRef, nextTotal }) => {
       batch.set(scoreRef, { score: correctCount }, { merge: true });
+      batch.set(teamRef, { scoreTotal: nextTotal }, { merge: true });
       const teamAnswersRef = doc(db, "rooms", roomSlug, "rounds", roundId, "teamAnswers", teamId);
       batch.set(teamAnswersRef, { graded: true }, { merge: true });
       const roundMetaRef = doc(db, "rooms", roomSlug, "rounds", roundId);
@@ -2063,6 +2085,7 @@ export default function RoomContent({
               <Team
                 name={teams[0].name}
                 color={teams[0].color ?? undefined}
+                score={teamsForDisplay[0]?.scoreTotal ?? teams[0].scoreTotal ?? undefined}
                 members={teamsForDisplay[0]?.members ?? teams[0].members}
                 appearance="bare"
                 className="h-full justify-end"
@@ -2143,6 +2166,7 @@ export default function RoomContent({
               <Team
                 name={teams[1].name}
                 color={teams[1].color ?? undefined}
+                score={teamsForDisplay[1]?.scoreTotal ?? teams[1].scoreTotal ?? undefined}
                 members={teamsForDisplay[1]?.members ?? teams[1].members}
                 appearance="bare"
                 className="h-full justify-end text-right"

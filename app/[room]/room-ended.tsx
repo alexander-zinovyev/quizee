@@ -73,6 +73,7 @@ export default function RoomEnded({
       rosterCards={rosterCards}
       roomSlug={roomSlug}
       isHost={isHost}
+      showScores
       allowTeamEditing={false}
     />
   );
