@@ -47,16 +47,6 @@ type RoomContentProps = {
   onMediaPolicyChange?: (policy: SubscriptionPolicy, options?: { isHost?: boolean }) => void;
 };
 
-const chatMessages: ChatMessage[] = [
-  {
-    id: "msg-1",
-    author: "Quizmaster",
-    content: "Welcome to Room 7! Riddle Raiders currently lead by 12 points.",
-    timestamp: "08:45",
-    accentColor: "#a855f7",
-  },
-];
-
 type RoundMeta = {
   id: string;
   title: string;
@@ -2057,7 +2047,6 @@ export default function RoomContent({
           </article>
 
     <RoomChatPanel
-      initialMessages={chatMessages}
       className="col-span-2 h-full min-h-0 rounded-3xl border border-zinc-200 bg-white/95 shadow-2xl backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/85"
       roomSlug={roomSlug}
       teams={teams}

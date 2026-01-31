@@ -61,6 +61,14 @@ export type ChatProps = {
   autoSize?: boolean;
 };
 
+type FormattingToken = {
+  label: string,
+  hotkey: string,
+  symbol: string,
+  decoration: string,
+  closing?: string,
+};
+
 const formattingTokens = {
   bold: {
     label: "Bold",
@@ -207,7 +215,7 @@ export default function Chat({
       return;
     }
 
-    const token = formattingTokens[type];
+    const token : FormattingToken = formattingTokens[type];
     const open = token.decoration;
     const close = token.closing ?? token.decoration;
     const start = textarea.selectionStart ?? 0;

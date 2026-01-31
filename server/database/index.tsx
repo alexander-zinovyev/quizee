@@ -4,7 +4,7 @@ import type { Auth } from "firebase-admin/auth";
 import { getAuth } from "firebase-admin/auth";
 import type { Firestore } from "firebase-admin/firestore";
 import { getFirestore } from "firebase-admin/firestore";
-import type { Bucket } from "firebase-admin/storage";
+import type { Bucket } from "@google-cloud/storage";
 import { getStorage } from "firebase-admin/storage";
 
 let firebaseAdminApp: App | undefined;

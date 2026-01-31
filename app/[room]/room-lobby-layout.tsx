@@ -12,7 +12,7 @@ import {
   where,
   writeBatch,
 } from "firebase/firestore";
-import { ColorPicker, type Color } from "react-color-palette";
+import { ColorPicker, type IColor } from "react-color-palette";
 import "react-color-palette/css";
 
 import Member from "@/components/member";
@@ -72,7 +72,7 @@ function clamp(value: number, min = 0, max = 1) {
   return Math.min(max, Math.max(min, value));
 }
 
-function hexToRgb(hex: string): { r: number; g: number; b: number } {
+function hexToRgb(hex: string): { r: number; g: number; b: number, a: number } {
   const parsed = hex.replace("#", "");
   const value = parsed.length === 3
     ? parsed.split("").map((c) => c + c).join("")
@@ -82,6 +82,7 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
     r: (num >> 16) & 255,
     g: (num >> 8) & 255,
     b: num & 255,
+    a: 255,
   };
 }
 
@@ -107,14 +108,13 @@ function rgbToHsv(r: number, g: number, b: number) {
   return { h, s, v };
 }
 
-function toColor(hex: string): Color {
+function toColor(hex: string): IColor {
   const rgb = hexToRgb(hex);
   const hsv = rgbToHsv(rgb.r, rgb.g, rgb.b);
   return {
     hex,
     rgb,
     hsv: { ...hsv, a: 1 },
-    alpha: 1,
   };
 }
 
@@ -166,7 +166,7 @@ export default function RoomLobbyLayout({
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newTeamName, setNewTeamName] = useState("");
-  const [newTeamColor, setNewTeamColor] = useState<Color>(toColor(suggestedColor));
+  const [newTeamColor, setNewTeamColor] = useState<IColor>(toColor(suggestedColor));
   const [isSavingTeam, setIsSavingTeam] = useState(false);
   const [teamError, setTeamError] = useState<string | null>(null);
   const [editingTeamId, setEditingTeamId] = useState<string | null>(null);
@@ -536,9 +536,7 @@ export default function RoomLobbyLayout({
                   onChange={setNewTeamColor}
                   hideInput={["rgb", "hsv", "hex"]}
                   height={140}
-                  width={260}
-                  disableAlpha
-                  className="!w-full"
+                  hideAlpha
                 />
               </div>
 

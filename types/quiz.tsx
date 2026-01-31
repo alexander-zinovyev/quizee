@@ -94,6 +94,11 @@ export type ImageRoundData = RoundData & {
    * Pool of images the participant can drag onto the descriptions.
    */
   images: ImageItem[];
+
+  
+  roomSlug?: string;
+  teamId?: string;
+  
   /**
    * Fires whenever an answer is submitted.
    */

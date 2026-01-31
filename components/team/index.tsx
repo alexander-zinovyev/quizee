@@ -7,7 +7,7 @@ export type TeamMember = {
   /**
    * Stable identifier for keying the rendered Member.
    */
-  id?: string | number;
+  id: string | number;
   /**
    * Display name rendered in the Member component.
    */

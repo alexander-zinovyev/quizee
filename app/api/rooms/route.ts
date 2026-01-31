@@ -490,10 +490,10 @@ export async function POST(request: NextRequest) {
                 },
               },
             });
-            question.media.storagePath = storagePath;
-            question.media.contentType = mediaMeta.contentType;
-            question.media.size = mediaMeta.size;
-            question.media.filename = mediaMeta.filename;
+            question.media!.storagePath = storagePath;
+            question.media!.contentType = mediaMeta.contentType;
+            question.media!.size = mediaMeta.size;
+            question.media!.filename = mediaMeta.filename;
           }
           batch.set(questionRef, {
             order: question.order,
@@ -541,10 +541,10 @@ export async function POST(request: NextRequest) {
                 },
               },
             });
-            question.media.storagePath = storagePath;
-            question.media.contentType = mediaMeta.contentType;
-            question.media.size = mediaMeta.size;
-            question.media.filename = mediaMeta.filename;
+            question.media!.storagePath = storagePath;
+            question.media!.contentType = mediaMeta.contentType;
+            question.media!.size = mediaMeta.size;
+            question.media!.filename = mediaMeta.filename;
           }
 
           if (!storagePath || !question.media?.storagePath) {
