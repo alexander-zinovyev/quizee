@@ -9,9 +9,9 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@daily-co/daily-js": "^0.86.0",
     "@kixelated/hang": "^0.7.0",
     "@opentelemetry/api": "^1.9.0",
-    "@daily-co/daily-js": "^0.86.0",
     "dotenv": "^17.2.3",
     "drizzle-orm": "^0.44.7",
     "firebase": "^12.7.0",
@@ -29,6 +29,7 @@
     "@types/pg": "^8.15.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "baseline-browser-mapping": "^2.9.19",
     "drizzle-kit": "^0.31.7",
     "eslint": "^9",
     "eslint-config-next": "16.0.4",
