@@ -1,0 +1,8 @@
+[
+  {
+    "origin": ["https://your-site.com", "http://localhost:3000"],
+    "method": ["GET", "HEAD", "OPTIONS"],
+    "responseHeader": ["Content-Type"],
+    "maxAgeSeconds": 3600
+  }
+]

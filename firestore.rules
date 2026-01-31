@@ -1,0 +1,136 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+    
+    function memberDoc(roomId) {
+    	return get(/databases/$(database)/documents/rooms/$(roomId)/members/$(request.auth.uid));
+    }
+
+    function isMember(roomId) {
+      return signedIn() && exists(/databases/$(database)/documents/rooms/$(roomId)/members/$(request.auth.uid));
+    }
+
+    function isHost(roomId) {
+      return isMember(roomId) && memberDoc(roomId).data.role == "host";
+    }
+
+    function roomDoc(roomId) {
+      return get(/databases/$(database)/documents/rooms/$(roomId));
+    }
+
+    function memberTeam(roomId) {
+      return memberDoc(roomId).data.team;
+    }
+
+    function isPresentingAnswer(roomId, roundId, questionId) {
+      return roomDoc(roomId).data.presenting.withAnswer == true
+        && roomDoc(roomId).data.presenting.round == roundId
+        && roomDoc(roomId).data.presenting.question == questionId;
+    }
+
+    function validRoomState(state) {
+      return state is string
+        && (state == "pending" || state == "playing" || state == "ended");
+    }
+
+    function teamExists(roomId, teamId) {
+      return teamId == null || exists(/databases/$(database)/documents/rooms/$(roomId)/teams/$(teamId));
+    }
+
+    match /rooms/{roomId} {
+      // Public metadata only; keep sensitive fields out of this doc.
+      allow read: if true;
+      allow update:
+        if isHost(roomId)
+        && request.resource != null
+        && validRoomState(request.resource.data.state)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["state"]);
+
+      allow create, delete: if false; // server/Admin SDK only
+
+      // Server-only password document(s).
+      match /auth/{docId} {
+        allow read, write: if false;
+      }
+
+      // Membership records (created by server or host).
+      match /members/{memberId} {
+        // Any member can read the full roster; any signed-in user can read their own doc to check membership.
+        allow read: if signedIn() && (memberId == request.auth.uid || isMember(roomId));
+
+        // Host can manage member docs (e.g., assign teams).
+        allow create, update:
+          if isHost(roomId)
+          && request.resource != null
+          && teamExists(roomId, request.resource.data.team)
+          && (!("uid" in request.resource.data) || request.resource.data.uid == memberId);
+
+        allow delete: if isHost(roomId);
+      }
+
+      // Teams collection managed by host.
+      match /teams/{teamId} {
+        allow read: if isMember(roomId);
+
+        allow create, update:
+          if isHost(roomId)
+          && request.resource != null
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0;
+        
+        allow delete: if isHost(roomId);
+
+        match /rounds/{roundId}/answers/{answerId} {
+          allow read, write:
+            if isMember(roomId)
+            && memberTeam(roomId) == teamId;
+        }
+
+        match /scores/{roundId} {
+          allow read: if isMember(roomId);
+          allow write: if isHost(roomId);
+        }
+      }
+
+      match /rounds/{roundId} {
+        allow read: if isMember(roomId);
+        allow update: if isHost(roomId);
+        allow create, delete: if false;
+
+        match /questions/{questionId} {
+          allow read: if isMember(roomId);
+          allow write: if false;
+        }
+
+        match /prompts/{promptId} {
+          allow read: if isMember(roomId);
+          allow write: if false;
+        }
+
+        match /images/{imageId} {
+          allow read: if isMember(roomId);
+          allow write: if false;
+        }
+
+        match /answers/{answerId} {
+          allow read:
+            if isHost(roomId)
+            || (isMember(roomId) && isPresentingAnswer(roomId, roundId, answerId));
+          allow write: if isHost(roomId);
+        }
+
+        match /teamAnswers/{teamId} {
+          allow read, write: if isHost(roomId);
+
+          match /answers/{answerId} {
+            allow read, write: if isHost(roomId);
+          }
+        }
+      }
+    }
+  }
+}

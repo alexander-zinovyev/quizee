@@ -1,0 +1,103 @@
+export type Question = {
+  /**
+   * Stable identifier for associating answers with questions.
+   */
+  id?: string | number;
+  /**
+   * Optional description for the question
+   */
+  prompt?: string;
+  /**
+   * Optional media attached to the question.
+   */
+  media?: {
+    storagePath: string;
+    contentType?: string | null;
+    size?: number | null;
+    autoplay?: boolean;
+    filename?: string | null;
+    originalPath?: string | null;
+  } | null;
+  /**
+   * Previously entered answer, if any.
+   */
+  answer?: string;
+};
+
+type RoundData = {
+  /**
+   * Stable identifier for rounds.
+   */
+  id: string;
+  /**
+   * Name of the round displayed in the header.
+   */
+  title: string;
+  /**
+   * Numeric order of the round, shown in the label.
+   */
+  roundNumber: number;
+  /**
+   * Optional helper text under the title.
+   */
+  description?: string;
+  /**
+   * Custom wrapper class name.
+   */
+  className?: string;
+  /**
+   * Optional label to be displayed when there are no questions available.
+   */
+  emptyLabel?: string;
+};
+
+export type TextRoundData = RoundData & {
+  type: "text";
+  /**
+   * List of text questions in the round
+   */
+  questions: Question[];
+  roomSlug?: string;
+  teamId?: string;
+  /**
+   * Fires whenever an answer is submitted.
+   */
+  onAnswer?: (question: Question, answer: string) => void;
+};
+
+export type ImageItem = {
+    /**
+     * Identifier to match this image with a description.
+     */
+    id: string | number;
+    /**
+     * Source for the image asset.
+     */
+    src: string;
+    /**
+     * Accessible alternative text for the image prompt.
+     */
+    alt?: string;
+    /**
+     * Optional helper label rendered alongside the image.
+     */
+    label?: string;
+};
+
+export type ImageRoundData = RoundData & {
+  type: "image";
+  /**
+   * Text descriptions that should be matched with an image.
+   */
+  questions: Question[];
+  /**
+   * Pool of images the participant can drag onto the descriptions.
+   */
+  images: ImageItem[];
+  /**
+   * Fires whenever an answer is submitted.
+   */
+  onAnswer?: (question: Question, answer: ImageItem) => void;
+};
+
+export type QuizRoundData = TextRoundData | ImageRoundData;
