@@ -80,7 +80,10 @@ export default function RoomChatPanel({
   useEffect(() => {
     if (!activeChannel) return;
     const db = getClientFirestore();
-    const messagesRef = collection(db, ...activeChannel.path);
+    const messagesRef = collection(
+      db,
+      ...(activeChannel.path as [string, ...string[]])
+    );
     const messagesQuery = query(messagesRef, orderBy("createdAt", "asc"));
 
     const unsubscribe = onSnapshot(messagesQuery, (snapshot) => {
@@ -118,7 +121,10 @@ export default function RoomChatPanel({
       return;
     }
     const db = getClientFirestore();
-    const messagesRef = collection(db, ...activeChannel.path);
+    const messagesRef = collection(
+      db,
+      ...(activeChannel.path as [string, ...string[]])
+    );
     await addDoc(messagesRef, {
       author,
       content: text,

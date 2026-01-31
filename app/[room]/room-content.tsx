@@ -211,7 +211,7 @@ export default function RoomContent({
         if (cancelled) return;
 
         const metaList: RoundMeta[] = roundsSnapshot.docs
-          .map((docSnap, index) => {
+          .flatMap((docSnap, index) => {
             const data = docSnap.data();
             const type = (data.type as string | undefined)?.toLowerCase();
             const rawState = (data.state as string | undefined)?.toLowerCase() ?? "scheduled";
@@ -227,19 +227,21 @@ export default function RoomContent({
                 : Number(data.order) || index;
 
             if (type !== "text" && type !== "image") {
-              return null;
+              return [];
             }
+            const roundType: RoundMeta["type"] = type;
 
-            return {
-              id: docSnap.id,
-              title,
-              order,
-              type,
-              state,
-              gradingRequired: data.gradingRequired as boolean | undefined,
-            };
+            return [
+              {
+                id: docSnap.id,
+                title,
+                order,
+                type: roundType,
+                state,
+                gradingRequired: data.gradingRequired as boolean | undefined,
+              },
+            ];
           })
-          .filter((meta): meta is RoundMeta => Boolean(meta))
           .sort((a, b) => a.order - b.order);
 
         const currentRoundIds = new Set(metaList.map((meta) => meta.id));
