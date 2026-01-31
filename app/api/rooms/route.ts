@@ -4,8 +4,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, normalize, posix, resolve } from "node:path";
-import { promisify } from "node:util";
-import { execFile } from "node:child_process";
+import * as tar from "tar";
 
 import { getServerAuth, getServerFirestore, getServerStorageBucket } from "@/server/database";
 
@@ -35,7 +34,6 @@ const ROOM_ID_REGEX = /^[a-z0-9-]{3,50}$/;
 const SESSION_COOKIE_NAME = "__session";
 const QUIZ_PACK_FIELD = "quizPack";
 const MAX_BATCH_WRITES = 450; // Keep below 500 Firestore batch limit
-const TAR_EXEC = "tar";
 const DAILY_ROOM_API = "https://api.daily.co/v1/rooms";
 const ALLOWED_MEDIA_EXTENSIONS = new Set([
   ".png",
@@ -52,8 +50,6 @@ const ALLOWED_MEDIA_EXTENSIONS = new Set([
   ".mov",
   ".webm",
 ]);
-const execFileAsync = promisify(execFile);
-
 async function ensureDailyRoom(roomId: string) {
   const apiKey = process.env.DAILY_API_KEY;
   if (!apiKey) {
@@ -284,7 +280,7 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await quizPackFile.arrayBuffer();
     await writeFile(packPath, Buffer.from(arrayBuffer));
 
-    await execFileAsync(TAR_EXEC, ["-xzf", packPath, "-C", tempDir]);
+    await tar.x({ file: packPath, cwd: tempDir });
 
     quizJsonPath = join(tempDir, "quiz.json");
     const quizContent = await readFile(quizJsonPath, "utf8").catch(() => null);
