@@ -435,6 +435,7 @@ export async function POST(request: NextRequest) {
       createdAt: FieldValue.serverTimestamp(),
       presenting: { round: null, question: null, withAnswer: false, playMedia: false },
       handRaisingEnabled: true,
+      countdownEndsAt: null,
     });
 
     batch.set(roomRef.collection("auth").doc("default"), {

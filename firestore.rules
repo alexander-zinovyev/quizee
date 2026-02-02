@@ -56,7 +56,12 @@ service cloud.firestore {
         if isHost(roomId)
         && request.resource != null
         && validRoomState(request.resource.data.state)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["state", "presenting", "handRaisingEnabled"]);
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "state",
+          "presenting",
+          "handRaisingEnabled",
+          "countdownEndsAt"
+        ]);
 
       allow create, delete: if false; // server/Admin SDK only
 

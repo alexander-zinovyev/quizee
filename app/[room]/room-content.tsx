@@ -10,6 +10,7 @@ import {
   orderBy,
   query,
   serverTimestamp,
+  Timestamp,
   writeBatch,
   updateDoc,
   type Unsubscribe,
@@ -46,6 +47,7 @@ type RoomContentProps = {
   teams?: RoomRosterTeam[];
   hostMember?: TeamMember | null;
   handRaisingEnabled?: boolean;
+  countdownEndsAt?: Date | null;
   onMediaPolicyChange?: (policy: SubscriptionPolicy, options?: { isHost?: boolean }) => void;
 };
 
@@ -143,6 +145,7 @@ export default function RoomContent({
   viewerName,
   memberNames,
   handRaisingEnabled = true,
+  countdownEndsAt = null,
   onMediaPolicyChange,
 }: RoomContentProps) {
   const { user, getToken } = useFirebaseAuth();
@@ -174,6 +177,10 @@ export default function RoomContent({
   const handAudioRef = useRef<HTMLAudioElement | null>(null);
   const handInitRef = useRef(false);
   const handStateRef = useRef<Map<string, boolean>>(new Map());
+  const [countdownMinutes, setCountdownMinutes] = useState("1");
+  const [countdownSeconds, setCountdownSeconds] = useState("0");
+  const [countdownNow, setCountdownNow] = useState(() => Date.now());
+  const [localCountdownEndsAt, setLocalCountdownEndsAt] = useState<Date | null>(null);
   const [gradingTeamIndex, setGradingTeamIndex] = useState(0);
   const [roundImages, setRoundImages] = useState<RoundImages>({});
   const [presentingImageAnswerId, setPresentingImageAnswerId] = useState<string | null>(null);
@@ -1289,6 +1296,33 @@ export default function RoomContent({
     });
   }
 
+  function parseDurationMs() {
+    const minutes = Math.max(0, Math.min(99, Number.parseInt(countdownMinutes, 10) || 0));
+    const seconds = Math.max(0, Math.min(59, Number.parseInt(countdownSeconds, 10) || 0));
+    return (minutes * 60 + seconds) * 1000;
+  }
+
+  async function startCountdown() {
+    if (!isHost) return;
+    const durationMs = parseDurationMs();
+    if (durationMs <= 0) return;
+    const nextEnd = new Date(Date.now() + durationMs);
+    setLocalCountdownEndsAt(nextEnd);
+    const db = getClientFirestore();
+    await updateDoc(doc(db, "rooms", roomSlug), {
+      countdownEndsAt: Timestamp.fromMillis(nextEnd.getTime()),
+    });
+  }
+
+  async function stopCountdown() {
+    if (!isHost) return;
+    setLocalCountdownEndsAt(new Date(0));
+    const db = getClientFirestore();
+    await updateDoc(doc(db, "rooms", roomSlug), {
+      countdownEndsAt: null,
+    });
+  }
+
   async function copyTeamAnswersToRound(roundId: string) {
     if (!teams || !teams.length) return;
     const db = getClientFirestore();
@@ -1550,6 +1584,44 @@ export default function RoomContent({
         .find((item) => item.id?.toString() === user.uid) ?? null;
     return Boolean(member?.handRaised);
   }, [teams, user?.uid]);
+
+  const effectiveCountdownEndsAt = localCountdownEndsAt ?? countdownEndsAt;
+  const countdownTargetMs = effectiveCountdownEndsAt
+    ? effectiveCountdownEndsAt.getTime()
+    : null;
+  const countdownRemainingMs = countdownTargetMs
+    ? countdownTargetMs - countdownNow
+    : null;
+  const countdownIsActive = countdownRemainingMs !== null && countdownRemainingMs > 0;
+  const countdownIsUrgent =
+    countdownRemainingMs !== null && countdownRemainingMs <= 10_000 && countdownRemainingMs > 0;
+  const countdownDisplay = useMemo(() => {
+    if (!countdownIsActive || countdownRemainingMs == null) return null;
+    const totalSeconds = Math.ceil(countdownRemainingMs / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    const paddedSeconds = seconds.toString().padStart(2, "0");
+    return `${minutes}:${paddedSeconds}`;
+  }, [countdownIsActive, countdownRemainingMs]);
+
+  useEffect(() => {
+    if (!countdownTargetMs) return;
+    const interval = window.setInterval(() => {
+      setCountdownNow(Date.now());
+    }, 500);
+    return () => window.clearInterval(interval);
+  }, [countdownTargetMs]);
+
+  useEffect(() => {
+    if (!localCountdownEndsAt) return;
+    if (!countdownEndsAt) {
+      setLocalCountdownEndsAt(null);
+      return;
+    }
+    if (Math.abs(countdownEndsAt.getTime() - localCountdownEndsAt.getTime()) < 500) {
+      setLocalCountdownEndsAt(null);
+    }
+  }, [countdownEndsAt, localCountdownEndsAt]);
 
   const handMembers = useMemo(() => {
     const members: Array<{ id: string; handRaised: boolean }> = [];
@@ -1824,9 +1896,20 @@ export default function RoomContent({
           <article className="col-span-3 flex h-full min-h-0 flex-col overflow-hidden rounded-3xl border border-zinc-200 bg-zinc-950 shadow-2xl dark:border-zinc-800">
             <header className="border-b border-white/10 px-5 py-4 text-white">
               <div className="flex items-center justify-between gap-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-300">
-                  {displayRoundMeta?.title ?? "Current question"}
-                </p>
+                <div className="flex items-center gap-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-300">
+                    {displayRoundMeta?.title ?? "Current question"}
+                  </p>
+                  {countdownDisplay ? (
+                    <span
+                      className={`text-xs font-semibold uppercase tracking-[0.3em] ${
+                        countdownIsUrgent ? "text-red-300" : "text-zinc-400"
+                      }`}
+                    >
+                      {countdownDisplay}
+                    </span>
+                  ) : null}
+                </div>
                 {presentingQuestion ? (
                   <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-100">
                     Question {presentingQuestion.order + 1}
@@ -2269,9 +2352,6 @@ export default function RoomContent({
                 />
               ) : null}
             </div>
-            <div className="text-sm text-zinc-500 dark:text-zinc-400">
-              <p>Guiding tonight&apos;s cipher chase.</p>
-            </div>
             {!isHost ? (
               <button
                 type="button"
@@ -2283,59 +2363,111 @@ export default function RoomContent({
               </button>
             ) : null}
             {isHost ? (
-              <button
-                type="button"
-                onClick={toggleHandRaisingEnabled}
-                className="mt-3 inline-flex w-full cursor-pointer items-center justify-center rounded-xl bg-black px-3 py-2 text-sm font-semibold text-white transition hover:bg-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
-              >
-                {handRaisingEnabled ? "Disable hand raising" : "Enable hand raising"}
-              </button>
-            ) : null}
-            {isHost && isActiveTextRound && teams?.length ? (
-              <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-                {teams.map((team) => {
-                  const isActive = activeEavesdropTeamId === team.id;
-                  return (
+              <div className="mt-3 w-full rounded-2xl border border-white/10 bg-white/5 p-2">
+                <div className="flex flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={toggleHandRaisingEnabled}
+                    className="inline-flex w-full cursor-pointer items-center justify-center rounded-xl bg-black px-3 py-2 text-sm font-semibold text-white transition hover:bg-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+                  >
+                    {handRaisingEnabled ? "Disable hand raising" : "Enable hand raising"}
+                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      type="number"
+                      min={0}
+                      max={99}
+                      value={countdownMinutes}
+                      onChange={(event) => setCountdownMinutes(event.target.value)}
+                      className="w-14 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-sm text-zinc-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                      aria-label="Countdown minutes"
+                    />
+                    <span className="text-sm text-zinc-500">:</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={59}
+                      value={countdownSeconds}
+                      onChange={(event) => setCountdownSeconds(event.target.value)}
+                      className="w-14 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-sm text-zinc-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                      aria-label="Countdown seconds"
+                    />
                     <button
-                      key={team.id}
                       type="button"
-                      onClick={() =>
-                        setActiveEavesdropTeamId((prev) =>
-                          prev === team.id ? null : team.id
-                        )
-                      }
-                      title={
-                        isActive
-                          ? `Stop listening to ${team.name}`
-                          : `Listen to ${team.name}`
-                      }
-                      className="group inline-flex items-center gap-2 rounded-full px-2 py-1 text-xs font-semibold uppercase tracking-[0.25em] text-zinc-700 transition hover:bg-black/20 hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-white"
+                      onClick={() => {
+                        setCountdownMinutes("0");
+                        setCountdownSeconds("30");
+                      }}
+                      className="rounded-lg bg-zinc-200 px-2 py-1 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-300 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
                     >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.6"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className={[
-                          "h-4 w-4",
-                          isActive
-                            ? "text-emerald-500 dark:text-emerald-300"
-                            : "text-zinc-600 dark:text-zinc-300",
-                        ]
-                          .filter(Boolean)
-                          .join(" ")}
-                      >
-                        <path d="M3 12a9 9 0 0 1 18 0" />
-                        <path d="M7 12a5 5 0 0 1 10 0" />
-                        <circle cx="12" cy="12" r="1.5" />
-                      </svg>
-                      {team.name}
+                      30s
                     </button>
-                  );
-                })}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCountdownMinutes("1");
+                        setCountdownSeconds("0");
+                      }}
+                      className="rounded-lg bg-zinc-200 px-2 py-1 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-300 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                    >
+                      1m
+                    </button>
+                    <button
+                      type="button"
+                      onClick={countdownIsActive ? stopCountdown : startCountdown}
+                      className="inline-flex cursor-pointer items-center justify-center rounded-lg bg-zinc-900 px-3 py-1 text-xs font-semibold text-white transition hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+                    >
+                      {countdownIsActive ? "Stop" : "Start"}
+                    </button>
+                  </div>
+                  {isActiveTextRound && teams?.length ? (
+                    <div className="flex flex-wrap items-center justify-center gap-2">
+                      {teams.map((team) => {
+                        const isActive = activeEavesdropTeamId === team.id;
+                        return (
+                          <button
+                            key={team.id}
+                            type="button"
+                            onClick={() =>
+                              setActiveEavesdropTeamId((prev) =>
+                                prev === team.id ? null : team.id
+                              )
+                            }
+                            title={
+                              isActive
+                                ? `Stop listening to ${team.name}`
+                                : `Listen to ${team.name}`
+                            }
+                            className="group inline-flex items-center gap-2 rounded-full px-2 py-1 text-xs font-semibold uppercase tracking-[0.25em] text-zinc-700 transition hover:bg-black/20 hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-white"
+                          >
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.6"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              className={[
+                                "h-4 w-4",
+                                isActive
+                                  ? "text-emerald-500 dark:text-emerald-300"
+                                  : "text-zinc-600 dark:text-zinc-300",
+                              ]
+                                .filter(Boolean)
+                                .join(" ")}
+                            >
+                              <path d="M3 12a9 9 0 0 1 18 0" />
+                              <path d="M7 12a5 5 0 0 1 10 0" />
+                              <circle cx="12" cy="12" r="1.5" />
+                            </svg>
+                            {team.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </div>
               </div>
             ) : null}
           </aside>

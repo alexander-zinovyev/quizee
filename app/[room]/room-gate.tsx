@@ -44,6 +44,7 @@ export default function RoomGate({ roomSlug }: RoomGateProps) {
   const [viewerTeamId, setViewerTeamId] = useState<string | null>(null);
   const [viewerName, setViewerName] = useState<string | null>(null);
   const [handRaisingEnabled, setHandRaisingEnabled] = useState(true);
+  const [countdownEndsAt, setCountdownEndsAt] = useState<Date | null>(null);
   const [presenting, setPresenting] = useState<PresentingState>(null);
   const [memberNames, setMemberNames] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
@@ -96,6 +97,7 @@ export default function RoomGate({ roomSlug }: RoomGateProps) {
     let roomTitleValue: string | null = null;
     let teamsValue: RoomRosterTeam[] = [];
     let handRaisingEnabledValue = true;
+    let countdownEndsAtValue: Date | null = null;
     let presentingValue: PresentingState = null;
     let membersValue: Array<{
       id: string;
@@ -115,6 +117,7 @@ export default function RoomGate({ roomSlug }: RoomGateProps) {
       setHostMember(null);
       setPresenting(null);
       setHandRaisingEnabled(true);
+      setCountdownEndsAt(null);
     };
 
     const applyRoster = () => {
@@ -240,6 +243,8 @@ export default function RoomGate({ roomSlug }: RoomGateProps) {
                   typeof roomData.handRaisingEnabled === "boolean"
                     ? roomData.handRaisingEnabled
                     : true;
+                countdownEndsAtValue =
+                  roomData.countdownEndsAt?.toDate?.() ?? null;
                 const presentingData = roomData.presenting as PresentingState;
                 if (
                   presentingData &&
@@ -263,6 +268,7 @@ export default function RoomGate({ roomSlug }: RoomGateProps) {
                 }
                 applyRoster();
                 setHandRaisingEnabled(handRaisingEnabledValue);
+                setCountdownEndsAt(countdownEndsAtValue);
               },
               (roomError) => {
                 console.error("[room-gate] room snapshot error", roomError);
@@ -603,6 +609,7 @@ export default function RoomGate({ roomSlug }: RoomGateProps) {
       memberNames={memberNames}
       viewerName={viewerName}
       handRaisingEnabled={handRaisingEnabled}
+      countdownEndsAt={countdownEndsAt}
       onMediaPolicyChange={applyMediaPolicy}
     />
   );
