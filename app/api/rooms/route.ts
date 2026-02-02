@@ -434,6 +434,7 @@ export async function POST(request: NextRequest) {
       state: INITIAL_ROOM_STATE,
       createdAt: FieldValue.serverTimestamp(),
       presenting: { round: null, question: null, withAnswer: false, playMedia: false },
+      handRaisingEnabled: true,
     });
 
     batch.set(roomRef.collection("auth").doc("default"), {

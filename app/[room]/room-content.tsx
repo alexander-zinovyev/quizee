@@ -45,6 +45,7 @@ type RoomContentProps = {
   memberNames?: Record<string, string>;
   teams?: RoomRosterTeam[];
   hostMember?: TeamMember | null;
+  handRaisingEnabled?: boolean;
   onMediaPolicyChange?: (policy: SubscriptionPolicy, options?: { isHost?: boolean }) => void;
 };
 
@@ -141,6 +142,7 @@ export default function RoomContent({
   viewerTeamId,
   viewerName,
   memberNames,
+  handRaisingEnabled = true,
   onMediaPolicyChange,
 }: RoomContentProps) {
   const { user, getToken } = useFirebaseAuth();
@@ -169,6 +171,9 @@ export default function RoomContent({
   const presentingAnswerUnsubRef = useRef<Unsubscribe | null>(null);
   const teamAnswerRoundUnsubRef = useRef<Unsubscribe | null>(null);
   const teamAnswerUnsubsRef = useRef<Map<string, Unsubscribe>>(new Map());
+  const handAudioRef = useRef<HTMLAudioElement | null>(null);
+  const handInitRef = useRef(false);
+  const handStateRef = useRef<Map<string, boolean>>(new Map());
   const [gradingTeamIndex, setGradingTeamIndex] = useState(0);
   const [roundImages, setRoundImages] = useState<RoundImages>({});
   const [presentingImageAnswerId, setPresentingImageAnswerId] = useState<string | null>(null);
@@ -1251,6 +1256,39 @@ export default function RoomContent({
     });
   }
 
+  async function setHandRaised(memberId: string, raised: boolean) {
+    if (!roomSlug) return;
+    if (!user?.uid) return;
+    if (!isHost && memberId !== user.uid) return;
+    const db = getClientFirestore();
+    await updateDoc(doc(db, "rooms", roomSlug, "members", memberId), {
+      handRaised: raised,
+      handRaisedAt: raised ? serverTimestamp() : null,
+    });
+  }
+
+  async function lowerHand(memberId: string) {
+    await setHandRaised(memberId, false);
+  }
+
+  async function toggleOwnHand() {
+    if (!user?.uid) return;
+    const currentRaised =
+      teams
+        ?.flatMap((team) => team.members)
+        .find((member) => member.id?.toString() === user.uid)
+        ?.handRaised ?? false;
+    await setHandRaised(user.uid, !currentRaised);
+  }
+
+  async function toggleHandRaisingEnabled() {
+    if (!isHost) return;
+    const db = getClientFirestore();
+    await updateDoc(doc(db, "rooms", roomSlug), {
+      handRaisingEnabled: !handRaisingEnabled,
+    });
+  }
+
   async function copyTeamAnswersToRound(roundId: string) {
     if (!teams || !teams.length) return;
     const db = getClientFirestore();
@@ -1455,6 +1493,7 @@ export default function RoomContent({
         const isHostMember = hostId && memberId === hostId;
         let controlsDisabled = false;
         let forceMuted = false;
+        let onHandClick: (() => void) | undefined;
 
         if (isActiveTextRound) {
           if (isHost) {
@@ -1468,10 +1507,18 @@ export default function RoomContent({
           }
         }
 
+        if (member.handRaised) {
+          const canLower = isHost || memberId === (user?.uid ?? "");
+          if (canLower) {
+            onHandClick = () => void lowerHand(memberId);
+          }
+        }
+
         return {
           ...member,
           controlsDisabled,
           forceMuted,
+          onHandClick,
         };
       });
 
@@ -1480,12 +1527,80 @@ export default function RoomContent({
         members,
       };
     });
-  }, [activeEavesdropTeamId, hostMember?.id, isActiveTextRound, isHost, teams, viewerTeamId]);
+  }, [
+    activeEavesdropTeamId,
+    hostMember?.id,
+    isActiveTextRound,
+    isHost,
+    teams,
+    user?.uid,
+    viewerTeamId,
+  ]);
 
   const allRoundsClosed = useMemo(() => {
     if (!roundsMeta.length) return false;
     return roundsMeta.every((meta) => meta.state === "closed");
   }, [roundsMeta]);
+
+  const viewerHandRaised = useMemo(() => {
+    if (!user?.uid) return false;
+    const member =
+      teams
+        ?.flatMap((team) => team.members)
+        .find((item) => item.id?.toString() === user.uid) ?? null;
+    return Boolean(member?.handRaised);
+  }, [teams, user?.uid]);
+
+  const handMembers = useMemo(() => {
+    const members: Array<{ id: string; handRaised: boolean }> = [];
+    teams?.forEach((team) => {
+      team.members.forEach((member) => {
+        const id = member.id?.toString() ?? "";
+        if (!id) return;
+        members.push({ id, handRaised: Boolean(member.handRaised) });
+      });
+    });
+    if (hostMember?.id) {
+      members.push({
+        id: hostMember.id.toString(),
+        handRaised: Boolean(hostMember.handRaised),
+      });
+    }
+    return members;
+  }, [teams, hostMember?.handRaised, hostMember?.id]);
+
+  useEffect(() => {
+    if (!handMembers.length) return;
+    const previous = handStateRef.current;
+    let shouldPlay = false;
+
+    handMembers.forEach((member) => {
+      const prevRaised = previous.get(member.id) ?? false;
+      if (!handInitRef.current) {
+        previous.set(member.id, member.handRaised);
+        return;
+      }
+      if (!prevRaised && member.handRaised) {
+        shouldPlay = true;
+      }
+      previous.set(member.id, member.handRaised);
+    });
+
+    if (!handInitRef.current) {
+      handInitRef.current = true;
+      return;
+    }
+
+    if (shouldPlay) {
+      if (!handAudioRef.current) {
+        handAudioRef.current = new Audio("/hand.mp3");
+      }
+      handAudioRef.current.currentTime = 0;
+      handAudioRef.current.play().catch(() => {
+        // ignore autoplay restrictions
+      });
+    }
+  }, [handMembers]);
 
   useEffect(() => {
     if (!isHost || !presentingRoundMeta?.id || presentingRoundMeta.state !== "closed") {
@@ -2157,6 +2272,25 @@ export default function RoomContent({
             <div className="text-sm text-zinc-500 dark:text-zinc-400">
               <p>Guiding tonight&apos;s cipher chase.</p>
             </div>
+            {!isHost ? (
+              <button
+                type="button"
+                onClick={toggleOwnHand}
+                disabled={!handRaisingEnabled && !viewerHandRaised}
+                className="mt-3 inline-flex w-full cursor-pointer items-center justify-center rounded-xl bg-black px-3 py-2 text-sm font-semibold text-white transition hover:bg-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+              >
+                {viewerHandRaised ? "Lower hand" : "Raise hand"}
+              </button>
+            ) : null}
+            {isHost ? (
+              <button
+                type="button"
+                onClick={toggleHandRaisingEnabled}
+                className="mt-3 inline-flex w-full cursor-pointer items-center justify-center rounded-xl bg-black px-3 py-2 text-sm font-semibold text-white transition hover:bg-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+              >
+                {handRaisingEnabled ? "Disable hand raising" : "Enable hand raising"}
+              </button>
+            ) : null}
             {isHost && isActiveTextRound && teams?.length ? (
               <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
                 {teams.map((team) => {

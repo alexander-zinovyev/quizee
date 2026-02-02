@@ -20,6 +20,14 @@ type MemberProps = {
    */
   videoTrack?: MediaStreamTrack;
   /**
+   * Whether this member has raised their hand.
+   */
+  handRaised?: boolean;
+  /**
+   * Optional click handler to lower the hand.
+   */
+  onHandClick?: () => void;
+  /**
    * Disable audio controls for this member.
    */
   controlsDisabled?: boolean;
@@ -54,6 +62,8 @@ export default function Member({
   stream,
   audioTrack,
   videoTrack,
+  handRaised = false,
+  onHandClick,
   controlsDisabled = false,
   forceMuted = false,
   muted = true,
@@ -74,6 +84,8 @@ export default function Member({
   const hasAudio = Boolean(resolvedAudioTrack);
   const effectiveMuted = forceMuted ? true : isMuted;
   const showAudioControls = hasAudio && !muted && !controlsDisabled;
+  const showHand = handRaised;
+  const canLowerHand = Boolean(onHandClick);
   const initials = name
     .split(" ")
     .map((part) => part.trim()[0])
@@ -152,8 +164,33 @@ export default function Member({
         />
         <audio ref={audioRef} muted={effectiveMuted} />
 
+        {showHand ? (
+          <div className="absolute left-3 top-3 z-20">
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onHandClick?.();
+              }}
+              disabled={!canLowerHand}
+              className={[
+                "inline-flex h-7 w-7 items-center justify-center rounded-full transition",
+                canLowerHand
+                  ? "cursor-pointer bg-transparent text-white hover:bg-black/20 hover:text-white/20"
+                  : "cursor-default text-white",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              aria-label="Lower hand"
+              title="Lower hand"
+            >
+              <img src="/hand.svg" alt="" className="h-4 w-4" />
+            </button>
+          </div>
+        ) : null}
+
         {!hasVideo ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-gradient-to-br from-zinc-800 via-zinc-900 to-black text-white/80">
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-gradient-to-br from-zinc-800 via-zinc-900 to-black text-white/80">
             <span className="text-3xl font-semibold tracking-widest text-white">
               {initials || "?"}
             </span>

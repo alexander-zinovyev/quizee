@@ -37,6 +37,14 @@ service cloud.firestore {
         && (state == "pending" || state == "playing" || state == "ended");
     }
 
+    function handRaisingEnabled(roomId) {
+      return roomDoc(roomId).data.handRaisingEnabled == true;
+    }
+
+    function roomIsPlaying(roomId) {
+      return roomDoc(roomId).data.state == "playing";
+    }
+
     function teamExists(roomId, teamId) {
       return teamId == null || exists(/databases/$(database)/documents/rooms/$(roomId)/teams/$(teamId));
     }
@@ -48,7 +56,7 @@ service cloud.firestore {
         if isHost(roomId)
         && request.resource != null
         && validRoomState(request.resource.data.state)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["state"]);
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["state", "presenting", "handRaisingEnabled"]);
 
       allow create, delete: if false; // server/Admin SDK only
 
@@ -68,6 +76,14 @@ service cloud.firestore {
           && request.resource != null
           && teamExists(roomId, request.resource.data.team)
           && (!("uid" in request.resource.data) || request.resource.data.uid == memberId);
+
+        allow update:
+          if request.auth != null
+          && request.auth.uid == memberId
+          && isMember(roomId)
+          && roomIsPlaying(roomId)
+          && (handRaisingEnabled(roomId) || request.resource.data.handRaised == false)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["handRaised", "handRaisedAt"]);
 
         allow delete: if isHost(roomId);
       }

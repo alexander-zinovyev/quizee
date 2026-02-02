@@ -25,6 +25,14 @@ export type TeamMember = {
    */
   videoTrack?: MediaStreamTrack;
   /**
+   * Whether this member has raised their hand.
+   */
+  handRaised?: boolean;
+  /**
+   * Optional callback to lower a raised hand.
+   */
+  onHandClick?: () => void;
+  /**
    * Disable audio controls for this member.
    */
   controlsDisabled?: boolean;
@@ -240,6 +248,8 @@ export default function Team({
                       stream={member.stream}
                       audioTrack={member.audioTrack}
                       videoTrack={member.videoTrack}
+                      handRaised={member.handRaised}
+                      onHandClick={member.onHandClick}
                       controlsDisabled={member.controlsDisabled}
                       forceMuted={member.forceMuted}
                       muted={member.muted}

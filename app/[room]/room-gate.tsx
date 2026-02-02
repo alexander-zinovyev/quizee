@@ -43,6 +43,7 @@ export default function RoomGate({ roomSlug }: RoomGateProps) {
   const [hostMember, setHostMember] = useState<TeamMember | null>(null);
   const [viewerTeamId, setViewerTeamId] = useState<string | null>(null);
   const [viewerName, setViewerName] = useState<string | null>(null);
+  const [handRaisingEnabled, setHandRaisingEnabled] = useState(true);
   const [presenting, setPresenting] = useState<PresentingState>(null);
   const [memberNames, setMemberNames] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
@@ -94,8 +95,15 @@ export default function RoomGate({ roomSlug }: RoomGateProps) {
     let roomStateValue: RoomState = "pending";
     let roomTitleValue: string | null = null;
     let teamsValue: RoomRosterTeam[] = [];
+    let handRaisingEnabledValue = true;
     let presentingValue: PresentingState = null;
-    let membersValue: Array<{ id: string; name: string; role?: string; teamId?: string | null }> = [];
+    let membersValue: Array<{
+      id: string;
+      name: string;
+      role?: string;
+      teamId?: string | null;
+      handRaised?: boolean;
+    }> = [];
     const dataUnsubscribers: Array<() => void> = [];
     let membershipUnsubscribe: (() => void) | null = null;
 
@@ -106,6 +114,7 @@ export default function RoomGate({ roomSlug }: RoomGateProps) {
       setUnassignedMembers([]);
       setHostMember(null);
       setPresenting(null);
+      setHandRaisingEnabled(true);
     };
 
     const applyRoster = () => {
@@ -122,7 +131,11 @@ export default function RoomGate({ roomSlug }: RoomGateProps) {
       const nameMap: Record<string, string> = {};
 
       membersValue.forEach((member) => {
-        const normalized: TeamMember = { id: member.id, name: member.name };
+        const normalized: TeamMember = {
+          id: member.id,
+          name: member.name,
+          handRaised: member.handRaised,
+        };
         if (normalized.name) {
           nameMap[normalized.id] = normalized.name;
         }
@@ -223,6 +236,10 @@ export default function RoomGate({ roomSlug }: RoomGateProps) {
                 roomStateValue =
                   rawRoomState === "playing" || rawRoomState === "ended" ? rawRoomState : "pending";
                 roomTitleValue = (roomData.title as string | undefined) ?? roomSlug;
+                handRaisingEnabledValue =
+                  typeof roomData.handRaisingEnabled === "boolean"
+                    ? roomData.handRaisingEnabled
+                    : true;
                 const presentingData = roomData.presenting as PresentingState;
                 if (
                   presentingData &&
@@ -245,6 +262,7 @@ export default function RoomGate({ roomSlug }: RoomGateProps) {
                   presentingValue = null;
                 }
                 applyRoster();
+                setHandRaisingEnabled(handRaisingEnabledValue);
               },
               (roomError) => {
                 console.error("[room-gate] room snapshot error", roomError);
@@ -291,12 +309,14 @@ export default function RoomGate({ roomSlug }: RoomGateProps) {
                       : "Unnamed player";
                   const role = data.role as string | undefined;
                   const teamId = (data.team as string | undefined | null) ?? null;
+                  const handRaised = Boolean(data.handRaised);
 
                   return {
                     id: memberSnap.id,
                     name: memberName,
                     role,
                     teamId,
+                    handRaised,
                   };
                 });
                 applyRoster();
@@ -582,6 +602,7 @@ export default function RoomGate({ roomSlug }: RoomGateProps) {
       viewerTeamId={viewerTeamId}
       memberNames={memberNames}
       viewerName={viewerName}
+      handRaisingEnabled={handRaisingEnabled}
       onMediaPolicyChange={applyMediaPolicy}
     />
   );
