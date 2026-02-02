@@ -40,6 +40,7 @@ export default function RoomPending({
     team.members.forEach((member) => {
       rosterCards.push({
         id: member.id?.toString() ?? `${team.id}-${member.name}`,
+        memberId: member.id?.toString() ?? null,
         name: member.name,
         badge: team.name,
         teamName: team.name,
@@ -54,6 +55,7 @@ export default function RoomPending({
   unassignedMembers.forEach((member, index) => {
       rosterCards.push({
         id: member.id?.toString() ?? `unassigned-${index}`,
+        memberId: member.id?.toString() ?? null,
         name: member.name,
         badge: "Unassigned",
         teamName: "Unassigned",
@@ -78,6 +80,7 @@ export default function RoomPending({
       roomSlug={roomSlug}
       isHost={isHost}
       showScores={false}
+      allowReshuffle={true}
       onStart={onStart}
       isStartDisabled={isStartDisabled}
     />

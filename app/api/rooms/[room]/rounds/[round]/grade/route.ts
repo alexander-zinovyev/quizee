@@ -186,6 +186,18 @@ export async function POST(
         }
       }
 
+      const scoreRef = roomRef
+        .collection("teams")
+        .doc(team.teamId)
+        .collection("scores")
+        .doc(roundId);
+      const scoreSnap = await scoreRef.get();
+      const previousScore =
+        scoreSnap.exists && typeof scoreSnap.data()?.score === "number"
+          ? (scoreSnap.data()?.score as number)
+          : 0;
+      const delta = correctCount - previousScore;
+
       const teamAnswersRef = roundRef.collection("teamAnswers").doc(team.teamId);
       batch.set(
         teamAnswersRef,
@@ -198,13 +210,18 @@ export async function POST(
       );
       writes += 1;
 
-      const scoreRef = roomRef
-        .collection("teams")
-        .doc(team.teamId)
-        .collection("scores")
-        .doc(roundId);
       batch.set(scoreRef, { score: correctCount }, { merge: true });
       writes += 1;
+
+      const teamRef = roomRef.collection("teams").doc(team.teamId);
+      if (delta !== 0) {
+        batch.set(
+          teamRef,
+          { scoreTotal: FieldValue.increment(delta) },
+          { merge: true }
+        );
+        writes += 1;
+      }
 
       if (writes >= MAX_BATCH_WRITES) {
         await flushBatch();

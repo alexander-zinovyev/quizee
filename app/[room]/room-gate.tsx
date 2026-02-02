@@ -24,8 +24,11 @@ type PresentingState =
       round?: string | null;
       question?: string | null;
       withAnswer?: boolean;
+      playMedia?: boolean;
     }
   | null;
+
+const MEDIA_DISABLED = process.env.NEXT_PUBLIC_MEDIA_DISABLED === "true";
 
 export default function RoomGate({ roomSlug }: RoomGateProps) {
   const { user, loading: authLoading, getToken } = useFirebaseAuth();
@@ -63,6 +66,9 @@ export default function RoomGate({ roomSlug }: RoomGateProps) {
   }, [mediaError]);
 
   useEffect(() => {
+    if (MEDIA_DISABLED) {
+      return;
+    }
     const transport = createMediaTransport();
     mediaTransportRef.current = transport;
     const offUpdate = transport.onParticipantUpdate(setMediaParticipants);
@@ -233,6 +239,7 @@ export default function RoomGate({ roomSlug }: RoomGateProps) {
                         ? presentingData.question
                         : presentingData.question ?? null,
                     withAnswer: Boolean(presentingData.withAnswer),
+                    playMedia: Boolean((presentingData as { playMedia?: boolean }).playMedia),
                   };
                 } else {
                   presentingValue = null;
@@ -336,6 +343,12 @@ export default function RoomGate({ roomSlug }: RoomGateProps) {
   }, [authLoading, retryCount, roomSlug, user]);
 
   useEffect(() => {
+    if (MEDIA_DISABLED) {
+      if (mediaSessionRef.current) {
+        mediaSessionRef.current = null;
+      }
+      return;
+    }
     const transport = mediaTransportRef.current;
     if (!transport) return;
 

@@ -1,6 +1,6 @@
 [
   {
-    "origin": ["https://your-site.com", "http://localhost:3000"],
+    "origin": ["https://quizee-gamma.vercel.app", "http://localhost:3000", "http://192.168.10.108:3000"],
     "method": ["GET", "HEAD", "OPTIONS"],
     "responseHeader": ["Content-Type"],
     "maxAgeSeconds": 3600

@@ -22,6 +22,7 @@ import type { RoomRosterTeam } from "./room-layout-types";
 
 type RosterCard = {
   id: string;
+  memberId?: string | null;
   name: string;
   badge: string;
   teamName?: string;
@@ -47,6 +48,7 @@ type RoomLobbyLayoutProps = {
   onStart?: () => void;
   isStartDisabled?: boolean;
   allowTeamEditing?: boolean;
+  allowReshuffle?: boolean;
 };
 
 const TEAM_COLORS = [
@@ -135,6 +137,7 @@ export default function RoomLobbyLayout({
   onStart,
   isStartDisabled = false,
   allowTeamEditing = true,
+  allowReshuffle = false,
 }: RoomLobbyLayoutProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -180,6 +183,8 @@ export default function RoomLobbyLayout({
   } | null>(null);
   const [isAssigning, setIsAssigning] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
+  const [isReshuffling, setIsReshuffling] = useState(false);
+  const [reshuffleError, setReshuffleError] = useState<string | null>(null);
 
   useEffect(() => {
     setNewTeamColor(toColor(suggestedColor));
@@ -280,6 +285,45 @@ export default function RoomLobbyLayout({
       setAssignError("Unable to update member right now.");
     } finally {
       setIsAssigning(false);
+    }
+  }
+
+  async function handleReshuffle() {
+    if (!allowReshuffle || !allowTeamEditing || !isHost || isReshuffling) return;
+    if (!teams.length) {
+      setReshuffleError("Create at least one team before reshuffling.");
+      return;
+    }
+    const memberIds = rosterCards
+      .map((card) => card.memberId)
+      .filter((id): id is string => Boolean(id));
+    if (!memberIds.length) {
+      setReshuffleError("No players available to reshuffle.");
+      return;
+    }
+
+    try {
+      setIsReshuffling(true);
+      setReshuffleError(null);
+      const db = getClientFirestore();
+      const shuffled = [...memberIds];
+      for (let i = shuffled.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
+
+      const batch = writeBatch(db);
+      shuffled.forEach((memberId, index) => {
+        const teamId = teams[index % teams.length]?.id ?? null;
+        if (!teamId) return;
+        batch.update(doc(db, "rooms", roomSlug, "members", memberId), { team: teamId });
+      });
+      await batch.commit();
+    } catch (error) {
+      console.error("[team-reshuffle]", error);
+      setReshuffleError("Unable to reshuffle right now.");
+    } finally {
+      setIsReshuffling(false);
     }
   }
 
@@ -403,14 +447,29 @@ export default function RoomLobbyLayout({
               {statusBody}
             </p>
             {isHost && onStart ? (
-              <button
-                type="button"
-                onClick={onStart}
-                disabled={isStartDisabled}
-                className="mt-3 inline-flex w-full items-center justify-center rounded-xl bg-emerald-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:cursor-not-allowed disabled:opacity-70 dark:bg-emerald-400 dark:text-zinc-900 dark:hover:bg-emerald-300"
-              >
-                Start
-              </button>
+              <div className="mt-3 flex flex-col gap-2">
+                {allowReshuffle ? (
+                  <button
+                    type="button"
+                    onClick={handleReshuffle}
+                    disabled={isReshuffling}
+                    className="inline-flex w-full items-center justify-center rounded-xl bg-zinc-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-700 disabled:cursor-not-allowed disabled:opacity-70 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-100"
+                  >
+                    Reshuffle
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={onStart}
+                  disabled={isStartDisabled}
+                  className="inline-flex w-full items-center justify-center rounded-xl bg-emerald-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:cursor-not-allowed disabled:opacity-70 dark:bg-emerald-400 dark:text-zinc-900 dark:hover:bg-emerald-300"
+                >
+                  Start
+                </button>
+                {reshuffleError ? (
+                  <p className="text-xs text-red-600 dark:text-red-400">{reshuffleError}</p>
+                ) : null}
+              </div>
             ) : null}
           </div>
 

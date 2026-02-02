@@ -51,6 +51,9 @@ const ALLOWED_MEDIA_EXTENSIONS = new Set([
   ".webm",
 ]);
 async function ensureDailyRoom(roomId: string) {
+  if (process.env.MEDIA_DISABLED === "true") {
+    return;
+  }
   const apiKey = process.env.DAILY_API_KEY;
   if (!apiKey) {
     throw new Error("Daily API key is not configured.");

@@ -173,6 +173,7 @@ export default function RoomContent({
   const [roundImages, setRoundImages] = useState<RoundImages>({});
   const [presentingImageAnswerId, setPresentingImageAnswerId] = useState<string | null>(null);
   const [presentingAnswerImageUrl, setPresentingAnswerImageUrl] = useState<string | null>(null);
+  const [presentingTextAnswer, setPresentingTextAnswer] = useState<string | null>(null);
   const [isAnswerImageLoading, setIsAnswerImageLoading] = useState(false);
   const [answerImageError, setAnswerImageError] = useState<string | null>(null);
   const [activeEavesdropTeamId, setActiveEavesdropTeamId] = useState<string | null>(null);
@@ -456,11 +457,7 @@ export default function RoomContent({
             }
           }
 
-          const canReadAnswers =
-            meta.type !== "image" &&
-            (isHost ||
-              meta.state === "closed" ||
-              (presenting?.round === meta.id && presenting?.withAnswer));
+          const canReadAnswers = meta.type !== "image" && isHost;
 
           if (!canReadAnswers) {
             const existing = answerUnsubs.get(meta.id);
@@ -690,12 +687,25 @@ export default function RoomContent({
     const answerFromCollection =
       roundAnswers[presenting.round]?.[presenting.question] ?? null;
     const fallbackAnswer = presentingQuestion?.correctAnswer ?? null;
-    return answerFromCollection?.length ? answerFromCollection : fallbackAnswer;
-  }, [presenting?.question, presenting?.round, presenting?.withAnswer, presentingQuestion, roundAnswers]);
+    const resolved =
+      (presentingTextAnswer && presentingTextAnswer.trim().length
+        ? presentingTextAnswer
+        : answerFromCollection) ?? fallbackAnswer;
+    return resolved?.trim().length ? resolved : null;
+  }, [
+    presenting?.question,
+    presenting?.round,
+    presenting?.withAnswer,
+    presentingQuestion,
+    presentingTextAnswer,
+    roundAnswers,
+  ]);
 
   const shouldShowMedia =
     !!presentingQuestion?.media &&
-    (shouldAutoStartMedia(presentingQuestion) || (presenting?.playMedia ?? false));
+    (typeof presenting?.playMedia === "boolean"
+      ? presenting.playMedia
+      : shouldAutoStartMedia(presentingQuestion));
 
   const isPresentingImageRound = presentingRoundMeta?.type === "image";
 
@@ -714,6 +724,7 @@ export default function RoomContent({
     setAnswerImageError(null);
     setPresentingAnswerImageUrl(null);
     setIsAnswerImageLoading(false);
+    setPresentingTextAnswer(null);
 
     if (
       !presentingRoundMeta?.id ||
@@ -755,6 +766,53 @@ export default function RoomContent({
       unsubscribe();
       presentingAnswerUnsubRef.current = null;
     };
+  }, [
+    presenting?.question,
+    presenting?.withAnswer,
+    presentingRoundMeta?.id,
+    presentingRoundMeta?.type,
+    roomSlug,
+  ]);
+
+  useEffect(() => {
+    if (
+      !presentingRoundMeta?.id ||
+      presentingRoundMeta.type !== "text" ||
+      !presenting?.withAnswer ||
+      !presenting?.question
+    ) {
+      setPresentingTextAnswer(null);
+      return;
+    }
+
+    const db = getClientFirestore();
+    const answerRef = doc(
+      db,
+      "rooms",
+      roomSlug,
+      "rounds",
+      presentingRoundMeta.id,
+      "answers",
+      presenting.question
+    );
+
+    const unsubscribe = onSnapshot(
+      answerRef,
+      (answerSnap) => {
+        const data = answerSnap.data();
+        const answer =
+          data && typeof data.answer === "string" && data.answer.trim().length
+            ? data.answer.trim()
+            : null;
+        setPresentingTextAnswer(answer);
+      },
+      (error) => {
+        console.error("[room-content] text answer reveal error", error);
+        setPresentingTextAnswer(null);
+      }
+    );
+
+    return () => unsubscribe();
   }, [
     presenting?.question,
     presenting?.withAnswer,
@@ -1180,6 +1238,16 @@ export default function RoomContent({
       question: presentingQuestion.id,
       withAnswer: presenting?.withAnswer ?? false,
       playMedia: true,
+    });
+  }
+
+  async function handleHideMedia() {
+    if (!isHost || !presentingQuestion || !presentingRoundMeta) return;
+    await updatePresenting({
+      round: presentingRoundMeta.id,
+      question: presentingQuestion.id,
+      withAnswer: presenting?.withAnswer ?? false,
+      playMedia: false,
     });
   }
 
@@ -1780,7 +1848,7 @@ export default function RoomContent({
                       {isPresentingImageRound && presenting?.withAnswer ? (
                         <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
                           <div className="space-y-6">
-                            {presentingQuestion.prompt ? (
+                            {!shouldShowMedia && presentingQuestion.prompt ? (
                               <h2 className="text-3xl font-semibold leading-tight text-white">
                                 {presentingQuestion.prompt}
                               </h2>
@@ -1837,24 +1905,7 @@ export default function RoomContent({
                                     <p className="text-sm text-red-300">{mediaError}</p>
                                   ) : null}
                                 </div>
-                              ) : (
-                                <div className="flex items-center gap-3">
-                                  {isHost ? (
-                                    <button
-                                      type="button"
-                                      onClick={handlePlayMedia}
-                                      disabled={isPresentingUpdatePending}
-                                      className="rounded-lg bg-emerald-500 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
-                                    >
-                                      Play media
-                                    </button>
-                                  ) : (
-                                    <p className="text-sm text-zinc-300">
-                                      Waiting for host to play media…
-                                    </p>
-                                  )}
-                                </div>
-                              )
+                              ) : null
                             ) : null}
                           </div>
 
@@ -1881,7 +1932,7 @@ export default function RoomContent({
                         </div>
                       ) : (
                         <>
-                          {presentingQuestion.prompt ? (
+                          {!shouldShowMedia && presentingQuestion.prompt ? (
                             <h2 className="text-3xl font-semibold leading-tight text-white">
                               {presentingQuestion.prompt}
                             </h2>
@@ -1938,24 +1989,7 @@ export default function RoomContent({
                                   <p className="text-sm text-red-300">{mediaError}</p>
                                 ) : null}
                               </div>
-                            ) : (
-                              <div className="flex items-center gap-3">
-                                {isHost ? (
-                                  <button
-                                    type="button"
-                                    onClick={handlePlayMedia}
-                                    disabled={isPresentingUpdatePending}
-                                    className="rounded-lg bg-emerald-500 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
-                                  >
-                                    Play media
-                                  </button>
-                                ) : (
-                                  <p className="text-sm text-zinc-300">
-                                    Waiting for host to play media…
-                                  </p>
-                                )}
-                              </div>
-                            )
+                            ) : null
                           ) : null}
                         </>
                       )}
@@ -2039,6 +2073,17 @@ export default function RoomContent({
                       className="rounded-lg bg-zinc-700 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-zinc-600 focus:outline-none focus:ring-2 focus:ring-white/30 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
                     >
                       Hide question
+                    </button>
+                  ) : null}
+
+                  {presentingQuestion?.media ? (
+                    <button
+                      type="button"
+                      onClick={shouldShowMedia ? handleHideMedia : handlePlayMedia}
+                      disabled={isPresentingUpdatePending}
+                      className="rounded-lg bg-emerald-500 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
+                    >
+                      {shouldShowMedia ? "Hide media" : "Play media"}
                     </button>
                   ) : null}
 
