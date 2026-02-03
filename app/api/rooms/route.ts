@@ -33,7 +33,6 @@ const INITIAL_ROOM_STATE = "pending";
 const ROOM_ID_REGEX = /^[a-z0-9-]{3,50}$/;
 const SESSION_COOKIE_NAME = "__session";
 const QUIZ_PACK_FIELD = "quizPack";
-const MAX_BATCH_WRITES = 450; // Keep below 500 Firestore batch limit
 const DAILY_ROOM_API = "https://api.daily.co/v1/rooms";
 const ALLOWED_MEDIA_EXTENSIONS = new Set([
   ".png",
@@ -359,22 +358,6 @@ export async function POST(request: NextRequest) {
         }
       });
     });
-
-    const estimatedWrites =
-      3 + // room, auth, member
-      rounds.length + // rounds
-      totalTextQuestionCount * 2 + // text questions + answers
-      totalImageCount + // images
-      totalPromptCount * 2; // prompts + correct answer mapping
-
-    if (estimatedWrites > MAX_BATCH_WRITES) {
-      return NextResponse.json(
-        {
-          message: `Quiz file is too large to import in one request (${estimatedWrites} writes). Please reduce the number of rounds/questions.`,
-        },
-        { status: 400 }
-      );
-    }
 
     const auth = getServerAuth();
     const bearer = parseBearerToken(request.headers.get("authorization"));

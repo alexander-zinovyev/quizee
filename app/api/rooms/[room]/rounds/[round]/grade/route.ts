@@ -5,7 +5,6 @@ import { FieldValue } from "firebase-admin/firestore";
 import { getServerAuth, getServerFirestore } from "@/server/database";
 
 const SESSION_COOKIE_NAME = "__session";
-const MAX_BATCH_WRITES = 450;
 
 function parseBearerToken(headerValue: string | null): string | undefined {
   if (!headerValue) return undefined;
@@ -149,14 +148,7 @@ export async function POST(
       }
     }
 
-    let batch = db.batch();
-    let writes = 0;
-    const flushBatch = async () => {
-      if (writes === 0) return;
-      await batch.commit();
-      batch = db.batch();
-      writes = 0;
-    };
+    const batch = db.batch();
 
     for (const team of teamsToGrade) {
       let correctCount = 0;
@@ -180,10 +172,6 @@ export async function POST(
           },
           { merge: true }
         );
-        writes += 1;
-        if (writes >= MAX_BATCH_WRITES) {
-          await flushBatch();
-        }
       }
 
       const scoreRef = roomRef
@@ -208,10 +196,8 @@ export async function POST(
         },
         { merge: true }
       );
-      writes += 1;
 
       batch.set(scoreRef, { score: correctCount }, { merge: true });
-      writes += 1;
 
       const teamRef = roomRef.collection("teams").doc(team.teamId);
       if (delta !== 0) {
@@ -220,11 +206,6 @@ export async function POST(
           { scoreTotal: FieldValue.increment(delta) },
           { merge: true }
         );
-        writes += 1;
-      }
-
-      if (writes >= MAX_BATCH_WRITES) {
-        await flushBatch();
       }
     }
 
@@ -234,9 +215,7 @@ export async function POST(
       { gradingRequired: false, gradedAt: FieldValue.serverTimestamp() },
       { merge: true }
     );
-    writes += 1;
-
-    await flushBatch();
+    await batch.commit();
 
     return NextResponse.json({ status: "ok" }, { status: 200 });
   } catch (error) {
