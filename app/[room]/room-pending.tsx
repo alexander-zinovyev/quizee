@@ -27,6 +27,7 @@ export default function RoomPending({
 }: RoomPendingProps) {
   const rosterCards: Array<{
     id: string;
+    memberId?: string | null;
     name: string;
     badge: string;
     teamName?: string;
