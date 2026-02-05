@@ -3,12 +3,39 @@
 import { FormEvent, useEffect, useState } from "react";
 import { doc, getDoc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
+import { getStorage, ref, uploadBytesResumable } from "firebase/storage";
+import { gunzipSync } from "fflate";
 
-import { getClientFirestore } from "@/lib/firebase/client";
+import { getClientFirestore, getFirebaseClientApp } from "@/lib/firebase/client";
 import { useFirebaseAuth } from "@/app/providers/firebase-auth-provider";
 
 type SlugStatus = "idle" | "checking" | "available" | "unavailable" | "error";
 const ROOM_ID_REGEX = /^[a-z0-9-]{3,50}$/;
+const MAX_TAR_SIZE_BYTES = 100 * 1024 * 1024;
+const ALLOWED_MEDIA_EXTENSIONS = new Set([
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".svg",
+  ".mp3",
+  ".wav",
+  ".ogg",
+  ".m4a",
+  ".mp4",
+  ".mov",
+  ".webm",
+]);
+
+type UploadSession = {
+  sessionId: string;
+  uploadPrefix: string;
+  maxFiles: number;
+  maxTotalBytes: number;
+  maxFileBytes: number;
+  expiresAt: number;
+};
 
 export default function HostPage() {
   const [roomId, setRoomId] = useState("");
@@ -116,62 +143,191 @@ export default function HostPage() {
 
     try {
       const token = await getToken();
-      const formData = new FormData();
-
-      formData.append("id", trimmedRoomId);
-      formData.append("name", trimmedRoomName);
-      formData.append("hostName", hostName.trim());
-      formData.append("password", roomPassword.trim());
-      if (quizPack) {
-        formData.append("quizPack", quizPack);
+      if (!quizPack) {
+        setStatusMessage("Quiz pack is required.");
+        setSlugStatus("error");
+        return;
       }
-
-      const payload = await new Promise<{
-        status: number;
-        body?: { message?: string; id?: string };
-      }>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open("POST", "/api/rooms");
-        xhr.responseType = "json";
-        xhr.setRequestHeader("Authorization", `Bearer ${token}`);
-
-        xhr.upload.onprogress = (event) => {
-          if (!event.lengthComputable) return;
-          const percent = Math.min(
-            80,
-            Math.round((event.loaded / event.total) * 80)
-          );
-          setUploadPhase("Uploading quiz pack...");
-          setUploadPercent(percent);
-        };
-
-        xhr.onreadystatechange = () => {
-          if (xhr.readyState === XMLHttpRequest.HEADERS_RECEIVED) {
-            setUploadPhase("Processing quiz pack...");
-            setUploadPercent((prev) => Math.max(prev, 85));
-          }
-        };
-
-        xhr.onload = () => {
-          setUploadPhase("Finalizing...");
-          setUploadPercent(100);
-          resolve({ status: xhr.status, body: xhr.response ?? undefined });
-        };
-
-        xhr.onerror = () => {
-          reject(new Error("Network error during upload."));
-        };
-
-        xhr.send(formData);
-      });
-
-      if (payload.status < 200 || payload.status >= 300) {
-        setStatusMessage(payload.body?.message ?? "Unable to create room.");
+      if (quizPack.size > MAX_TAR_SIZE_BYTES) {
+        setStatusMessage("Quiz pack is too large to process in the browser.");
         setSlugStatus("error");
         return;
       }
 
-      const createdId = payload.body?.id ?? trimmedRoomId;
+      setUploadPhase("Requesting upload session...");
+      setUploadPercent(5);
+      const sessionResponse = await fetch("/api/rooms/upload-session", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ roomId: trimmedRoomId }),
+      });
+      const sessionPayload = (await sessionResponse.json()) as UploadSession & {
+        message?: string;
+      };
+      if (!sessionResponse.ok) {
+        setStatusMessage(sessionPayload.message ?? "Unable to prepare upload.");
+        setSlugStatus("error");
+        return;
+      }
+
+      setUploadPhase("Unpacking quiz pack...");
+      setUploadPercent(10);
+      const packedBuffer = await quizPack.arrayBuffer();
+      const decompressed = gunzipSync(new Uint8Array(packedBuffer));
+      const tarBytes = decompressed.slice();
+      const { default: untar } = await import("js-untar");
+      const files = await untar(tarBytes.buffer);
+
+      let quizJsonText: string | null = null;
+      const mediaEntries: Array<{
+        relativePath: string;
+        blob: Blob;
+        size: number;
+        contentType: string;
+        filename: string;
+      }> = [];
+      let totalBytes = 0;
+      let fileCount = 0;
+
+      for (const file of files) {
+        const name = file.name?.replace(/\\/g, "/") ?? "";
+        if (!name || name.endsWith("/")) continue;
+        if (name.includes("..") || name.startsWith("/")) {
+          throw new Error(`Invalid path in quiz pack: ${name}`);
+        }
+        if (name === "quiz.json") {
+          const text = new TextDecoder().decode(new Uint8Array(file.buffer));
+          quizJsonText = text;
+          continue;
+        }
+        if (!name.startsWith("media/")) continue;
+
+        const normalizedPath = name.replace(/^media\//, "");
+        const ext = normalizedPath.slice(normalizedPath.lastIndexOf(".")).toLowerCase();
+        if (!ALLOWED_MEDIA_EXTENSIONS.has(ext)) {
+          throw new Error(`Unsupported media extension: ${ext}`);
+        }
+        const size = file.buffer.byteLength;
+        if (size > sessionPayload.maxFileBytes) {
+          throw new Error(`Media file "${normalizedPath}" exceeds size limit.`);
+        }
+        totalBytes += size;
+        fileCount += 1;
+        if (fileCount > sessionPayload.maxFiles) {
+          throw new Error("Quiz pack contains too many media files.");
+        }
+        if (totalBytes > sessionPayload.maxTotalBytes) {
+          throw new Error("Total media size exceeds upload limits.");
+        }
+        const filename = normalizedPath.split("/").pop() ?? "media";
+        const contentType =
+          ext === ".png"
+            ? "image/png"
+            : ext === ".jpg" || ext === ".jpeg"
+              ? "image/jpeg"
+              : ext === ".gif"
+                ? "image/gif"
+                : ext === ".webp"
+                  ? "image/webp"
+                  : ext === ".svg"
+                    ? "image/svg+xml"
+                    : ext === ".mp3"
+                      ? "audio/mpeg"
+                      : ext === ".wav"
+                        ? "audio/wav"
+                        : ext === ".ogg"
+                          ? "audio/ogg"
+                          : ext === ".m4a"
+                            ? "audio/mp4"
+                            : ext === ".mp4"
+                              ? "video/mp4"
+                              : ext === ".mov"
+                                ? "video/quicktime"
+                                : "video/webm";
+        const blob = new Blob([file.buffer], { type: contentType });
+        mediaEntries.push({
+          relativePath: normalizedPath,
+          blob,
+          size,
+          contentType,
+          filename,
+        });
+      }
+
+      if (!quizJsonText) {
+        throw new Error("quiz.json not found in quiz pack.");
+      }
+
+      setUploadPhase("Uploading media...");
+      setUploadPercent(20);
+      const storage = getStorage(getFirebaseClientApp());
+      const mediaMap: Record<string, string> = {};
+      let uploadedBytes = 0;
+
+      if (totalBytes === 0) {
+        setUploadPercent(80);
+      } else {
+        for (const entry of mediaEntries) {
+          const uploadPath = `${sessionPayload.uploadPrefix}/media/${entry.relativePath}`;
+          const storageRef = ref(storage, uploadPath);
+          await new Promise<void>((resolve, reject) => {
+            const task = uploadBytesResumable(storageRef, entry.blob, {
+              contentType: entry.contentType,
+              cacheControl: "public,max-age=31536000,immutable",
+              customMetadata: {
+                originalPath: entry.relativePath,
+                filename: entry.filename,
+              },
+            });
+            task.on(
+              "state_changed",
+              (snapshot) => {
+                const progress =
+                  (uploadedBytes + snapshot.bytesTransferred) / totalBytes;
+                setUploadPercent(20 + Math.round(progress * 60));
+              },
+              (error) => reject(error),
+              () => {
+                uploadedBytes += entry.size;
+                setUploadPercent(20 + Math.round((uploadedBytes / totalBytes) * 60));
+                mediaMap[entry.relativePath] = uploadPath;
+                resolve();
+              }
+            );
+          });
+        }
+      }
+
+      setUploadPhase("Finalizing...");
+      setUploadPercent(85);
+      const createResponse = await fetch("/api/rooms/from-manifest", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          id: trimmedRoomId,
+          name: trimmedRoomName,
+          hostName: hostName.trim(),
+          password: roomPassword.trim(),
+          quizJson: quizJsonText,
+          mediaMap,
+          sessionId: sessionPayload.sessionId,
+        }),
+      });
+      const createPayload = (await createResponse.json()) as { message?: string; id?: string };
+      if (!createResponse.ok) {
+        setStatusMessage(createPayload.message ?? "Unable to create room.");
+        setSlugStatus("error");
+        return;
+      }
+
+      setUploadPercent(100);
+      const createdId = createPayload.id ?? trimmedRoomId;
       setStatusMessage("Room created. Redirecting...");
       setSlugStatus("available");
       setTimeout(() => {
@@ -179,7 +335,9 @@ export default function HostPage() {
       }, 300);
     } catch (error) {
       console.error("[host-room-create]", error);
-      setStatusMessage("Network error. Please try again.");
+      setStatusMessage(
+        error instanceof Error ? error.message : "Network error. Please try again."
+      );
       setSlugStatus("error");
     } finally {
       setIsSubmitting(false);
