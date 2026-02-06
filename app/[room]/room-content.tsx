@@ -2042,7 +2042,13 @@ export default function RoomContent({
               ) : presentingQuestion ? (
                 <div className="relative h-full w-full text-white">
                   <div className="presenting-scroll h-full w-full overflow-auto">
-                    <div className="flex flex-col gap-6 px-8 py-10">
+                    <div
+                      className={
+                        presentingMedia && shouldShowMedia
+                          ? "flex max-h-full px-4 py-4"
+                          : "flex flex-col gap-6 px-8 py-10"
+                      }
+                    >
                       {isPresentingImageRound && presenting?.withAnswer ? (
                         <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
                           <div className="space-y-6">
@@ -2052,93 +2058,8 @@ export default function RoomContent({
                               </h2>
                             ) : null}
 
-                            {presentingMedia ? (
-                              shouldShowMedia ? (
-                                <div className="flex flex-col gap-3">
-                                  {isMediaLoading ? (
-                                    <p className="text-sm text-zinc-300">Loading media…</p>
-                                  ) : presentingMediaUrl ? (
-                                    mediaKind.isImage ? (
-                                      <img
-                                        key={presentingQuestion.id}
-                                        src={presentingMediaUrl}
-                                        alt={presentingMedia.filename ?? "Question media"}
-                                        className="max-h-[70vh] w-full rounded-2xl bg-zinc-900 object-contain"
-                                      />
-                                    ) : mediaKind.isVideo ? (
-                                      <video
-                                        key={presentingQuestion.id}
-                                        src={presentingMediaUrl}
-                                        className="max-h-[70vh] w-full rounded-2xl bg-black object-contain"
-                                        controls
-                                        playsInline
-                                        autoPlay
-                                        onLoadedMetadata={(event) => {
-                                          event.currentTarget.volume = DEFAULT_MEDIA_VOLUME;
-                                        }}
-                                      />
-                                    ) : mediaKind.isAudio ? (
-                                      <audio
-                                        key={presentingQuestion.id}
-                                        src={presentingMediaUrl}
-                                        className="w-full"
-                                        controls
-                                        autoPlay
-                                        onLoadedMetadata={(event) => {
-                                          event.currentTarget.volume = DEFAULT_MEDIA_VOLUME;
-                                        }}
-                                      />
-                                    ) : (
-                                      <a
-                                        href={presentingMediaUrl}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="text-sm text-emerald-300 underline"
-                                      >
-                                        Open media
-                                      </a>
-                                    )
-                                  ) : null}
-                                  {mediaError ? (
-                                    <p className="text-sm text-red-300">{mediaError}</p>
-                                  ) : null}
-                                </div>
-                              ) : null
-                            ) : null}
-                          </div>
-
-                          <div className="flex h-full flex-col items-center justify-center gap-3 rounded-2xl border border-emerald-200/40 bg-emerald-900/20 p-4 text-center">
-                            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-200">
-                              Answer
-                            </p>
-                            {isAnswerImageLoading ? (
-                              <p className="text-sm text-emerald-100">Loading answer…</p>
-                            ) : presentingAnswerImageUrl ? (
-                              <img
-                                src={presentingAnswerImageUrl}
-                                alt="Correct answer"
-                                className="max-h-[65vh] w-full rounded-2xl bg-black object-contain"
-                              />
-                            ) : answerImageError ? (
-                              <p className="text-sm text-red-300">{answerImageError}</p>
-                            ) : (
-                              <p className="text-sm text-emerald-100">
-                                Answer not available.
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      ) : (
-                        <>
-                          {!shouldShowMedia && presentingQuestion.prompt ? (
-                            <h2 className="text-3xl font-semibold leading-tight text-white">
-                              {presentingQuestion.prompt}
-                            </h2>
-                          ) : null}
-
-                          {presentingMedia ? (
-                            shouldShowMedia ? (
-                              <div className="flex flex-col gap-3">
+                            {presentingMedia && shouldShowMedia ? (
+                              <>
                                 {isMediaLoading ? (
                                   <p className="text-sm text-zinc-300">Loading media…</p>
                                 ) : presentingMediaUrl ? (
@@ -2147,13 +2068,13 @@ export default function RoomContent({
                                       key={presentingQuestion.id}
                                       src={presentingMediaUrl}
                                       alt={presentingMedia.filename ?? "Question media"}
-                                      className="max-h-[70vh] w-full rounded-2xl bg-zinc-900 object-contain"
+                                      className="max-h-[55vh] w-full rounded-2xl object-contain"
                                     />
                                   ) : mediaKind.isVideo ? (
                                     <video
                                       key={presentingQuestion.id}
                                       src={presentingMediaUrl}
-                                      className="max-h-[70vh] w-full rounded-2xl bg-black object-contain"
+                                      className="max-h-[55vh] w-full rounded-2xl bg-black object-contain"
                                       controls
                                       playsInline
                                       autoPlay
@@ -2186,8 +2107,89 @@ export default function RoomContent({
                                 {mediaError ? (
                                   <p className="text-sm text-red-300">{mediaError}</p>
                                 ) : null}
-                              </div>
-                            ) : null
+                              </>
+                            ) : null}
+                          </div>
+
+                          <div className="flex h-full flex-col items-center justify-center gap-3 rounded-2xl border border-emerald-200/40 bg-emerald-900/20 p-4 text-center">
+                            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-200">
+                              Answer
+                            </p>
+                            {isAnswerImageLoading ? (
+                              <p className="text-sm text-emerald-100">Loading answer…</p>
+                            ) : presentingAnswerImageUrl ? (
+                              <img
+                                src={presentingAnswerImageUrl}
+                                alt="Correct answer"
+                                className="max-h-[65vh] w-full rounded-2xl bg-black object-contain"
+                              />
+                            ) : answerImageError ? (
+                              <p className="text-sm text-red-300">{answerImageError}</p>
+                            ) : (
+                              <p className="text-sm text-emerald-100">
+                                Answer not available.
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          {!shouldShowMedia && presentingQuestion.prompt ? (
+                            <h2 className="text-3xl font-semibold leading-tight text-white">
+                              {presentingQuestion.prompt}
+                            </h2>
+                          ) : null}
+
+                          {presentingMedia && shouldShowMedia ? (
+                            <>
+                              {isMediaLoading ? (
+                                <p className="text-sm text-zinc-300">Loading media…</p>
+                              ) : presentingMediaUrl ? (
+                                mediaKind.isImage ? (
+                                  <img
+                                    key={presentingQuestion.id}
+                                    src={presentingMediaUrl}
+                                    alt={presentingMedia.filename ?? "Question media"}
+                                    className="max-h-[55vh] w-full rounded-2xl object-contain"
+                                  />
+                                ) : mediaKind.isVideo ? (
+                                  <video
+                                    key={presentingQuestion.id}
+                                    src={presentingMediaUrl}
+                                    className="max-h-[55vh] w-full rounded-2xl bg-black object-contain"
+                                    controls
+                                    playsInline
+                                    autoPlay
+                                    onLoadedMetadata={(event) => {
+                                      event.currentTarget.volume = DEFAULT_MEDIA_VOLUME;
+                                    }}
+                                  />
+                                ) : mediaKind.isAudio ? (
+                                  <audio
+                                    key={presentingQuestion.id}
+                                    src={presentingMediaUrl}
+                                    className="w-full"
+                                    controls
+                                    autoPlay
+                                    onLoadedMetadata={(event) => {
+                                      event.currentTarget.volume = DEFAULT_MEDIA_VOLUME;
+                                    }}
+                                  />
+                                ) : (
+                                  <a
+                                    href={presentingMediaUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-sm text-emerald-300 underline"
+                                  >
+                                    Open media
+                                  </a>
+                                )
+                              ) : null}
+                              {mediaError ? (
+                                <p className="text-sm text-red-300">{mediaError}</p>
+                              ) : null}
+                            </>
                           ) : null}
                         </>
                       )}
@@ -2274,7 +2276,7 @@ export default function RoomContent({
                     </button>
                   ) : null}
 
-                  {presentingQuestion?.media ? (
+                  {presentingQuestion?.media && presentingQuestion?.prompt ? (
                     <button
                       type="button"
                       onClick={shouldShowMedia ? handleHideMedia : handlePlayMedia}
