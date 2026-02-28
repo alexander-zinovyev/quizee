@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import QuizRound from "@/components/quiz-round";
+import QuizRound from "@/lib/components/quiz-round";
 import type { QuizRoundData } from "@/types/quiz";
 
 type RoomRoundsPanelProps = {

@@ -52,18 +52,15 @@ export default function ImageQuizRound({
   const [locks, setLocks] = useState<Record<string, boolean>>({});
 
   const matchedImageIds = new Set(
-    Object.values(matches).filter(Boolean) as string[]
+    questionIds
+      .map((questionId) => matches[questionId])
+      .filter(Boolean) as string[]
   );
   const unmatchedImageIds = imageIds.filter((id) => !matchedImageIds.has(id));
 
   const questionListRef = useRef<HTMLDivElement>(null);
   const imageListRef = useRef<HTMLDivElement>(null);
   const [zoomedImage, setZoomedImage] = useState<ImageItem | null>(null);
-  const [isClient, setIsClient] = useState(false);
-
-  useEffect(() => {
-    setIsClient(true);
-  }, []);
 
   useEffect(() => {
     if (!roomSlug || !teamId || !roundId) return;
@@ -96,15 +93,6 @@ export default function ImageQuizRound({
 
     return () => unsubscribe();
   }, [roomSlug, roundId, teamId]);
-
-  useEffect(() => {
-    setMatches((prev) =>
-      questionIds.reduce<MatchMap>((acc, id) => {
-        acc[id] = prev[id];
-        return acc;
-      }, {})
-    );
-  }, [questionIds]);
 
   useEffect(() => {
     if (!zoomedImage) return;
@@ -476,7 +464,9 @@ export default function ImageQuizRound({
           </section>
         </div>
       </article>
-      {isClient && zoomOverlay ? createPortal(zoomOverlay, document.body) : null}
+      {typeof document !== "undefined" && zoomOverlay
+        ? createPortal(zoomOverlay, document.body)
+        : null}
     </>
   );
 }

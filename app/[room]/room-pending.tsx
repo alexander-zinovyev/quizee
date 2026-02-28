@@ -1,6 +1,6 @@
 "use client";
 
-import type { TeamMember } from "@/components/team";
+import type { TeamMember } from "@/lib/components/team";
 import RoomLobbyLayout from "./room-lobby-layout";
 import type { RoomRosterTeam } from "./room-layout-types";
 

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 
 type MemberProps = {
   /**
@@ -184,7 +185,7 @@ export default function Member({
               aria-label="Lower hand"
               title="Lower hand"
             >
-              <img src="/hand.svg" alt="" className="h-4 w-4" />
+              <Image src="/hand.svg" alt="" width={16} height={16} className="h-4 w-4" />
             </button>
           </div>
         ) : null}

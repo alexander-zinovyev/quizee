@@ -1,4 +1,4 @@
-import type { TeamMember } from "@/components/team";
+import type { TeamMember } from "@/lib/components/team";
 
 export type RoomRosterTeam = {
   id: string;

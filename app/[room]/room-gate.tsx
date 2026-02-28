@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { collection, doc, getDoc, onSnapshot, updateDoc } from "firebase/firestore";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { collection, doc, onSnapshot, updateDoc } from "firebase/firestore";
 
 import { useFirebaseAuth } from "@/app/providers/firebase-auth-provider";
 import RoomJoinPage from "./room-join-page";
@@ -10,7 +10,7 @@ import RoomPending from "./room-pending";
 import RoomEnded from "./room-ended";
 import { getClientFirestore } from "@/lib/firebase/client";
 import type { RoomRosterTeam } from "./room-layout-types";
-import type { TeamMember } from "@/components/team";
+import type { TeamMember } from "@/lib/components/team";
 import { createMediaTransport } from "@/lib/media";
 import type { MediaParticipant, MediaTransport, SubscriptionPolicy } from "@/lib/media/transport";
 
@@ -368,6 +368,42 @@ export default function RoomGate({ roomSlug }: RoomGateProps) {
     };
   }, [authLoading, retryCount, roomSlug, user]);
 
+  const memberTeamMap = useMemo(() => {
+    const map: Record<string, string | null> = {};
+    teams.forEach((team) => {
+      team.members.forEach((member) => {
+        const id = member.id?.toString();
+        if (id) {
+          map[id] = team.id;
+        }
+      });
+    });
+    unassignedMembers.forEach((member) => {
+      const id = member.id?.toString();
+      if (id && !(id in map)) {
+        map[id] = null;
+      }
+    });
+    if (hostMember?.id) {
+      map[hostMember.id.toString()] = null;
+    }
+    return map;
+  }, [teams, unassignedMembers, hostMember?.id]);
+
+  const applyMediaPolicy = useCallback(
+    (policy: SubscriptionPolicy, options?: { isHost?: boolean }) => {
+      const transport = mediaTransportRef.current;
+      if (!transport) return;
+      void transport.setSubscriptionPolicy(policy, {
+        teamId: viewerTeamId,
+        hostId: hostMember?.id?.toString() ?? null,
+        isHost: options?.isHost ?? viewerIsHost,
+        memberTeamMap,
+      });
+    },
+    [hostMember?.id, memberTeamMap, viewerIsHost, viewerTeamId]
+  );
+
   useEffect(() => {
     if (MEDIA_DISABLED) {
       if (mediaSessionRef.current) {
@@ -409,7 +445,7 @@ export default function RoomGate({ roomSlug }: RoomGateProps) {
     return () => {
       cancelled = true;
     };
-  }, [isMember, roomSlug, user, viewerName]);
+  }, [applyMediaPolicy, getToken, isMember, roomSlug, user, viewerIsHost, viewerName]);
 
   const mediaById = useMemo(() => {
     return new Map(mediaParticipants.map((participant) => [participant.id, participant]));
@@ -419,69 +455,37 @@ export default function RoomGate({ roomSlug }: RoomGateProps) {
     [mediaParticipants]
   );
 
-  const attachMedia = (member: TeamMember): TeamMember => {
-    const id = member.id?.toString() ?? "";
-    const media =
-      mediaById.get(id) ??
-      (user?.uid && id === user.uid ? localMedia : undefined);
-    if (!media) return member;
-    return {
-      ...member,
-      audioTrack: media.audioTrack,
-      videoTrack: media.videoTrack,
-      muted: media.isLocal ?? member.muted,
-    };
-  };
+  const attachMedia = useCallback(
+    (member: TeamMember): TeamMember => {
+      const id = member.id?.toString() ?? "";
+      const media =
+        mediaById.get(id) ??
+        (user?.uid && id === user.uid ? localMedia : undefined);
+      if (!media) return member;
+      return {
+        ...member,
+        audioTrack: media.audioTrack,
+        videoTrack: media.videoTrack,
+        muted: media.isLocal ?? member.muted,
+      };
+    },
+    [localMedia, mediaById, user?.uid]
+  );
 
   const teamsWithMedia = useMemo(() => {
     return teams.map((team) => ({
       ...team,
       members: team.members.map(attachMedia),
     }));
-  }, [teams, mediaById]);
+  }, [attachMedia, teams]);
 
   const unassignedWithMedia = useMemo(() => {
     return unassignedMembers.map(attachMedia);
-  }, [unassignedMembers, mediaById]);
+  }, [attachMedia, unassignedMembers]);
 
   const hostWithMedia = useMemo(() => {
     return hostMember ? attachMedia(hostMember) : null;
-  }, [hostMember, mediaById]);
-
-  const memberTeamMap = useMemo(() => {
-    const map: Record<string, string | null> = {};
-    teams.forEach((team) => {
-      team.members.forEach((member) => {
-        const id = member.id?.toString();
-        if (id) {
-          map[id] = team.id;
-        }
-      });
-    });
-    unassignedMembers.forEach((member) => {
-      const id = member.id?.toString();
-      if (id && !(id in map)) {
-        map[id] = null;
-      }
-    });
-    if (hostMember?.id) {
-      map[hostMember.id.toString()] = null;
-    }
-    return map;
-  }, [teams, unassignedMembers, hostMember?.id]);
-
-  const applyMediaPolicy = useMemo(() => {
-    return (policy: SubscriptionPolicy, options?: { isHost?: boolean }) => {
-      const transport = mediaTransportRef.current;
-      if (!transport) return;
-      void transport.setSubscriptionPolicy(policy, {
-        teamId: viewerTeamId,
-        hostId: hostMember?.id?.toString() ?? null,
-        isHost: options?.isHost ?? viewerIsHost,
-        memberTeamMap,
-      });
-    };
-  }, [hostMember?.id, memberTeamMap, viewerIsHost, viewerTeamId]);
+  }, [attachMedia, hostMember]);
 
   useEffect(() => {
     if (!roomState || roomState === "playing") return;

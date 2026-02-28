@@ -189,27 +189,6 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    let totalPromptCount = 0;
-    let totalImageCount = 0;
-    let totalTextQuestionCount = 0;
-
-    rounds.forEach((round) => {
-      if (round.type === "text") {
-        totalTextQuestionCount += round.questions.length;
-        return;
-      }
-
-      round.questions.forEach((question) => {
-        totalImageCount += 1;
-        const promptText =
-          question.prompt ??
-          (question.answer?.trim().length ? question.answer.trim() : null);
-        if (promptText) {
-          totalPromptCount += 1;
-        }
-      });
-    });
-
     const auth = getServerAuth();
     const bearer = parseBearerToken(request.headers.get("authorization"));
     const cookieStore = await cookies();

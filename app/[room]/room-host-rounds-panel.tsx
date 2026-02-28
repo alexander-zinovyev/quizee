@@ -1,23 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-
-type HostRoundQuestion = {
-  id: string;
-  prompt: string;
-  answer: string;
-  order: number;
-};
-
-type HostRound = {
-  id: string;
-  title: string;
-  roundNumber: number;
-  order: number;
-  state: "scheduled" | "active" | "closed";
-  type: "text" | "image";
-  questions: HostRoundQuestion[];
-};
+import { useMemo, useState } from "react";
+import {
+  getVisibleHostQuestions,
+  resolveHostRoundId,
+  type HostRound,
+} from "./host-rounds";
 
 type RoomHostRoundsPanelProps = {
   rounds: HostRound[];
@@ -45,32 +33,13 @@ export default function RoomHostRoundsPanel({
     () => rounds.slice().sort((a, b) => a.order - b.order),
     [rounds]
   );
-  const [activeId, setActiveId] = useState<string | null>(
-    sanitizedRounds[0]?.id ?? null
-  );
+  const [selectedRoundId, setSelectedRoundId] = useState<string | null>(null);
+  const activeId = resolveHostRoundId(sanitizedRounds, selectedRoundId);
 
-  const activeRoundActive = useMemo(
-    () => sanitizedRounds.find((round) => round.state === "active") ?? null,
-    [sanitizedRounds]
-  );
-  const lastActiveIdRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    const activeRoundId = activeRoundActive?.id ?? null;
-
-    if (activeRoundId && activeRoundId !== lastActiveIdRef.current) {
-      setActiveId(activeRoundId);
-      lastActiveIdRef.current = activeRoundId;
-      return;
-    }
-
-    if (!activeId && sanitizedRounds[0]) {
-      setActiveId(sanitizedRounds[0].id);
-    }
-  }, [activeId, activeRoundActive, sanitizedRounds]);
   const activeRound =
     sanitizedRounds.find((round) => round.id === activeId) ??
     sanitizedRounds[0];
+  const visibleQuestions = activeRound ? getVisibleHostQuestions(activeRound) : [];
 
   if (!activeRound) {
     return (
@@ -96,7 +65,7 @@ export default function RoomHostRoundsPanel({
           return (
             <button
               key={round.id}
-              onClick={() => setActiveId(round.id)}
+              onClick={() => setSelectedRoundId(round.id)}
               title={round.title}
               className={`inline-flex shrink-0 items-center gap-2 rounded-full px-3 py-1 transition ${
                 isActive
@@ -141,12 +110,7 @@ export default function RoomHostRoundsPanel({
           </div>
         </div>
         <div className="flex h-full flex-col gap-3 overflow-auto pr-2">
-          {(activeRound.type === "text"
-            ? activeRound.questions.filter((q) =>
-                typeof q.answer === "string" ? q.answer.trim().length > 0 : true
-              )
-            : activeRound.questions
-          ).map((question) => (
+          {visibleQuestions.map((question) => (
               <div
                 key={question.id}
                 className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
@@ -214,9 +178,7 @@ export default function RoomHostRoundsPanel({
                 </p>
               </div>
             ))}
-          {!activeRound.questions.filter((q) =>
-            typeof q.answer === "string" ? q.answer.trim().length > 0 : true
-          ).length ? (
+          {!visibleQuestions.length ? (
             <p className="text-sm text-zinc-500 dark:text-zinc-400">
               No questions available.
             </p>

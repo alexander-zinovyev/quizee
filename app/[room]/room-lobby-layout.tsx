@@ -15,8 +15,8 @@ import {
 import { ColorPicker, type IColor } from "react-color-palette";
 import "react-color-palette/css";
 
-import Member from "@/components/member";
-import type { TeamMember } from "@/components/team";
+import Member from "@/lib/components/member";
+import type { TeamMember } from "@/lib/components/team";
 import { getClientFirestore } from "@/lib/firebase/client";
 import type { RoomRosterTeam } from "./room-layout-types";
 
@@ -69,10 +69,6 @@ function hashString(value: string): number {
     hash |= 0;
   }
   return hash;
-}
-
-function clamp(value: number, min = 0, max = 1) {
-  return Math.min(max, Math.max(min, value));
 }
 
 function hexToRgb(hex: string): { r: number; g: number; b: number, a: number } {

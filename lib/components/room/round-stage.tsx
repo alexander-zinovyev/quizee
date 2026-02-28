@@ -1,0 +1,398 @@
+import NextImage from "next/image";
+
+import type { RoundMeta, RoundQuestion } from "@/lib/hooks/use-room-rounds";
+
+type GradingAnswer = {
+  answer: string;
+  correct?: boolean;
+  order: number;
+  questionId: string;
+};
+
+type GradingTeam = {
+  answers: GradingAnswer[];
+  teamId: string;
+  teamName: string;
+};
+
+export function RoundStage({
+  answerImageError,
+  countdownDisplay,
+  countdownIsUrgent,
+  displayRoundMeta,
+  finalizeScores,
+  gradeAnswer,
+  gradingMatrix,
+  gradingTeamIndex,
+  isAnswerImageLoading,
+  isMediaLoading,
+  isPresentingImageRound,
+  mediaError,
+  mediaKind,
+  presenting,
+  presentingAnswer,
+  presentingAnswerImageUrl,
+  presentingMedia,
+  presentingMediaUrl,
+  presentingQuestion,
+  presentingRoundMeta,
+  setGradingTeamIndex,
+  shouldShowMedia,
+  mediaVolume,
+}: {
+  answerImageError: string | null;
+  countdownDisplay: string | null;
+  countdownIsUrgent: boolean;
+  displayRoundMeta: RoundMeta | null;
+  finalizeScores: () => void;
+  gradeAnswer: (teamId: string, questionId: string, correct: boolean) => void;
+  gradingMatrix: GradingTeam[];
+  gradingTeamIndex: number;
+  isAnswerImageLoading: boolean;
+  isMediaLoading: boolean;
+  isPresentingImageRound: boolean;
+  mediaError: string | null;
+  mediaKind: { isAudio: boolean; isImage: boolean; isVideo: boolean };
+  presenting: {
+    round?: string | null;
+    question?: string | null;
+    withAnswer?: boolean;
+  } | null;
+  presentingAnswer: string | null;
+  presentingAnswerImageUrl: string | null;
+  presentingMedia:
+    | {
+        filename?: string | null;
+      }
+    | null;
+  presentingMediaUrl: string | null;
+  presentingQuestion: RoundQuestion | null;
+  presentingRoundMeta: RoundMeta | null;
+  setGradingTeamIndex: React.Dispatch<React.SetStateAction<number>>;
+  shouldShowMedia: boolean;
+  mediaVolume: number;
+}) {
+  return (
+    <div className="relative flex-1 overflow-hidden bg-black">
+      {!presenting?.round ? (
+        displayRoundMeta ? (
+          <div className="flex h-full w-full items-center justify-center px-8 text-center text-2xl font-semibold text-white">
+            {displayRoundMeta.title}
+          </div>
+        ) : (
+          <div className="h-full w-full bg-black" />
+        )
+      ) : presenting?.round && !presenting?.question ? (
+        presentingRoundMeta?.state === "closed" &&
+        gradingMatrix.length &&
+        gradingTeamIndex >= 0 &&
+        gradingTeamIndex < gradingMatrix.length ? (
+          <div className="flex h-full w-full flex-col gap-4 overflow-auto px-6 py-6 text-white">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold uppercase tracking-[0.25em] text-emerald-200">
+                Grade answers · {presentingRoundMeta.title} ·{" "}
+                {gradingMatrix[gradingTeamIndex]?.teamName ?? ""}
+              </p>
+              <button
+                type="button"
+                onClick={finalizeScores}
+                className="inline-flex items-center justify-center rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-1"
+              >
+                Finish grading
+              </button>
+            </div>
+            <div className="space-y-3">
+              {gradingMatrix[gradingTeamIndex] ? (
+                <div
+                  key={gradingMatrix[gradingTeamIndex].teamId}
+                  className="rounded-2xl border border-emerald-200/40 bg-emerald-900/20 p-3"
+                >
+                  <div className="space-y-2">
+                    {gradingMatrix[gradingTeamIndex].answers.map((ans) => (
+                      <div
+                        key={ans.questionId}
+                        className="flex items-start gap-3 rounded-xl border border-emerald-200/30 bg-emerald-800/30 px-3 py-2"
+                      >
+                        <div className="w-8 text-xs font-semibold text-emerald-100">
+                          #{ans.order + 1}
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-sm text-white">{ans.answer || "—"}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void gradeAnswer(
+                                gradingMatrix[gradingTeamIndex].teamId,
+                                ans.questionId,
+                                true
+                              )
+                            }
+                            className={`inline-flex h-8 w-8 items-center justify-center rounded-md border ${
+                              ans.correct === true
+                                ? "border-emerald-500 bg-emerald-500 text-white"
+                                : "border-emerald-400 bg-emerald-400/20 text-emerald-100 hover:bg-emerald-400/40"
+                            }`}
+                            title="Mark correct"
+                          >
+                            ✓
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void gradeAnswer(
+                                gradingMatrix[gradingTeamIndex].teamId,
+                                ans.questionId,
+                                false
+                              )
+                            }
+                            className={`inline-flex h-8 w-8 items-center justify-center rounded-md border ${
+                              ans.correct === false
+                                ? "border-red-500 bg-red-500 text-white"
+                                : "border-red-400 bg-red-400/20 text-red-100 hover:bg-red-400/40"
+                            }`}
+                            title="Mark incorrect"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-3 flex items-center justify-between">
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setGradingTeamIndex((prev) => Math.max(0, prev - 1))
+                        }
+                        disabled={gradingTeamIndex <= 0}
+                        className="rounded-md bg-zinc-700 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-white disabled:opacity-50"
+                      >
+                        Prev team
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setGradingTeamIndex((prev) =>
+                            Math.min(gradingMatrix.length - 1, prev + 1)
+                          )
+                        }
+                        disabled={gradingTeamIndex >= gradingMatrix.length - 1}
+                        className="rounded-md bg-zinc-700 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-white disabled:opacity-50"
+                      >
+                        Next team
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : (
+          <div className="flex h-full w-full items-center justify-center px-8 text-center text-2xl font-semibold text-white">
+            {presentingRoundMeta?.title ?? "Round in progress"}
+          </div>
+        )
+      ) : presentingQuestion ? (
+        <div className="relative h-full w-full text-white">
+          <div className="presenting-scroll h-full w-full overflow-auto">
+            <div
+              className={
+                presentingMedia && shouldShowMedia
+                  ? "flex max-h-full px-4 py-4"
+                  : "flex flex-col gap-6 px-8 py-10"
+              }
+            >
+              {isPresentingImageRound && presenting?.withAnswer ? (
+                <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+                  <div className="space-y-6">
+                    {!shouldShowMedia && presentingQuestion.prompt ? (
+                      <h2 className="text-3xl font-semibold leading-tight text-white">
+                        {presentingQuestion.prompt}
+                      </h2>
+                    ) : null}
+
+                    {presentingMedia && shouldShowMedia ? (
+                      <>
+                        {isMediaLoading ? (
+                          <p className="text-sm text-zinc-300">Loading media…</p>
+                        ) : presentingMediaUrl ? (
+                          mediaKind.isImage ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              key={presentingQuestion.id}
+                              src={presentingMediaUrl}
+                              alt={presentingMedia.filename ?? "Question media"}
+                              className="max-h-[55vh] w-full rounded-2xl object-contain"
+                            />
+                          ) : mediaKind.isVideo ? (
+                            <video
+                              key={presentingQuestion.id}
+                              src={presentingMediaUrl}
+                              className="max-h-[55vh] w-full rounded-2xl bg-black object-contain"
+                              controls
+                              playsInline
+                              autoPlay
+                              onLoadedMetadata={(event) => {
+                                event.currentTarget.volume = mediaVolume;
+                              }}
+                            />
+                          ) : mediaKind.isAudio ? (
+                            <audio
+                              key={presentingQuestion.id}
+                              src={presentingMediaUrl}
+                              className="w-full"
+                              controls
+                              autoPlay
+                              onLoadedMetadata={(event) => {
+                                event.currentTarget.volume = mediaVolume;
+                              }}
+                            />
+                          ) : (
+                            <a
+                              href={presentingMediaUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-sm text-emerald-300 underline"
+                            >
+                              Open media
+                            </a>
+                          )
+                        ) : null}
+                        {mediaError ? (
+                          <p className="text-sm text-red-300">{mediaError}</p>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </div>
+
+                  <div className="flex h-full flex-col items-center justify-center gap-3 rounded-2xl border border-emerald-200/40 bg-emerald-900/20 p-4 text-center">
+                    <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-200">
+                      Answer
+                    </p>
+                    {isAnswerImageLoading ? (
+                      <p className="text-sm text-emerald-100">Loading answer…</p>
+                    ) : presentingAnswerImageUrl ? (
+                      <NextImage
+                        src={presentingAnswerImageUrl}
+                        alt="Correct answer"
+                        width={1400}
+                        height={900}
+                        unoptimized
+                        className="max-h-[65vh] h-auto w-full rounded-2xl bg-black object-contain"
+                      />
+                    ) : answerImageError ? (
+                      <p className="text-sm text-red-300">{answerImageError}</p>
+                    ) : (
+                      <p className="text-sm text-emerald-100">
+                        Answer not available.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {!shouldShowMedia && presentingQuestion.prompt ? (
+                    <h2 className="text-3xl font-semibold leading-tight text-white">
+                      {presentingQuestion.prompt}
+                    </h2>
+                  ) : null}
+
+                  {presentingMedia && shouldShowMedia ? (
+                    <>
+                      {isMediaLoading ? (
+                        <p className="text-sm text-zinc-300">Loading media…</p>
+                      ) : presentingMediaUrl ? (
+                        mediaKind.isImage ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            key={presentingQuestion.id}
+                            src={presentingMediaUrl}
+                            alt={presentingMedia.filename ?? "Question media"}
+                            className="max-h-[55vh] w-full rounded-2xl object-contain"
+                          />
+                        ) : mediaKind.isVideo ? (
+                          <video
+                            key={presentingQuestion.id}
+                            src={presentingMediaUrl}
+                            className="max-h-[55vh] w-full rounded-2xl bg-black object-contain"
+                            controls
+                            playsInline
+                            autoPlay
+                            onLoadedMetadata={(event) => {
+                              event.currentTarget.volume = mediaVolume;
+                            }}
+                          />
+                        ) : mediaKind.isAudio ? (
+                          <audio
+                            key={presentingQuestion.id}
+                            src={presentingMediaUrl}
+                            className="w-full"
+                            controls
+                            autoPlay
+                            onLoadedMetadata={(event) => {
+                              event.currentTarget.volume = mediaVolume;
+                            }}
+                          />
+                        ) : (
+                          <a
+                            href={presentingMediaUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-sm text-emerald-300 underline"
+                          >
+                            Open media
+                          </a>
+                        )
+                      ) : null}
+                      {mediaError ? (
+                        <p className="text-sm text-red-300">{mediaError}</p>
+                      ) : null}
+                    </>
+                  ) : null}
+                </>
+              )}
+
+              {!presentingQuestion.prompt && !presentingMedia ? (
+                <p className="text-sm text-zinc-300">No content for this question.</p>
+              ) : null}
+            </div>
+          </div>
+          {presenting?.withAnswer && presentingAnswer && !isPresentingImageRound ? (
+            <div
+              className="pointer-events-none absolute inset-0 flex items-center justify-center"
+              style={{
+                top: "10%",
+                left: "10%",
+                right: "10%",
+                bottom: "10%",
+              }}
+            >
+              <div className="flex h-full w-full items-center justify-center rounded-2xl border border-emerald-200/80 bg-emerald-700/98 px-8 py-6 text-center text-3xl font-semibold leading-tight text-white shadow-2xl">
+                <span className="block break-words">{presentingAnswer}</span>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <div className="flex h-full w-full items-center justify-center px-8 text-center text-xl font-semibold text-white">
+          Loading question…
+        </div>
+      )}
+
+      {countdownDisplay ? (
+        <div className="pointer-events-none absolute right-4 top-4">
+          <span
+            className={`text-xs font-semibold uppercase tracking-[0.3em] ${
+              countdownIsUrgent ? "text-red-300" : "text-zinc-400"
+            }`}
+          >
+            {countdownDisplay}
+          </span>
+        </div>
+      ) : null}
+    </div>
+  );
+}

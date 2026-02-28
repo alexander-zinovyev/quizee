@@ -210,7 +210,7 @@ export class DailyTransport implements MediaTransport {
       try {
         await this.call.updateParticipant(targetId, {
           setSubscribedTracks: { audio: shouldAudio, video },
-        } as any);
+        });
       } catch {
         // ignore subscription errors to keep UI responsive
       }

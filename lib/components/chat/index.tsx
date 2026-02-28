@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent, ReactNode } from "react";
 
 export type ChatMessage = {
@@ -125,7 +125,6 @@ export default function Chat({
 
   useEffect(() => {
     if (!autoSize) {
-      setChatSize(null);
       return;
     }
 
@@ -160,11 +159,16 @@ export default function Chat({
     return () => window.removeEventListener("resize", updateChatSize);
   }, [autoSize]);
 
-  useEffect(() => {
-    if (!composerActive) {
-      setShowEmojis(false);
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
+    const container = messagesContainerRef.current;
+    if (!container) {
+      return;
     }
-  }, [composerActive]);
+    container.scrollTo({
+      top: container.scrollHeight,
+      behavior,
+    });
+  }, []);
 
   useLayoutEffect(() => {
     const frame = requestAnimationFrame(() => {
@@ -174,27 +178,7 @@ export default function Chat({
     });
 
     return () => cancelAnimationFrame(frame);
-  }, [orderedMessages]);
-
-  function scrollToBottom(behavior: ScrollBehavior = "auto") {
-    const container = messagesContainerRef.current;
-    if (!container) {
-      return;
-    }
-    container.scrollTo({
-      top: container.scrollHeight,
-      behavior,
-    });
-  }
-
-  function getInitials(name: string) {
-    return name
-      .split(" ")
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((part) => part[0]?.toUpperCase() ?? "")
-      .join("");
-  }
+  }, [orderedMessages, scrollToBottom]);
 
   function renderContent(content: string | ReactNode) {
     if (typeof content !== "string") {
@@ -360,7 +344,7 @@ export default function Chat({
                 >
                   😊
                 </button>
-                {showEmojis ? (
+                {showEmojis && composerActive ? (
                   <div className="absolute right-0 top-10 z-10 flex w-48 flex-wrap gap-2 rounded-2xl border border-zinc-200 bg-white p-3 shadow-xl dark:border-zinc-700 dark:bg-zinc-800">
                     {emojiPalette.map((emoji) => (
                       <button

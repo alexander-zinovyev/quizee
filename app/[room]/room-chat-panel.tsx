@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { addDoc, collection, onSnapshot, orderBy, query, serverTimestamp } from "firebase/firestore";
-import Chat, { type ChatMessage } from "@/components/chat";
+import Chat, { type ChatMessage } from "@/lib/components/chat";
 import type { RoomRosterTeam } from "./room-layout-types";
 import { getClientFirestore } from "@/lib/firebase/client";
 import { useFirebaseAuth } from "@/app/providers/firebase-auth-provider";
@@ -36,10 +36,6 @@ export default function RoomChatPanel({
   const { user } = useFirebaseAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [activeChannelId, setActiveChannelId] = useState<string>("room");
-  const memberNamesKey = useMemo(
-    () => Object.entries(memberNames).map(([id, name]) => `${id}:${name}`).join("|"),
-    [memberNames]
-  );
 
   const channels: Channel[] = useMemo(() => {
     const base: Channel[] = [
@@ -111,7 +107,7 @@ export default function RoomChatPanel({
     });
 
     return () => unsubscribe();
-  }, [activeChannel, memberNamesKey, user?.uid]);
+  }, [activeChannel, memberNames, user?.uid]);
 
   async function handleSend(text: string) {
     if (!activeChannel?.canSend) return;
