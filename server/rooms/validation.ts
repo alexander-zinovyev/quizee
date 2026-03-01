@@ -1,25 +1,44 @@
 import { posix } from "node:path";
 
-export type ValidatedQuestion = {
-  order: number;
-  prompt: string | null;
+export type ValidatedStage = {
+  text?: string;
   media?: {
     path: string;
-    autoplay: boolean;
     storagePath?: string;
     contentType?: string;
     size?: number;
     filename?: string;
   };
-  answer: string;
 };
 
-export type ValidatedRound = {
+export type ValidatedTextQuestion = {
   order: number;
-  type: "text" | "image";
-  title: string;
-  questions: ValidatedQuestion[];
+  promptStages: ValidatedStage[];
+  answerHint: string;
+  answerStages: ValidatedStage[];
 };
+
+export type ValidatedImageQuestion = {
+  order: number;
+  prompt: ValidatedStage;
+  imagePath: string;
+};
+
+export type ValidatedTextRound = {
+  order: number;
+  type: "text";
+  title: string;
+  questions: ValidatedTextQuestion[];
+};
+
+export type ValidatedImageRound = {
+  order: number;
+  type: "image";
+  title: string;
+  questions: ValidatedImageQuestion[];
+};
+
+export type ValidatedRound = ValidatedTextRound | ValidatedImageRound;
 
 export const ROOM_ID_REGEX = /^[a-z0-9-]{3,50}$/;
 
@@ -43,6 +62,76 @@ function ensureString(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function validateMediaPath(
+  mediaPathRaw: unknown,
+  context: string
+): { path: string } | string {
+  const mediaPath =
+    typeof mediaPathRaw === "string" && mediaPathRaw.trim().length
+      ? mediaPathRaw.trim()
+      : null;
+  if (!mediaPath) {
+    return `${context}: media path is required.`;
+  }
+  if (mediaPath.startsWith("media/") || mediaPath.startsWith("/")) {
+    return `${context}: media path must be relative to the media folder (no "media/" prefix).`;
+  }
+  const ext = posix.extname(mediaPath).toLowerCase();
+  if (!ALLOWED_MEDIA_EXTENSIONS.has(ext)) {
+    return `${context}: unsupported media extension "${ext}".`;
+  }
+  return { path: mediaPath };
+}
+
+function validateStage(stageRaw: unknown, context: string): ValidatedStage | string {
+  if (!stageRaw || typeof stageRaw !== "object") {
+    return `${context}: stage must be an object.`;
+  }
+
+  const stage = stageRaw as Record<string, unknown>;
+  const text = ensureString(stage.text);
+  let media: ValidatedStage["media"] | undefined;
+
+  if (stage.media !== undefined && stage.media !== null) {
+    if (typeof stage.media === "string") {
+      const parsed = validateMediaPath(stage.media, context);
+      if (typeof parsed === "string") return parsed;
+      media = parsed;
+    } else if (typeof stage.media === "object") {
+      const mediaObj = stage.media as Record<string, unknown>;
+      const parsed = validateMediaPath(mediaObj.path, context);
+      if (typeof parsed === "string") return parsed;
+      media = parsed;
+    } else {
+      return `${context}: media must be a string path or an object with path.`;
+    }
+  }
+
+  if (!text && !media) {
+    return `${context}: at least one of text or media is required.`;
+  }
+
+  const next: ValidatedStage = {};
+  if (text) next.text = text;
+  if (media) next.media = media;
+  return next;
+}
+
+function validateStages(stagesRaw: unknown, context: string): ValidatedStage[] | string {
+  if (!Array.isArray(stagesRaw) || stagesRaw.length === 0) {
+    return `${context}: stages array is required and cannot be empty.`;
+  }
+
+  const stages: ValidatedStage[] = [];
+  for (let idx = 0; idx < stagesRaw.length; idx += 1) {
+    const stage = validateStage(stagesRaw[idx], `${context}, stage ${idx + 1}`);
+    if (typeof stage === "string") return stage;
+    stages.push(stage);
+  }
+
+  return stages;
 }
 
 export function validateRoomId(id: string | undefined): string | null {
@@ -89,57 +178,76 @@ export function validateQuizFile(content: string): ValidatedRound[] | string {
       return `Round ${roundIndex + 1}: questions array is required and cannot be empty.`;
     }
 
-    const validatedQuestions: ValidatedQuestion[] = [];
+    if (type === "text") {
+      const validatedQuestions: ValidatedTextQuestion[] = [];
 
+      for (let qIndex = 0; qIndex < questions.length; qIndex++) {
+        const question = questions[qIndex] as Record<string, unknown>;
+        const promptRaw = question?.prompt as Record<string, unknown> | undefined;
+        const answerRaw = question?.answer as Record<string, unknown> | undefined;
+        if (!promptRaw || typeof promptRaw !== "object") {
+          return `Round ${roundIndex + 1}, question ${qIndex + 1}: prompt object is required.`;
+        }
+        if (!answerRaw || typeof answerRaw !== "object") {
+          return `Round ${roundIndex + 1}, question ${qIndex + 1}: answer object is required.`;
+        }
+
+        const promptStages = validateStages(
+          promptRaw.stages,
+          `Round ${roundIndex + 1}, question ${qIndex + 1} prompt`
+        );
+        if (typeof promptStages === "string") return promptStages;
+
+        const answerStages = validateStages(
+          answerRaw.stages,
+          `Round ${roundIndex + 1}, question ${qIndex + 1} answer`
+        );
+        if (typeof answerStages === "string") return answerStages;
+
+        const hint = ensureString(answerRaw.hint);
+        if (!hint) {
+          return `Round ${roundIndex + 1}, question ${qIndex + 1}: answer.hint is required.`;
+        }
+
+        validatedQuestions.push({
+          order: qIndex,
+          promptStages,
+          answerHint: hint,
+          answerStages,
+        });
+      }
+
+      validatedRounds.push({
+        order: roundIndex,
+        type,
+        title,
+        questions: validatedQuestions,
+      });
+      continue;
+    }
+
+    const validatedQuestions: ValidatedImageQuestion[] = [];
     for (let qIndex = 0; qIndex < questions.length; qIndex++) {
       const question = questions[qIndex] as Record<string, unknown>;
-      const promptRaw = ensureString(question?.prompt);
-      const mediaRaw = question?.media as Record<string, unknown> | undefined;
-      const answerRaw = question?.answer;
-      const answer = typeof answerRaw === "string" ? answerRaw.trim() : "";
-      const mediaPathRaw = mediaRaw?.path;
-      const mediaAutoplayRaw = mediaRaw?.autoplay;
-      let media: ValidatedQuestion["media"] | undefined;
-      if (mediaRaw) {
-        const mediaPath =
-          typeof mediaPathRaw === "string" && mediaPathRaw.trim().length
-            ? mediaPathRaw.trim()
-            : null;
-        if (!mediaPath) {
-          return `Round ${roundIndex + 1}, question ${qIndex + 1}: media.path is required when media is provided.`;
-        }
-        if (mediaPath.startsWith("media/") || mediaPath.startsWith("/")) {
-          return `Round ${roundIndex + 1}, question ${qIndex + 1}: media.path must be relative to the media folder (no "media/" prefix).`;
-        }
-        const ext = posix.extname(mediaPath).toLowerCase();
-        if (!ALLOWED_MEDIA_EXTENSIONS.has(ext)) {
-          return `Round ${roundIndex + 1}, question ${qIndex + 1}: unsupported media extension "${ext}".`;
-        }
-        media = {
-          path: mediaPath,
-          autoplay: typeof mediaAutoplayRaw === "boolean" ? mediaAutoplayRaw : false,
-        };
-      }
-      const prompt = promptRaw ?? null;
+      const promptRaw = question?.prompt;
+      const imageRaw = question?.image;
 
-      if (type === "text") {
-        if (!prompt && !media) {
-          return `Round ${roundIndex + 1}, question ${qIndex + 1}: either prompt or media is required.`;
-        }
-        if (!answer.trim()) {
-          return `Round ${roundIndex + 1}, question ${qIndex + 1}: answer is required.`;
-        }
-      } else if (type === "image") {
-        if (!media) {
-          return `Round ${roundIndex + 1}, question ${qIndex + 1}: media is required for image rounds.`;
-        }
-      }
+      const prompt = validateStage(
+        promptRaw,
+        `Round ${roundIndex + 1}, question ${qIndex + 1} prompt`
+      );
+      if (typeof prompt === "string") return prompt;
+
+      const imagePath = validateMediaPath(
+        imageRaw,
+        `Round ${roundIndex + 1}, question ${qIndex + 1} image`
+      );
+      if (typeof imagePath === "string") return imagePath;
 
       validatedQuestions.push({
         order: qIndex,
         prompt,
-        media,
-        answer,
+        imagePath: imagePath.path,
       });
     }
 

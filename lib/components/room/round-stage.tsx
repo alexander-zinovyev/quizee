@@ -294,7 +294,7 @@ export function RoundStage({
                 </div>
               ) : (
                 <>
-                  {!shouldShowMedia && presentingQuestion.prompt ? (
+                  {presentingQuestion.prompt ? (
                     <h2 className="text-3xl font-semibold leading-tight text-white">
                       {presentingQuestion.prompt}
                     </h2>
@@ -360,7 +360,9 @@ export function RoundStage({
               ) : null}
             </div>
           </div>
-          {presenting?.withAnswer && presentingAnswer && !isPresentingImageRound ? (
+          {presenting?.withAnswer &&
+          !isPresentingImageRound &&
+          (presentingAnswer || presentingAnswerImageUrl) ? (
             <div
               className="pointer-events-none absolute inset-0 flex items-center justify-center"
               style={{
@@ -371,7 +373,27 @@ export function RoundStage({
               }}
             >
               <div className="flex h-full w-full items-center justify-center rounded-2xl border border-emerald-200/80 bg-emerald-700/98 px-8 py-6 text-center text-3xl font-semibold leading-tight text-white shadow-2xl">
-                <span className="block break-words">{presentingAnswer}</span>
+                <div
+                  className={`grid h-full w-full items-center gap-6 ${
+                    presentingAnswer && presentingAnswerImageUrl
+                      ? "md:grid-cols-2"
+                      : "grid-cols-1"
+                  }`}
+                >
+                  {presentingAnswer ? (
+                    <span className="block break-words">{presentingAnswer}</span>
+                  ) : null}
+                  {presentingAnswerImageUrl ? (
+                    <NextImage
+                      src={presentingAnswerImageUrl}
+                      alt="Answer media"
+                      width={1200}
+                      height={800}
+                      unoptimized
+                      className="max-h-[55vh] h-auto w-full rounded-2xl bg-black object-contain"
+                    />
+                  ) : null}
+                </div>
               </div>
             </div>
           ) : null}

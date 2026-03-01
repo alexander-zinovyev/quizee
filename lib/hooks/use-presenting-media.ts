@@ -48,7 +48,7 @@ function getMediaKind(media: RoundQuestionMedia | null | undefined): MediaKind {
 function shouldAutoStartMedia(question: RoundQuestion | null): boolean {
   if (!question?.media) return false;
   const kind = getMediaKind(question.media);
-  if (!question.prompt && (kind.isImage || question.media.autoplay)) {
+  if (!question.prompt && kind.isImage) {
     return true;
   }
   return false;
@@ -96,6 +96,9 @@ export function usePresentingMedia({
   const [presentingImageAnswerId, setPresentingImageAnswerId] = useState<string | null>(null);
   const [presentingAnswerImageUrl, setPresentingAnswerImageUrl] = useState<string | null>(null);
   const [presentingTextAnswer, setPresentingTextAnswer] = useState<string | null>(null);
+  const [presentingTextAnswerMediaPath, setPresentingTextAnswerMediaPath] = useState<string | null>(
+    null
+  );
   const [isAnswerImageLoading, setIsAnswerImageLoading] = useState(false);
   const [answerImageError, setAnswerImageError] = useState<string | null>(null);
 
@@ -137,6 +140,7 @@ export function usePresentingMedia({
     setPresentingAnswerImageUrl(null);
     setIsAnswerImageLoading(false);
     setPresentingTextAnswer(null);
+    setPresentingTextAnswerMediaPath(null);
 
     if (
       !presentingRoundMeta?.id ||
@@ -212,15 +216,38 @@ export function usePresentingMedia({
       answerRef,
       (answerSnap) => {
         const data = answerSnap.data();
-        const answer =
-          data && typeof data.answer === "string" && data.answer.trim().length
-            ? data.answer.trim()
+        const hint =
+          data && typeof data.hint === "string" && data.hint.trim().length
+            ? data.hint.trim()
             : null;
+        const stages = Array.isArray(data?.stages)
+          ? (data?.stages as Array<Record<string, unknown>>)
+          : [];
+        const stageText =
+          stages
+            .map((stage) =>
+              typeof stage?.text === "string" && stage.text.trim().length
+                ? stage.text.trim()
+                : null
+            )
+            .find((value): value is string => Boolean(value)) ?? null;
+        const mediaPath =
+          stages
+            .map((stage) => {
+              const media = stage?.media;
+              if (!media || typeof media !== "object") return null;
+              const path = (media as { storagePath?: unknown }).storagePath;
+              return typeof path === "string" && path.length ? path : null;
+            })
+            .find((value): value is string => Boolean(value)) ?? null;
+        const answer = stageText ?? hint;
         setPresentingTextAnswer(answer);
+        setPresentingTextAnswerMediaPath(mediaPath);
       },
       (error) => {
         console.error("[room-content] text answer reveal error", error);
         setPresentingTextAnswer(null);
+        setPresentingTextAnswerMediaPath(null);
       }
     );
 
@@ -238,8 +265,9 @@ export function usePresentingMedia({
     setPresentingAnswerImageUrl(null);
     setIsAnswerImageLoading(false);
 
-    if (!presentingImageAnswer?.media?.storagePath) return;
-    const storagePath = presentingImageAnswer.media.storagePath;
+    const storagePath =
+      presentingImageAnswer?.media?.storagePath ?? presentingTextAnswerMediaPath;
+    if (!storagePath) return;
     const cached = mediaUrlCacheRef.current.get(storagePath);
     if (cached) {
       setPresentingAnswerImageUrl(cached.url);
@@ -288,7 +316,7 @@ export function usePresentingMedia({
     return () => {
       cancelled = true;
     };
-  }, [presentingImageAnswer?.media?.storagePath]);
+  }, [presentingImageAnswer?.media?.storagePath, presentingTextAnswerMediaPath]);
 
   useEffect(() => {
     if (!presentingMedia?.storagePath || !shouldShowMedia) return;

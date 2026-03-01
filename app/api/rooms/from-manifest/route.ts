@@ -175,10 +175,27 @@ export async function POST(request: NextRequest) {
 
   const referencedMedia = new Set<string>();
   rounds.forEach((round) => {
+    if (round.type === "text") {
+      round.questions.forEach((q) => {
+        q.promptStages.forEach((stage) => {
+          if (stage.media?.path) {
+            referencedMedia.add(stage.media.path);
+          }
+        });
+        q.answerStages.forEach((stage) => {
+          if (stage.media?.path) {
+            referencedMedia.add(stage.media.path);
+          }
+        });
+      });
+      return;
+    }
+
     round.questions.forEach((q) => {
-      if (q.media?.path) {
-        referencedMedia.add(q.media.path);
+      if (q.prompt.media?.path) {
+        referencedMedia.add(q.prompt.media.path);
       }
+      referencedMedia.add(q.imagePath);
     });
   });
 
@@ -290,6 +307,39 @@ export async function POST(request: NextRequest) {
 
   const batch = db.batch();
   const copiedMedia = new Set<string>();
+  const resolveMedia = async (path: string) => {
+    const mediaMeta = mediaFiles.get(path);
+    if (!mediaMeta) {
+      throw new Error(`Missing media metadata for "${path}".`);
+    }
+
+    const storagePath = posix.join(
+      "rooms",
+      roomId,
+      "media",
+      mediaMeta.originalPath.replace(/^[\\/]+/, "").replace(/\\/g, "/")
+    );
+    if (!copiedMedia.has(storagePath)) {
+      await bucket.file(mediaMeta.uploadPath).copy(storagePath);
+      await bucket.file(storagePath).setMetadata({
+        contentType: mediaMeta.contentType,
+        cacheControl: "public,max-age=31536000,immutable",
+        metadata: {
+          originalPath: mediaMeta.originalPath,
+          filename: mediaMeta.filename,
+        },
+      });
+      copiedMedia.add(storagePath);
+    }
+
+    return {
+      storagePath,
+      contentType: mediaMeta.contentType,
+      size: mediaMeta.size,
+      filename: mediaMeta.filename,
+      originalPath: path,
+    };
+  };
 
   batch.set(roomRef, {
     title: roomName,
@@ -328,125 +378,89 @@ export async function POST(request: NextRequest) {
       state: "scheduled",
       activeWindow: { startedAt: null, endedAt: null },
       questionCount: round.questions.length,
+      gradingRequired: false,
     });
 
     if (round.type === "text") {
       for (const question of round.questions) {
         const questionId = `question-${question.order + 1}`;
         const questionRef = roundRef.collection("questions").doc(questionId);
-        const mediaMeta = question.media?.path
-          ? mediaFiles.get(question.media.path)
-          : null;
-        let storagePath: string | null = null;
-        if (mediaMeta) {
-          storagePath = posix.join(
-            "rooms",
-            roomId,
-            "media",
-            mediaMeta.originalPath.replace(/^[\\/]+/, "").replace(/\\/g, "/")
-          );
-          if (!copiedMedia.has(storagePath)) {
-            await bucket.file(mediaMeta.uploadPath).copy(storagePath);
-            await bucket.file(storagePath).setMetadata({
-              contentType: mediaMeta.contentType,
-              cacheControl: "public,max-age=31536000,immutable",
-              metadata: {
-                originalPath: mediaMeta.originalPath,
-                filename: mediaMeta.filename,
-              },
-            });
-            copiedMedia.add(storagePath);
-          }
-          question.media!.storagePath = storagePath;
-          question.media!.contentType = mediaMeta.contentType;
-          question.media!.size = mediaMeta.size;
-          question.media!.filename = mediaMeta.filename;
+        const promptStages = await Promise.all(
+          question.promptStages.map(async (stage) => {
+            if (!stage.media?.path) {
+              return { text: stage.text ?? null, media: null };
+            }
+            const media = await resolveMedia(stage.media.path);
+            return {
+              text: stage.text ?? null,
+              media,
+            };
+          })
+        );
+
+        batch.set(questionRef, {
+          order: question.order,
+          stages: promptStages,
+        });
+
+        const answerRef = roundRef.collection("answers").doc(questionId);
+        const answerStages = await Promise.all(
+          question.answerStages.map(async (stage) => {
+            if (!stage.media?.path) {
+              return { text: stage.text ?? null, media: null };
+            }
+            const media = await resolveMedia(stage.media.path);
+            return {
+              text: stage.text ?? null,
+              media,
+            };
+          })
+        );
+        batch.set(answerRef, {
+          hint: question.answerHint,
+          stages: answerStages,
+        });
+      }
+    } else {
+      for (const question of round.questions) {
+        const questionId = `question-${question.order + 1}`;
+        const questionRef = roundRef.collection("questions").doc(questionId);
+        let promptMedia:
+          | {
+              storagePath: string;
+              contentType: string;
+              size: number;
+              filename: string;
+              originalPath: string;
+            }
+          | null = null;
+
+        if (question.prompt.media?.path) {
+          promptMedia = await resolveMedia(question.prompt.media.path);
         }
 
         batch.set(questionRef, {
           order: question.order,
-          prompt: question.prompt,
-          media: storagePath
-            ? {
-                storagePath,
-                contentType: question.media?.contentType,
-                size: question.media?.size,
-                autoplay: question.media?.autoplay,
-                filename: question.media?.filename,
-                originalPath: question.media?.path,
-              }
-            : null,
+          text: question.prompt.text ?? null,
+          media: promptMedia,
+        });
+
+        const answerMedia = await resolveMedia(question.imagePath);
+        const imageRef = roundRef.collection("images").doc();
+        batch.set(imageRef, {
+          media: {
+            storagePath: answerMedia.storagePath,
+            contentType: answerMedia.contentType,
+            size: answerMedia.size,
+            filename: answerMedia.filename,
+            originalPath: answerMedia.originalPath,
+          },
         });
 
         const answerRef = roundRef.collection("answers").doc(questionId);
         batch.set(answerRef, {
-          answer: question.answer,
+          answer: imageRef.id,
         });
-      }
-    } else {
-      let promptOrder = 0;
-
-      for (const question of round.questions) {
-        const promptText =
-          question.prompt ??
-          (question.answer?.trim().length ? question.answer.trim() : null);
-        const mediaMeta = question.media?.path
-          ? mediaFiles.get(question.media.path)
-          : null;
-        let storagePath: string | null = null;
-        if (mediaMeta) {
-          storagePath = posix.join(
-            "rooms",
-            roomId,
-            "media",
-            mediaMeta.originalPath.replace(/^[\\/]+/, "").replace(/\\/g, "/")
-          );
-          if (!copiedMedia.has(storagePath)) {
-            await bucket.file(mediaMeta.uploadPath).copy(storagePath);
-            await bucket.file(storagePath).setMetadata({
-              contentType: mediaMeta.contentType,
-              cacheControl: "public,max-age=31536000,immutable",
-              metadata: {
-                originalPath: mediaMeta.originalPath,
-                filename: mediaMeta.filename,
-              },
-            });
-            copiedMedia.add(storagePath);
-          }
-          question.media!.storagePath = storagePath;
-          question.media!.contentType = mediaMeta.contentType;
-          question.media!.size = mediaMeta.size;
-          question.media!.filename = mediaMeta.filename;
-        }
-
-        if (!storagePath || !question.media?.storagePath) {
-          continue;
-        }
-
-        const imageRef = roundRef.collection("images").doc();
-        batch.set(imageRef, {
-          media: {
-            storagePath: question.media.storagePath,
-            contentType: question.media.contentType,
-            size: question.media.size,
-            autoplay: question.media.autoplay,
-            filename: question.media.filename,
-            originalPath: question.media.path,
-          },
-        });
-
-        if (promptText) {
-          const promptRef = roundRef.collection("prompts").doc();
-          batch.set(promptRef, {
-            order: promptOrder,
-            prompt: promptText,
-          });
-          const answerRef = roundRef.collection("answers").doc(promptRef.id);
-          batch.set(answerRef, {
-            answer: imageRef.id,
-          });
-          promptOrder += 1;
-        }
       }
     }
   }

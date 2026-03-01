@@ -76,7 +76,7 @@ function getMediaKind(media: RoundQuestion["media"] | null | undefined) {
 function shouldAutoStartMedia(question: RoundQuestion | null): boolean {
   if (!question?.media) return false;
   const kind = getMediaKind(question.media);
-  if (!question.prompt && (kind.isImage || question.media.autoplay)) {
+  if (!question.prompt && kind.isImage) {
     return true;
   }
   return false;
@@ -180,7 +180,12 @@ export default function RoomContent({
             questions: questions.map((q) => ({
               ...q,
               prompt: q.displayPrompt,
-              media: q.media,
+              media: q.media?.storagePath
+                ? {
+                    ...q.media,
+                    storagePath: getCachedMediaUrl(q.media.storagePath) ?? MEDIA_PLACEHOLDER,
+                  }
+                : q.media,
             })),
           };
         }
@@ -202,11 +207,17 @@ export default function RoomContent({
           const descriptionQuestions = questions
             .filter((q) => {
               const promptText = q.prompt ?? "";
-              return promptText.trim().length > 0;
+              return promptText.trim().length > 0 || Boolean(q.media?.storagePath);
             })
             .map((q, qIdx) => ({
               ...q,
               prompt: q.displayPrompt || q.prompt || `Item ${qIdx + 1}`,
+              media: q.media?.storagePath
+                ? {
+                    ...q.media,
+                    storagePath: getCachedMediaUrl(q.media.storagePath) ?? MEDIA_PLACEHOLDER,
+                  }
+                : q.media,
             }));
 
           return {

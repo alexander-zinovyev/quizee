@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quizee.local/schemas/quiz.schema.json",
+  "title": "Quizee Quiz Schema",
+  "description": "Schema for quiz packs containing text and image rounds.",
+  "type": "array",
+  "minItems": 1,
+  "items": {
+    "$ref": "#/$defs/round"
+  },
+  "$defs": {
+    "nonEmptyText": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": ".*\\S.*"
+    },
+    "relativeMediaPath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!media/)(?!.*(?:^|/)\\.\\.(?:/|$)).+\\.(png|jpg|jpeg|gif|webp|svg|mp3|wav|ogg|m4a|mp4|mov|webm)$"
+    },
+    "stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "$ref": "#/$defs/nonEmptyText"
+        },
+        "media": {
+          "$ref": "#/$defs/relativeMediaPath"
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "text"
+          ]
+        },
+        {
+          "required": [
+            "media"
+          ]
+        }
+      ]
+    },
+    "prompt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stages"
+      ],
+      "properties": {
+        "stages": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/stage"
+          }
+        }
+      }
+    },
+    "answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hint",
+        "stages"
+      ],
+      "properties": {
+        "hint": {
+          "$ref": "#/$defs/nonEmptyText"
+        },
+        "stages": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/stage"
+          }
+        }
+      }
+    },
+    "textQuestion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "prompt",
+        "answer"
+      ],
+      "properties": {
+        "prompt": {
+          "$ref": "#/$defs/prompt"
+        },
+        "answer": {
+          "$ref": "#/$defs/answer"
+        }
+      }
+    },
+    "imageQuestion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "prompt",
+        "image"
+      ],
+      "properties": {
+        "prompt": {
+          "$ref": "#/$defs/stage"
+        },
+        "image": {
+          "$ref": "#/$defs/relativeMediaPath"
+        }
+      }
+    },
+    "textRound": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "title",
+        "questions"
+      ],
+      "properties": {
+        "type": {
+          "const": "text"
+        },
+        "title": {
+          "$ref": "#/$defs/nonEmptyText"
+        },
+        "questions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/textQuestion"
+          }
+        }
+      }
+    },
+    "imageRound": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "title",
+        "questions"
+      ],
+      "properties": {
+        "type": {
+          "const": "image"
+        },
+        "title": {
+          "$ref": "#/$defs/nonEmptyText"
+        },
+        "questions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/imageQuestion"
+          }
+        }
+      }
+    },
+    "round": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/textRound"
+        },
+        {
+          "$ref": "#/$defs/imageRound"
+        }
+      ]
+    }
+  }
+}

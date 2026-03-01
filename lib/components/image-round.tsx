@@ -286,16 +286,27 @@ export default function ImageQuizRound({
                   ? images[imageIds.indexOf(matchedImageId)]
                   : undefined;
               const label = `${index + 1}. ${question.prompt ?? ""}`;
+              const questionMediaSrc = question.media?.storagePath ?? null;
 
               return (
                 <div
                   key={questionId}
                   className="rounded-2xl border border-zinc-200 bg-white/80 p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/80"
                 >
-                  <div className="flex items-center gap-4">
-                    <p className="flex-1 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                  <div className="flex items-start gap-4">
+                    <div className="flex-1 space-y-2">
+                      <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
                       {label}
-                    </p>
+                      </p>
+                      {questionMediaSrc ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={questionMediaSrc}
+                          alt={`Prompt media ${index + 1}`}
+                          className="max-h-32 w-full rounded-xl object-contain"
+                        />
+                      ) : null}
+                    </div>
                     <button
                       type="button"
                       onClick={() => handleToggleLock(questionId)}
