@@ -24,7 +24,6 @@ type PresentingState =
       round?: string | null;
       question?: string | null;
       withAnswer?: boolean;
-      playMedia?: boolean;
     }
   | null;
 
@@ -261,7 +260,6 @@ export default function RoomGate({ roomSlug }: RoomGateProps) {
                         ? presentingData.question
                         : presentingData.question ?? null,
                     withAnswer: Boolean(presentingData.withAnswer),
-                    playMedia: Boolean((presentingData as { playMedia?: boolean }).playMedia),
                   };
                 } else {
                   presentingValue = null;

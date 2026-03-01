@@ -37,7 +37,6 @@ export function RoundStage({
   presentingQuestion,
   presentingRoundMeta,
   setGradingTeamIndex,
-  shouldShowMedia,
   mediaVolume,
 }: {
   answerImageError: string | null;
@@ -69,7 +68,6 @@ export function RoundStage({
   presentingQuestion: RoundQuestion | null;
   presentingRoundMeta: RoundMeta | null;
   setGradingTeamIndex: React.Dispatch<React.SetStateAction<number>>;
-  shouldShowMedia: boolean;
   mediaVolume: number;
 }) {
   return (
@@ -200,7 +198,7 @@ export function RoundStage({
           <div className="presenting-scroll h-full w-full overflow-auto">
             <div
               className={
-                presentingMedia && shouldShowMedia
+                presentingMedia
                   ? "flex max-h-full px-4 py-4"
                   : "flex flex-col gap-6 px-8 py-10"
               }
@@ -208,13 +206,13 @@ export function RoundStage({
               {isPresentingImageRound && presenting?.withAnswer ? (
                 <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
                   <div className="space-y-6">
-                    {!shouldShowMedia && presentingQuestion.prompt ? (
+                    {presentingQuestion.prompt ? (
                       <h2 className="text-3xl font-semibold leading-tight text-white">
                         {presentingQuestion.prompt}
                       </h2>
                     ) : null}
 
-                    {presentingMedia && shouldShowMedia ? (
+                    {presentingMedia ? (
                       <>
                         {isMediaLoading ? (
                           <p className="text-sm text-zinc-300">Loading media…</p>
@@ -300,7 +298,7 @@ export function RoundStage({
                     </h2>
                   ) : null}
 
-                  {presentingMedia && shouldShowMedia ? (
+                  {presentingMedia ? (
                     <>
                       {isMediaLoading ? (
                         <p className="text-sm text-zinc-300">Loading media…</p>

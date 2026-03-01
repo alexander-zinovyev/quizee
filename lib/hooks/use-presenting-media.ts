@@ -17,7 +17,6 @@ type PresentingState =
       round?: string | null;
       question?: string | null;
       withAnswer?: boolean;
-      playMedia?: boolean;
     }
   | null;
 
@@ -43,15 +42,6 @@ function getMediaKind(media: RoundQuestionMedia | null | undefined): MediaKind {
     contentType.startsWith("video/") ||
     /\.(mp4|mov|webm)$/.test(name);
   return { isImage, isAudio, isVideo };
-}
-
-function shouldAutoStartMedia(question: RoundQuestion | null): boolean {
-  if (!question?.media) return false;
-  const kind = getMediaKind(question.media);
-  if (!question.prompt && kind.isImage) {
-    return true;
-  }
-  return false;
 }
 
 function cacheMediaUrl(
@@ -116,11 +106,7 @@ export function usePresentingMedia({
     );
   }, [presentingImageAnswerId, presentingRoundMeta?.id, roundImages]);
 
-  const shouldShowMedia =
-    !!presentingQuestion?.media &&
-    (typeof presenting?.playMedia === "boolean"
-      ? presenting.playMedia
-      : shouldAutoStartMedia(presentingQuestion));
+  const shouldShowMedia = !!presentingQuestion?.media;
 
   const isPresentingImageRound = presentingRoundMeta?.type === "image";
 
@@ -378,7 +364,10 @@ export function usePresentingMedia({
       const meta = roundsMeta.find((r) => r.id === roundId);
       const mediaItems =
         meta?.type === "image"
-          ? (roundImages[roundId] ?? []).map((img) => img.media)
+          ? [
+              ...(roundImages[roundId] ?? []).map((img) => img.media),
+              ...(roundQuestions[roundId] ?? []).map((q) => q.media),
+            ]
           : (roundQuestions[roundId] ?? []).map((q) => q.media);
       mediaItems.forEach((media) => {
         if (!media?.storagePath) return;

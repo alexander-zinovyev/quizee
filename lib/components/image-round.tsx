@@ -299,12 +299,47 @@ export default function ImageQuizRound({
                       {label}
                       </p>
                       {questionMediaSrc ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={questionMediaSrc}
-                          alt={`Prompt media ${index + 1}`}
-                          className="max-h-32 w-full rounded-xl object-contain"
-                        />
+                        <div className="group relative w-full">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={questionMediaSrc}
+                            alt={`Prompt media ${index + 1}`}
+                            className="max-h-32 w-full rounded-xl object-contain"
+                          />
+                          <button
+                            type="button"
+                            className="absolute right-2 top-2 hidden rounded-full bg-black/70 p-1.5 text-white transition hover:bg-black/90 focus:outline-none focus:ring-2 focus:ring-white/90 group-hover:flex"
+                            aria-label="Zoom prompt image"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              openZoom({
+                                id: `${questionId}-prompt`,
+                                src: questionMediaSrc,
+                                alt: `Prompt media ${index + 1}`,
+                                label: label,
+                              });
+                            }}
+                            onMouseDown={(event) => event.stopPropagation()}
+                            onPointerDown={(event) => event.stopPropagation()}
+                          >
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              className="h-4 w-4"
+                            >
+                              <circle cx="11" cy="11" r="8" />
+                              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                              <line x1="11" y1="8" x2="11" y2="14" />
+                              <line x1="8" y1="11" x2="14" y2="11" />
+                            </svg>
+                          </button>
+                        </div>
                       ) : null}
                     </div>
                     <button
@@ -402,6 +437,34 @@ export default function ImageQuizRound({
                             <line x1="6" y1="6" x2="18" y2="18" />
                           </svg>
                         </span>
+                        <button
+                          type="button"
+                          className="absolute left-3 top-3 hidden rounded-full bg-black/70 p-1.5 text-white transition hover:bg-black/90 focus:outline-none focus:ring-2 focus:ring-white/90 group-hover:flex"
+                          aria-label="Zoom matched image"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            openZoom(matchedImage);
+                          }}
+                          onMouseDown={(event) => event.stopPropagation()}
+                          onPointerDown={(event) => event.stopPropagation()}
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="h-4 w-4"
+                          >
+                            <circle cx="11" cy="11" r="8" />
+                            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                            <line x1="11" y1="8" x2="11" y2="14" />
+                            <line x1="8" y1="11" x2="14" y2="11" />
+                          </svg>
+                        </button>
                       </div>
                     ) : null}
                   </div>

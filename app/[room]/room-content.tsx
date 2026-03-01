@@ -20,7 +20,6 @@ import Team from "@/lib/components/team";
 import { RoundStage } from "@/lib/components/room/round-stage";
 import { usePresentingMedia } from "@/lib/hooks/use-presenting-media";
 import {
-  type RoundQuestion,
   useRoomRounds,
 } from "@/lib/hooks/use-room-rounds";
 import RoomChatPanel from "./room-chat-panel";
@@ -42,7 +41,6 @@ type RoomContentProps = {
     round?: string | null;
     question?: string | null;
     withAnswer?: boolean;
-    playMedia?: boolean;
   } | null;
   viewerTeamId?: string | null;
   viewerName?: string | null;
@@ -55,32 +53,8 @@ type RoomContentProps = {
 };
 
 const DEFAULT_MEDIA_VOLUME = 0.2;
-const MEDIA_PLACEHOLDER = "data:image/gif;base64,R0lGODlhAQABAAAAACw=";
-
-function getMediaKind(media: RoundQuestion["media"] | null | undefined) {
-  const contentType = (media?.contentType ?? "").toLowerCase();
-  const name =
-    (media?.filename ?? media?.originalPath ?? "").toString().toLowerCase();
-  const isImage =
-    contentType.startsWith("image/") ||
-    /\.(png|jpe?g|gif|webp|svg)$/.test(name);
-  const isAudio =
-    contentType.startsWith("audio/") ||
-    /\.(mp3|m4a|aac|wav|ogg)$/.test(name);
-  const isVideo =
-    contentType.startsWith("video/") ||
-    /\.(mp4|mov|webm)$/.test(name);
-  return { isImage, isAudio, isVideo };
-}
-
-function shouldAutoStartMedia(question: RoundQuestion | null): boolean {
-  if (!question?.media) return false;
-  const kind = getMediaKind(question.media);
-  if (!question.prompt && kind.isImage) {
-    return true;
-  }
-  return false;
-}
+const MEDIA_PLACEHOLDER =
+  "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
 
 export default function RoomContent({
   roomSlug,
@@ -152,7 +126,6 @@ export default function RoomContent({
     presentingMedia,
     presentingMediaUrl,
     presentingTextAnswer,
-    shouldShowMedia,
   } = usePresentingMedia({
     presenting,
     presentingQuestion,
@@ -388,7 +361,6 @@ export default function RoomContent({
     round: string | null;
     question: string | null;
     withAnswer: boolean;
-    playMedia?: boolean;
   }) {
     if (!isHost) return;
     setIsPresentingUpdatePending(true);
@@ -399,10 +371,6 @@ export default function RoomContent({
           round: next.round,
           question: next.question,
           withAnswer: next.withAnswer,
-          playMedia:
-            typeof next.playMedia === "boolean"
-              ? next.playMedia
-              : presenting?.playMedia ?? false,
         },
       });
     } catch (error) {
@@ -414,14 +382,10 @@ export default function RoomContent({
   }
 
   const presentQuestionFromPanel = async (roundId: string, questionId: string) => {
-    const question =
-      roundQuestions[roundId]?.find((q) => q.id === questionId) ?? null;
-    const autoPlay = shouldAutoStartMedia(question);
     await updatePresenting({
       round: roundId,
       question: questionId,
       withAnswer: false,
-      playMedia: autoPlay,
     });
   };
 
@@ -430,7 +394,6 @@ export default function RoomContent({
       round: activeRoundForControls?.id ?? null,
       question: null,
       withAnswer: false,
-      playMedia: false,
     });
   };
 
@@ -438,12 +401,10 @@ export default function RoomContent({
     if (!isHost || !activeRoundForControls) return;
     const firstQuestion = controlQuestions[0];
     if (!firstQuestion) return;
-    const autoPlay = shouldAutoStartMedia(firstQuestion);
     await updatePresenting({
       round: activeRoundForControls.id,
       question: firstQuestion.id,
       withAnswer: false,
-      playMedia: autoPlay,
     });
   }
 
@@ -452,12 +413,10 @@ export default function RoomContent({
     if (currentQuestionIndex < 0) return;
     const nextQuestion = controlQuestions[currentQuestionIndex + 1];
     if (!nextQuestion) return;
-    const autoPlay = shouldAutoStartMedia(nextQuestion);
     await updatePresenting({
       round: activeRoundForControls.id,
       question: nextQuestion.id,
       withAnswer: false,
-      playMedia: autoPlay,
     });
   }
 
@@ -467,7 +426,6 @@ export default function RoomContent({
       round: activeRoundForControls.id,
       question: null,
       withAnswer: false,
-      playMedia: false,
     });
   }
 
@@ -487,7 +445,6 @@ export default function RoomContent({
             round: roundId,
             question: null,
             withAnswer: false,
-            playMedia: false,
           },
         }),
       ]);
@@ -521,33 +478,10 @@ export default function RoomContent({
 
   async function handleToggleAnswer() {
     if (!isHost || !presentingQuestion || !presentingRoundMeta) return;
-    const currentPlayMedia =
-      presenting?.playMedia ?? shouldAutoStartMedia(presentingQuestion);
     await updatePresenting({
       round: presentingRoundMeta.id,
       question: presentingQuestion.id,
       withAnswer: !presenting?.withAnswer,
-      playMedia: currentPlayMedia,
-    });
-  }
-
-  async function handlePlayMedia() {
-    if (!isHost || !presentingQuestion || !presentingRoundMeta) return;
-    await updatePresenting({
-      round: presentingRoundMeta.id,
-      question: presentingQuestion.id,
-      withAnswer: presenting?.withAnswer ?? false,
-      playMedia: true,
-    });
-  }
-
-  async function handleHideMedia() {
-    if (!isHost || !presentingQuestion || !presentingRoundMeta) return;
-    await updatePresenting({
-      round: presentingRoundMeta.id,
-      question: presentingQuestion.id,
-      withAnswer: presenting?.withAnswer ?? false,
-      playMedia: false,
     });
   }
 
@@ -696,7 +630,6 @@ export default function RoomContent({
             round: activeRoundForControls.id,
             question: null,
             withAnswer: false,
-            playMedia: false,
           },
         }),
       ]);
@@ -717,7 +650,7 @@ export default function RoomContent({
       const db = getClientFirestore();
       await updateDoc(doc(db, "rooms", roomSlug), {
         state: "ended",
-        presenting: { round: null, question: null, withAnswer: false, playMedia: false },
+        presenting: { round: null, question: null, withAnswer: false },
       });
       clearCachedMedia();
     } catch (error) {
@@ -951,11 +884,11 @@ export default function RoomContent({
 
     if (shouldPlay) {
       if (!handAudioRef.current) {
-        handAudioRef.current = new Audio("/hand.mp3");
+      handAudioRef.current = new Audio("/hand.mp3");
       }
       handAudioRef.current.currentTime = 0;
       handAudioRef.current.play().catch(() => {
-        // ignore autoplay restrictions
+        // ignore browser media-playback restrictions
       });
     }
   }, [handMembers]);
@@ -1120,7 +1053,7 @@ export default function RoomContent({
           gradingRequired: true,
         }),
         updateDoc(roomRef, {
-          presenting: { round: nextScheduledRound.id, question: null, withAnswer: false, playMedia: false },
+          presenting: { round: nextScheduledRound.id, question: null, withAnswer: false },
         }),
       ]);
     } catch (error) {
@@ -1229,7 +1162,6 @@ export default function RoomContent({
               presentingQuestion={presentingQuestion}
               presentingRoundMeta={presentingRoundMeta}
               setGradingTeamIndex={setGradingTeamIndex}
-              shouldShowMedia={shouldShowMedia}
             />
             {isHost && activeRoundForControls ? (
               <footer className="border-t border-white/10 bg-black/40 px-5 py-3 text-white">
@@ -1283,17 +1215,6 @@ export default function RoomContent({
                       className="rounded-lg bg-zinc-700 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-zinc-600 focus:outline-none focus:ring-2 focus:ring-white/30 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
                     >
                       Hide question
-                    </button>
-                  ) : null}
-
-                  {presentingQuestion?.media && presentingQuestion?.prompt ? (
-                    <button
-                      type="button"
-                      onClick={shouldShowMedia ? handleHideMedia : handlePlayMedia}
-                      disabled={isPresentingUpdatePending}
-                      className="rounded-lg bg-emerald-500 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
-                    >
-                      {shouldShowMedia ? "Hide media" : "Play media"}
                     </button>
                   ) : null}
 

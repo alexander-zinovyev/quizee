@@ -14,7 +14,6 @@ export type Question = {
     storagePath: string;
     contentType?: string | null;
     size?: number | null;
-    autoplay?: boolean;
     filename?: string | null;
     originalPath?: string | null;
   } | null;

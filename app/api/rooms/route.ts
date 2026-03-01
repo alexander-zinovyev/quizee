@@ -171,7 +171,7 @@ export async function POST(request: NextRequest) {
         });
       } else {
         round.questions.forEach((q) => {
-          if (q.prompt.media?.path) {
+          if (q.prompt?.media?.path) {
             referencedMedia.add(q.prompt.media.path);
           }
           referencedMedia.add(q.imagePath);
@@ -297,7 +297,7 @@ export async function POST(request: NextRequest) {
       title: name,
       state: INITIAL_ROOM_STATE,
       createdAt: FieldValue.serverTimestamp(),
-      presenting: { round: null, question: null, withAnswer: false, playMedia: false },
+      presenting: { round: null, question: null, withAnswer: false },
       handRaisingEnabled: true,
       countdownEndsAt: null,
     });
@@ -374,6 +374,25 @@ export async function POST(request: NextRequest) {
         }
       } else {
         for (const question of round.questions) {
+          const imageMedia = await resolveMedia(question.imagePath);
+          const imageRef = roundRef.collection("images").doc();
+          batch.set(imageRef, {
+            media: {
+              storagePath: imageMedia.storagePath,
+              contentType: imageMedia.contentType,
+              size: imageMedia.size,
+              filename: imageMedia.filename,
+              originalPath: imageMedia.originalPath,
+            },
+          });
+
+          const hasPromptContent = Boolean(
+            question.prompt?.text || question.prompt?.media?.path
+          );
+          if (!hasPromptContent) {
+            continue;
+          }
+
           const questionId = `question-${question.order + 1}`;
           const questionRef = roundRef.collection("questions").doc(questionId);
           let promptMedia:
@@ -385,26 +404,14 @@ export async function POST(request: NextRequest) {
                 originalPath: string;
               }
             | null = null;
-          if (question.prompt.media?.path) {
+          if (question.prompt?.media?.path) {
             promptMedia = await resolveMedia(question.prompt.media.path);
           }
 
           batch.set(questionRef, {
             order: question.order,
-            text: question.prompt.text ?? null,
+            text: question.prompt?.text ?? null,
             media: promptMedia,
-          });
-
-          const imageMedia = await resolveMedia(question.imagePath);
-          const imageRef = roundRef.collection("images").doc();
-          batch.set(imageRef, {
-            media: {
-              storagePath: imageMedia.storagePath,
-              contentType: imageMedia.contentType,
-              size: imageMedia.size,
-              filename: imageMedia.filename,
-              originalPath: imageMedia.originalPath,
-            },
           });
 
           const answerRef = roundRef.collection("answers").doc(questionId);

@@ -99,7 +99,6 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "prompt",
         "image"
       ],
       "properties": {

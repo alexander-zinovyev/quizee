@@ -20,7 +20,7 @@ export type ValidatedTextQuestion = {
 
 export type ValidatedImageQuestion = {
   order: number;
-  prompt: ValidatedStage;
+  prompt: ValidatedStage | null;
   imagePath: string;
 };
 
@@ -117,6 +117,31 @@ function validateStage(stageRaw: unknown, context: string): ValidatedStage | str
   if (text) next.text = text;
   if (media) next.media = media;
   return next;
+}
+
+function normalizeOptionalPrompt(stageRaw: unknown, context: string): ValidatedStage | null | string {
+  if (stageRaw === undefined || stageRaw === null) {
+    return null;
+  }
+  if (!stageRaw || typeof stageRaw !== "object") {
+    return `${context}: stage must be an object.`;
+  }
+  const stageObj = stageRaw as Record<string, unknown>;
+  const hasText = typeof stageObj.text === "string" && stageObj.text.trim().length > 0;
+  const mediaRaw = stageObj.media;
+  const hasMediaPath =
+    typeof mediaRaw === "string"
+      ? mediaRaw.trim().length > 0
+      : !!(
+          mediaRaw &&
+          typeof mediaRaw === "object" &&
+          typeof (mediaRaw as { path?: unknown }).path === "string" &&
+          (mediaRaw as { path?: string }).path?.trim().length
+        );
+  if (!hasText && !hasMediaPath) {
+    return null;
+  }
+  return validateStage(stageRaw, context);
 }
 
 function validateStages(stagesRaw: unknown, context: string): ValidatedStage[] | string {
@@ -232,7 +257,7 @@ export function validateQuizFile(content: string): ValidatedRound[] | string {
       const promptRaw = question?.prompt;
       const imageRaw = question?.image;
 
-      const prompt = validateStage(
+      const prompt = normalizeOptionalPrompt(
         promptRaw,
         `Round ${roundIndex + 1}, question ${qIndex + 1} prompt`
       );
