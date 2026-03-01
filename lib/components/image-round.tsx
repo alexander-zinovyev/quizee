@@ -273,7 +273,7 @@ export default function ImageQuizRound({
   return (
     <>
       <article className="flex h-full w-full flex-col gap-4 overflow-auto pr-2">
-        <div className="flex flex-1 min-h-0 flex-col gap-4 overflow-hidden">
+        <div className="flex flex-1 min-h-0 flex-col gap-4 overflow-hidden lg:flex-row">
           <section
             ref={questionListRef}
             className="grid flex-1 grid-cols-1 gap-3 overflow-auto pr-2"
@@ -473,10 +473,10 @@ export default function ImageQuizRound({
             })}
           </section>
 
-          <section className="flex h-32 shrink-0 flex-col rounded-2xl border border-zinc-200 bg-zinc-50/80 p-3 dark:border-zinc-800 dark:bg-zinc-900/60">
+          <section className="flex flex-none min-h-0 flex-col rounded-2xl border border-zinc-200 bg-zinc-50/80 p-4 dark:border-zinc-800 dark:bg-zinc-900/60">
             <div
               ref={imageListRef}
-              className="flex h-full items-center gap-3 overflow-x-auto overflow-y-hidden pr-2"
+              className="grid flex-1 grid-cols-1 gap-3 overflow-auto pr-2 lg:grid-cols-1 xl:grid-cols-1"
             >
               {unmatchedImageIds.length ? (
                 unmatchedImageIds.map((imageId) => {
@@ -485,16 +485,16 @@ export default function ImageQuizRound({
                   return (
                     <div
                       key={imageId}
-                      className="group relative flex h-20 w-20 shrink-0 cursor-grab items-center justify-center rounded-xl border border-zinc-200 bg-white/95 p-2 shadow-sm transition hover:border-blue-300 active:cursor-grabbing dark:border-zinc-700 dark:bg-zinc-950"
+                      className="group relative flex cursor-grab items-center justify-center rounded-xl border border-zinc-200 bg-white/95 p-2 shadow-sm transition hover:border-blue-300 active:cursor-grabbing dark:border-zinc-700 dark:bg-zinc-950"
                       draggable
                       onDragStart={(event) => handleImageDrag(event, imageId)}
                     >
-                      <div className="relative h-full w-full overflow-hidden rounded-lg bg-zinc-100 dark:bg-zinc-900">
+                      <div className="relative h-16 w-16 overflow-hidden rounded-lg bg-zinc-100 dark:bg-zinc-900">
                         <Image
                           src={unmatchedImage.src}
                           alt={unmatchedImage.alt ?? "Quiz image option"}
                           fill
-                          sizes="80px"
+                          sizes="(max-width: 640px) 40vw, 128px"
                           className="object-cover"
                         />
                         <button
@@ -530,7 +530,7 @@ export default function ImageQuizRound({
                   );
                 })
               ) : (
-                <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                <p className="col-span-full text-sm text-zinc-500 dark:text-zinc-400">
                   All images have been assigned. Drag one away to adjust a match.
                 </p>
               )}
