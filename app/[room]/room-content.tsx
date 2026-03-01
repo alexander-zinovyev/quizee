@@ -1645,7 +1645,7 @@ export default function RoomContent({
                       max={99}
                       value={countdownMinutes}
                       onChange={(event) => setCountdownMinutes(event.target.value)}
-                      className="w-14 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-sm text-zinc-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                      className="w-10 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-sm text-zinc-900 shadow-sm [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
                       aria-label="Countdown minutes"
                     />
                     <span className="text-sm text-zinc-500">:</span>
@@ -1655,7 +1655,7 @@ export default function RoomContent({
                       max={59}
                       value={countdownSeconds}
                       onChange={(event) => setCountdownSeconds(event.target.value)}
-                      className="w-14 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-sm text-zinc-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                      className="w-10 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-sm text-zinc-900 shadow-sm [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
                       aria-label="Countdown seconds"
                     />
                     <button
