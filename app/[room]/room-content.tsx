@@ -26,6 +26,7 @@ import {
 import RoomChatPanel from "./room-chat-panel";
 import RoomRoundsPanel from "./room-rounds-panel";
 import RoomHostRoundsPanel from "./room-host-rounds-panel";
+import TeamScoreBreakdownDialog from "./team-score-breakdown-dialog";
 import type { HostRound } from "./host-rounds";
 import type { RoomRosterTeam } from "./room-layout-types";
 import type { TeamMember } from "@/lib/components/team";
@@ -115,7 +116,7 @@ export default function RoomContent({
   const { user, getToken } = useFirebaseAuth();
   const [memberSize, setMemberSize] = useState<number | undefined>(undefined);
   const [teamAnswers, setTeamAnswers] = useState<
-    Record<string, Record<string, Record<string, { answer: string; correct?: boolean }>>>
+    Record<string, Record<string, Record<string, { answer: string; awardedPoints?: number }>>>
   >({});
   const [isActivatingNext, setIsActivatingNext] = useState(false);
   const [isPresentingUpdatePending, setIsPresentingUpdatePending] = useState(false);
@@ -131,6 +132,8 @@ export default function RoomContent({
   const [localCountdownEndsAt, setLocalCountdownEndsAt] = useState<Date | null>(null);
   const [gradingTeamIndex, setGradingTeamIndex] = useState(0);
   const [activeEavesdropTeamId, setActiveEavesdropTeamId] = useState<string | null>(null);
+  const [teamScoreOverrides, setTeamScoreOverrides] = useState<Record<string, number>>({});
+  const [scoreBreakdownTeamId, setScoreBreakdownTeamId] = useState<string | null>(null);
   const activeTextRoundIdRef = useRef<string | null>(null);
 
   const {
@@ -375,7 +378,7 @@ export default function RoomContent({
             order: idx,
             answer: teamAnswer?.answer ?? "",
             hint,
-            correct: teamAnswer?.correct,
+            awardedPoints: teamAnswer?.awardedPoints,
           };
         });
         return {
@@ -832,8 +835,28 @@ export default function RoomContent({
     }
   }
 
-  async function gradeAnswer(teamId: string, questionId: string, correct: boolean) {
+  async function gradeAnswer(teamId: string, questionId: string, awardedPoints: number) {
     if (!isHost || !presentingRoundMeta || presentingRoundMeta.state !== "closed") return;
+    const clampedPoints = Math.max(0, awardedPoints);
+    setTeamAnswers((prev) => {
+      const roundId = presentingRoundMeta.id;
+      const roundEntry = prev[roundId] ?? {};
+      const teamEntry = roundEntry[teamId] ?? {};
+      const existingAnswer = teamEntry[questionId] ?? { answer: "" };
+      return {
+        ...prev,
+        [roundId]: {
+          ...roundEntry,
+          [teamId]: {
+            ...teamEntry,
+            [questionId]: {
+              ...existingAnswer,
+              awardedPoints: clampedPoints,
+            },
+          },
+        },
+      };
+    });
     const db = getClientFirestore();
     const answerRef = doc(
       db,
@@ -849,12 +872,49 @@ export default function RoomContent({
     await setDoc(
       answerRef,
       {
-        correct,
+        awardedPoints: clampedPoints,
         gradedAt: serverTimestamp(),
         gradedBy: user?.uid ?? null,
       },
       { merge: true }
     );
+  }
+
+  async function recomputeTeamScores(teamId: string) {
+    if (!teamId) return;
+    const db = getClientFirestore();
+    const batch = writeBatch(db);
+    const sortedRoundIds = roundsMeta
+      .slice()
+      .sort((a, b) => a.order - b.order)
+      .map((round) => round.id);
+
+    const roundScores = await Promise.all(
+      sortedRoundIds.map(async (roundId) => {
+        const answersSnap = await getDocs(
+          collection(db, "rooms", roomSlug, "rounds", roundId, "teamAnswers", teamId, "answers")
+        );
+        const roundScore = answersSnap.docs.reduce((sum, answerDoc) => {
+          const data = answerDoc.data();
+          const rawPoints = typeof data.awardedPoints === "number" ? data.awardedPoints : 0;
+          return sum + Math.max(0, rawPoints);
+        }, 0);
+        return { roundId, roundScore };
+      })
+    );
+
+    const scoreTotal = roundScores.reduce((sum, entry) => sum + entry.roundScore, 0);
+    roundScores.forEach(({ roundId, roundScore }) => {
+      batch.set(
+        doc(db, "rooms", roomSlug, "teams", teamId, "scores", roundId),
+        { score: roundScore },
+        { merge: true }
+      );
+    });
+
+    batch.set(doc(db, "rooms", roomSlug, "teams", teamId), { scoreTotal }, { merge: true });
+    await batch.commit();
+    setTeamScoreOverrides((prev) => ({ ...prev, [teamId]: scoreTotal }));
   }
 
   async function finalizeScores() {
@@ -866,7 +926,10 @@ export default function RoomContent({
 
     const teamUpdates = await Promise.all(
       Object.entries(answersForRound).map(async ([teamId, answers]) => {
-        const correctCount = Object.values(answers).filter((ans) => ans.correct === true).length;
+        const awardedScore = Object.values(answers).reduce((sum, ans) => {
+          const points = typeof ans.awardedPoints === "number" ? ans.awardedPoints : 0;
+          return sum + Math.max(0, points);
+        }, 0);
         const scoreRef = doc(db, "rooms", roomSlug, "teams", teamId, "scores", roundId);
         const teamRef = doc(db, "rooms", roomSlug, "teams", teamId);
         const [scoreSnap, teamSnap] = await Promise.all([
@@ -881,14 +944,14 @@ export default function RoomContent({
           teamSnap.exists() && typeof teamSnap.data().scoreTotal === "number"
             ? (teamSnap.data().scoreTotal as number)
             : 0;
-        const nextTotal = Math.max(0, currentTotal - previousScore + correctCount);
+        const nextTotal = Math.max(0, currentTotal - previousScore + awardedScore);
 
-        return { teamId, correctCount, scoreRef, teamRef, nextTotal };
+        return { teamId, awardedScore, scoreRef, teamRef, nextTotal };
       })
     );
 
-    teamUpdates.forEach(({ teamId, correctCount, scoreRef, teamRef, nextTotal }) => {
-      batch.set(scoreRef, { score: correctCount }, { merge: true });
+    teamUpdates.forEach(({ teamId, awardedScore, scoreRef, teamRef, nextTotal }) => {
+      batch.set(scoreRef, { score: awardedScore }, { merge: true });
       batch.set(teamRef, { scoreTotal: nextTotal }, { merge: true });
       const teamAnswersRef = doc(db, "rooms", roomSlug, "rounds", roundId, "teamAnswers", teamId);
       batch.set(teamAnswersRef, { graded: true }, { merge: true });
@@ -1097,19 +1160,25 @@ export default function RoomContent({
 
         const answersRef = collection(teamDoc.ref, "answers");
         const unsubAnswers = onSnapshot(answersRef, (answersSnap) => {
-          const answerMap: Record<string, { answer: string; correct?: boolean }> = {};
+          const answerMap: Record<string, { answer: string; awardedPoints?: number }> = {};
           answersSnap.forEach((ansDoc) => {
             const data = ansDoc.data();
             answerMap[ansDoc.id] = {
               answer: (data.answer as string) ?? "",
-              correct: data.correct as boolean | undefined,
+              awardedPoints:
+                typeof data.awardedPoints === "number"
+                  ? (data.awardedPoints as number)
+                  : undefined,
             };
           });
           setTeamAnswers((prev) => ({
             ...prev,
             [roundId]: {
               ...(prev[roundId] ?? {}),
-              [teamId]: answerMap,
+              [teamId]: {
+                ...((prev[roundId] ?? {})[teamId] ?? {}),
+                ...answerMap,
+              },
             },
           }));
         });
@@ -1322,8 +1391,8 @@ export default function RoomContent({
               countdownIsUrgent={countdownIsUrgent}
               displayRoundMeta={displayRoundMeta}
               finalizeScores={() => void finalizeScores()}
-              gradeAnswer={(teamId, questionId, correct) =>
-                void gradeAnswer(teamId, questionId, correct)
+              gradeAnswer={(teamId, questionId, awardedPoints) =>
+                void gradeAnswer(teamId, questionId, awardedPoints)
               }
               gradingMatrix={gradingMatrix}
               gradingTeamIndex={gradingTeamIndex}
@@ -1493,12 +1562,44 @@ export default function RoomContent({
               <Team
                 name={teams[0].name}
                 color={teams[0].color ?? undefined}
-                score={teamsForDisplay[0]?.scoreTotal ?? teams[0].scoreTotal ?? undefined}
+                score={
+                  teamScoreOverrides[teams[0].id] ??
+                  teamsForDisplay[0]?.scoreTotal ??
+                  teams[0].scoreTotal ??
+                  undefined
+                }
                 members={teamsForDisplay[0]?.members ?? teams[0].members}
                 appearance="bare"
                 className="h-full justify-end"
                 memberSize={memberSize}
                 emptyLabel="No members yet."
+                scoreAction={
+                  isHost || viewerTeamId === teams[0].id ? (
+                  <button
+                    type="button"
+                    onClick={() => setScoreBreakdownTeamId(teams[0].id)}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-zinc-300/50 bg-zinc-200/70 text-zinc-700 transition hover:bg-zinc-300/80 dark:border-zinc-700 dark:bg-zinc-800/70 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                    title="Open score breakdown"
+                    aria-label={`Open ${teams[0].name} score breakdown`}
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="h-4 w-4"
+                    >
+                      <path d="M6 3h12v18l-2-1.5L14 21l-2-1.5L10 21l-2-1.5L6 21V3z" />
+                      <path d="M9 8h6" />
+                      <path d="M9 12h6" />
+                      <path d="M9 16h4" />
+                    </svg>
+                  </button>
+                  ) : null
+                }
               />
             </div>
           ) : null}
@@ -1642,17 +1743,62 @@ export default function RoomContent({
               <Team
                 name={teams[1].name}
                 color={teams[1].color ?? undefined}
-                score={teamsForDisplay[1]?.scoreTotal ?? teams[1].scoreTotal ?? undefined}
+                score={
+                  teamScoreOverrides[teams[1].id] ??
+                  teamsForDisplay[1]?.scoreTotal ??
+                  teams[1].scoreTotal ??
+                  undefined
+                }
                 members={teamsForDisplay[1]?.members ?? teams[1].members}
                 appearance="bare"
                 className="h-full justify-end text-right"
                 memberSize={memberSize}
                 emptyLabel="No members yet."
+                scoreAction={
+                  isHost || viewerTeamId === teams[1].id ? (
+                  <button
+                    type="button"
+                    onClick={() => setScoreBreakdownTeamId(teams[1].id)}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-zinc-300/50 bg-zinc-200/70 text-zinc-700 transition hover:bg-zinc-300/80 dark:border-zinc-700 dark:bg-zinc-800/70 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                    title="Open score breakdown"
+                    aria-label={`Open ${teams[1].name} score breakdown`}
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="h-4 w-4"
+                    >
+                      <path d="M6 3h12v18l-2-1.5L14 21l-2-1.5L10 21l-2-1.5L6 21V3z" />
+                      <path d="M9 8h6" />
+                      <path d="M9 12h6" />
+                      <path d="M9 16h4" />
+                    </svg>
+                  </button>
+                  ) : null
+                }
               />
             </div>
           ) : null}
         </section>
       </main>
+      <TeamScoreBreakdownDialog
+        isOpen={Boolean(scoreBreakdownTeamId)}
+        onClose={() => setScoreBreakdownTeamId(null)}
+        roomSlug={roomSlug}
+        teamId={scoreBreakdownTeamId}
+        teamName={teams?.find((team) => team.id === scoreBreakdownTeamId)?.name ?? null}
+        isHost={isHost}
+        roundsMeta={roundsMeta}
+        roundQuestions={roundQuestions}
+        onPointsUpdated={async (teamId) => {
+          await recomputeTeamScores(teamId);
+        }}
+      />
     </div>
   );
 }

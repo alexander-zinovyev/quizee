@@ -6,7 +6,7 @@ import ZoomableImage from "@/lib/components/zoomable-image";
 type GradingAnswer = {
   answer: string;
   hint?: string;
-  correct?: boolean;
+  awardedPoints?: number;
   order: number;
   questionId: string;
 };
@@ -46,7 +46,7 @@ export function RoundStage({
   countdownIsUrgent: boolean;
   displayRoundMeta: RoundMeta | null;
   finalizeScores: () => void;
-  gradeAnswer: (teamId: string, questionId: string, correct: boolean) => void;
+  gradeAnswer: (teamId: string, questionId: string, awardedPoints: number) => void;
   gradingMatrix: GradingTeam[];
   gradingTeamIndex: number;
   isAnswerImageLoading: boolean;
@@ -117,7 +117,13 @@ export function RoundStage({
                     {gradingMatrix[gradingTeamIndex].answers.map((ans) => (
                       <div
                         key={ans.questionId}
-                        className="flex items-start gap-3 rounded-xl border border-emerald-200/30 bg-emerald-800/30 px-3 py-2"
+                        className={`flex items-start gap-3 rounded-xl border px-3 py-2 ${
+                          typeof ans.awardedPoints !== "number"
+                            ? "border-white/20 bg-transparent"
+                            : ans.awardedPoints > 0
+                              ? "border-emerald-300/40 bg-emerald-500/20"
+                              : "border-red-300/40 bg-red-500/20"
+                        }`}
                       >
                         <div className="w-8 text-xs font-semibold text-emerald-100">
                           #{ans.order + 1}
@@ -131,23 +137,38 @@ export function RoundStage({
                           ) : null}
                         </div>
                         <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min={0}
+                            step="any"
+                            value={typeof ans.awardedPoints === "number" ? ans.awardedPoints : ""}
+                            onChange={(event) => {
+                              if (event.target.value === "") return;
+                              const next = Number.parseFloat(event.target.value);
+                              if (Number.isNaN(next)) return;
+                              void gradeAnswer(
+                                gradingMatrix[gradingTeamIndex].teamId,
+                                ans.questionId,
+                                Math.max(0, next)
+                              );
+                            }}
+                            className="h-8 w-20 rounded-md border border-zinc-300 bg-white/95 px-2 text-xs font-semibold text-zinc-900 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-300/60"
+                            title="Awarded points"
+                            placeholder="—"
+                          />
                           <button
                             type="button"
                             onClick={() =>
                               void gradeAnswer(
                                 gradingMatrix[gradingTeamIndex].teamId,
                                 ans.questionId,
-                                true
+                                1
                               )
                             }
-                            className={`inline-flex h-8 w-8 items-center justify-center rounded-md border ${
-                              ans.correct === true
-                                ? "border-emerald-500 bg-emerald-500 text-white"
-                                : "border-emerald-400 bg-emerald-400/20 text-emerald-100 hover:bg-emerald-400/40"
-                            }`}
-                            title="Mark correct"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-emerald-400 bg-emerald-400/20 text-emerald-100 hover:bg-emerald-400/40"
+                            title="Set 1 point"
                           >
-                            ✓
+                            1
                           </button>
                           <button
                             type="button"
@@ -155,17 +176,13 @@ export function RoundStage({
                               void gradeAnswer(
                                 gradingMatrix[gradingTeamIndex].teamId,
                                 ans.questionId,
-                                false
+                                0
                               )
                             }
-                            className={`inline-flex h-8 w-8 items-center justify-center rounded-md border ${
-                              ans.correct === false
-                                ? "border-red-500 bg-red-500 text-white"
-                                : "border-red-400 bg-red-400/20 text-red-100 hover:bg-red-400/40"
-                            }`}
-                            title="Mark incorrect"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-red-400 bg-red-400/20 text-red-100 hover:bg-red-400/40"
+                            title="Set 0 points"
                           >
-                            ✕
+                            0
                           </button>
                         </div>
                       </div>

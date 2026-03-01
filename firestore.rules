@@ -26,6 +26,10 @@ service cloud.firestore {
       return memberDoc(roomId).data.team;
     }
 
+    function roundDoc(roomId, roundId) {
+      return get(/databases/$(database)/documents/rooms/$(roomId)/rounds/$(roundId));
+    }
+
     function isPresentingAnswer(roomId, roundId, questionId) {
       return roomDoc(roomId).data.presenting.withAnswer == true
         && roomDoc(roomId).data.presenting.round == roundId
@@ -140,10 +144,24 @@ service cloud.firestore {
         }
 
         match /teamAnswers/{teamId} {
-          allow read, write: if isHost(roomId);
+          allow read:
+            if isHost(roomId)
+            || (
+              isMember(roomId)
+              && memberTeam(roomId) == teamId
+              && roundDoc(roomId, roundId).data.state == "closed"
+            );
+          allow write: if isHost(roomId);
 
           match /answers/{answerId} {
-            allow read, write: if isHost(roomId);
+            allow read:
+              if isHost(roomId)
+              || (
+                isMember(roomId)
+                && memberTeam(roomId) == teamId
+                && roundDoc(roomId, roundId).data.state == "closed"
+              );
+            allow write: if isHost(roomId);
           }
         }
       }
