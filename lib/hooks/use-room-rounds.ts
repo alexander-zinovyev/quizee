@@ -53,6 +53,7 @@ export type RoundImage = {
 export type RoundImages = Record<string, Array<RoundImage>>;
 
 export type RoundAnswers = Record<string, Record<string, string>>;
+export type RoundAnswerHints = Record<string, Record<string, string>>;
 
 function parseMedia(mediaRaw: unknown): RoundQuestionMedia | null {
   if (
@@ -97,6 +98,7 @@ export function useRoomRounds(roomSlug: string, isHost?: boolean) {
   const [roundsMeta, setRoundsMeta] = useState<RoundMeta[]>([]);
   const [roundQuestions, setRoundQuestions] = useState<RoundQuestions>({});
   const [roundAnswers, setRoundAnswers] = useState<RoundAnswers>({});
+  const [roundAnswerHints, setRoundAnswerHints] = useState<RoundAnswerHints>({});
   const [roundImages, setRoundImages] = useState<RoundImages>({});
   const [gradingRequiredRounds, setGradingRequiredRounds] = useState<Record<string, boolean>>({});
   const [roundsError, setRoundsError] = useState<string | null>(null);
@@ -191,6 +193,11 @@ export function useRoomRounds(roomSlug: string, isHost?: boolean) {
             unsubscribe();
             answerUnsubs.delete(roundId);
             setRoundAnswers((prev) => {
+              const next = { ...prev };
+              delete next[roundId];
+              return next;
+            });
+            setRoundAnswerHints((prev) => {
               const next = { ...prev };
               delete next[roundId];
               return next;
@@ -347,6 +354,11 @@ export function useRoomRounds(roomSlug: string, isHost?: boolean) {
                 delete next[meta.id];
                 return next;
               });
+              setRoundAnswerHints((prev) => {
+                const next = { ...prev };
+                delete next[meta.id];
+                return next;
+              });
             }
           } else if (!answerUnsubs.has(meta.id)) {
             const answersQuery = collection(
@@ -364,12 +376,14 @@ export function useRoomRounds(roomSlug: string, isHost?: boolean) {
                 if (cancelled) return;
 
                 const answersForRound: Record<string, string> = {};
+                const hintsForRound: Record<string, string> = {};
                 answersSnapshot.docs.forEach((answerSnap) => {
                   const data = answerSnap.data();
                   const hint =
                     typeof data.hint === "string" && data.hint.trim().length
                       ? data.hint.trim()
                       : "";
+                  hintsForRound[answerSnap.id] = hint;
                   const stageText = Array.isArray(data.stages)
                     ? (data.stages as Array<Record<string, unknown>>)
                         .map((stage) =>
@@ -391,6 +405,10 @@ export function useRoomRounds(roomSlug: string, isHost?: boolean) {
                 setRoundAnswers((prev) => ({
                   ...prev,
                   [meta.id]: answersForRound,
+                }));
+                setRoundAnswerHints((prev) => ({
+                  ...prev,
+                  [meta.id]: hintsForRound,
                 }));
               },
               (answersError) => {
@@ -440,6 +458,7 @@ export function useRoomRounds(roomSlug: string, isHost?: boolean) {
     gradingRequiredRounds,
     isLoadingRounds,
     roundAnswers: isCurrentRoom ? roundAnswers : {},
+    roundAnswerHints: isCurrentRoom ? roundAnswerHints : {},
     roundImages: isCurrentRoom ? roundImages : {},
     roundQuestions: isCurrentRoom ? roundQuestions : {},
     roundsError: isCurrentRoom ? roundsError : null,

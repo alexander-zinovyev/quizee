@@ -5,6 +5,7 @@ import ZoomableImage from "@/lib/components/zoomable-image";
 
 type GradingAnswer = {
   answer: string;
+  hint?: string;
   correct?: boolean;
   order: number;
   questionId: string;
@@ -123,6 +124,11 @@ export function RoundStage({
                         </div>
                         <div className="flex-1">
                           <p className="text-sm text-white">{ans.answer || "—"}</p>
+                          {ans.hint ? (
+                            <p className="mt-1 text-xs text-emerald-100/80">
+                              Hint: {ans.hint}
+                            </p>
+                          ) : null}
                         </div>
                         <div className="flex items-center gap-2">
                           <button

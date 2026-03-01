@@ -137,6 +137,7 @@ export default function RoomContent({
     gradingRequiredRounds,
     isLoadingRounds,
     roundAnswers,
+    roundAnswerHints,
     roundImages,
     roundQuestions,
     roundsError,
@@ -222,13 +223,11 @@ export default function RoomContent({
             roundNumber: meta.order + 1 || index + 1,
             questions: questions.map((q) => ({
               ...q,
-              prompt: q.displayPrompt,
-              media: q.media?.storagePath
-                ? {
-                    ...q.media,
-                    storagePath: getCachedMediaUrl(q.media.storagePath) ?? MEDIA_PLACEHOLDER,
-                  }
-                : q.media,
+              prompt:
+                q.promptStages?.[0]?.text?.trim() ||
+                q.prompt ||
+                q.displayPrompt,
+              media: null,
             })),
           };
         }
@@ -370,10 +369,12 @@ export default function RoomContent({
       teams?.map((team) => {
         const answers = questions.map((q, idx) => {
           const teamAnswer = roundEntry[team.id]?.[q.id as string];
+          const hint = (roundAnswerHints[presentingRoundMeta.id] ?? {})[q.id as string] ?? "";
           return {
             questionId: q.id as string,
             order: idx,
             answer: teamAnswer?.answer ?? "",
+            hint,
             correct: teamAnswer?.correct,
           };
         });
@@ -389,6 +390,7 @@ export default function RoomContent({
     isHost,
     presenting?.question,
     presentingRoundMeta,
+    roundAnswerHints,
     roundQuestions,
     teamAnswers,
     teams,
