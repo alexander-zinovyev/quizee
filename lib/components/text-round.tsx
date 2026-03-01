@@ -98,7 +98,7 @@ export default function TextQuizRound({
     <form className="flex h-full w-full flex-col gap-4 overflow-hidden">
       <div className="flex-1 min-h-0 space-y-4 overflow-auto pr-2">
         {questionEntries.map(({ key, question, index }) => (
-          <label key={key} className="flex items-center gap-3">
+          <div key={key} className="flex items-center gap-3">
             <span className="w-6 text-sm font-semibold text-zinc-600 dark:text-zinc-300">
               {index + 1}.
             </span>
@@ -155,7 +155,7 @@ export default function TextQuizRound({
                 </svg>
               )}
             </button>
-          </label>
+          </div>
         ))}
       </div>
     </form>

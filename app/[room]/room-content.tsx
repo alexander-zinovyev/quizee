@@ -26,6 +26,7 @@ import {
 import RoomChatPanel from "./room-chat-panel";
 import RoomRoundsPanel from "./room-rounds-panel";
 import RoomHostRoundsPanel from "./room-host-rounds-panel";
+import TeamScoreBreakdownDialog from "./team-score-breakdown-dialog";
 import type { HostRound } from "./host-rounds";
 import type { RoomRosterTeam } from "./room-layout-types";
 import type { TeamMember } from "@/lib/components/team";
@@ -42,7 +43,8 @@ type RoomContentProps = {
     round?: string | null;
     question?: string | null;
     withAnswer?: boolean;
-    playMedia?: boolean;
+    promptPage?: number;
+    answerPage?: number;
   } | null;
   viewerTeamId?: string | null;
   viewerName?: string | null;
@@ -55,31 +57,47 @@ type RoomContentProps = {
 };
 
 const DEFAULT_MEDIA_VOLUME = 0.2;
-const MEDIA_PLACEHOLDER = "data:image/gif;base64,R0lGODlhAQABAAAAACw=";
+const MEDIA_PLACEHOLDER =
+  "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
 
-function getMediaKind(media: RoundQuestion["media"] | null | undefined) {
-  const contentType = (media?.contentType ?? "").toLowerCase();
-  const name =
-    (media?.filename ?? media?.originalPath ?? "").toString().toLowerCase();
-  const isImage =
-    contentType.startsWith("image/") ||
-    /\.(png|jpe?g|gif|webp|svg)$/.test(name);
-  const isAudio =
-    contentType.startsWith("audio/") ||
-    /\.(mp3|m4a|aac|wav|ogg)$/.test(name);
-  const isVideo =
-    contentType.startsWith("video/") ||
-    /\.(mp4|mov|webm)$/.test(name);
-  return { isImage, isAudio, isVideo };
+function EyeIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      className={className}
+    >
+      <path
+        d="M2 12c2-3 5.6-6 10-6s8 3 10 6c-2 3-5.6 6-10 6s-8-3-10-6z"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx="12" cy="12" r="2.5" />
+    </svg>
+  );
 }
 
-function shouldAutoStartMedia(question: RoundQuestion | null): boolean {
-  if (!question?.media) return false;
-  const kind = getMediaKind(question.media);
-  if (!question.prompt && (kind.isImage || question.media.autoplay)) {
-    return true;
-  }
-  return false;
+function EyeOffIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      className={className}
+    >
+      <path d="M3 3l18 18" strokeLinecap="round" />
+      <path
+        d="M4.5 4.5C3 6 2 8 2 12c2 3 5.6 6 10 6 2.1 0 4-.5 5.6-1.4M9.88 9.88a3 3 0 104.24 4.24"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
 }
 
 export default function RoomContent({
@@ -98,7 +116,7 @@ export default function RoomContent({
   const { user, getToken } = useFirebaseAuth();
   const [memberSize, setMemberSize] = useState<number | undefined>(undefined);
   const [teamAnswers, setTeamAnswers] = useState<
-    Record<string, Record<string, Record<string, { answer: string; correct?: boolean }>>>
+    Record<string, Record<string, Record<string, { answer: string; awardedPoints?: number }>>>
   >({});
   const [isActivatingNext, setIsActivatingNext] = useState(false);
   const [isPresentingUpdatePending, setIsPresentingUpdatePending] = useState(false);
@@ -114,12 +132,15 @@ export default function RoomContent({
   const [localCountdownEndsAt, setLocalCountdownEndsAt] = useState<Date | null>(null);
   const [gradingTeamIndex, setGradingTeamIndex] = useState(0);
   const [activeEavesdropTeamId, setActiveEavesdropTeamId] = useState<string | null>(null);
+  const [teamScoreOverrides, setTeamScoreOverrides] = useState<Record<string, number>>({});
+  const [scoreBreakdownTeamId, setScoreBreakdownTeamId] = useState<string | null>(null);
   const activeTextRoundIdRef = useRef<string | null>(null);
 
   const {
     gradingRequiredRounds,
     isLoadingRounds,
     roundAnswers,
+    roundAnswerHints,
     roundImages,
     roundQuestions,
     roundsError,
@@ -138,6 +159,32 @@ export default function RoomContent({
     return questions.find((q) => q.id === presenting.question) ?? null;
   }, [presenting?.question, presenting?.round, roundQuestions]);
 
+  const presentingQuestionStageCount = useMemo(() => {
+    if (!presentingQuestion) return 0;
+    if (presentingQuestion.promptStages?.length) return presentingQuestion.promptStages.length;
+    if (presentingQuestion.prompt || presentingQuestion.media) return 1;
+    return 0;
+  }, [presentingQuestion]);
+
+  const currentPromptPage = useMemo(() => {
+    if (!presentingQuestionStageCount) return 0;
+    const index = Math.max(0, presenting?.promptPage ?? 0);
+    return Math.min(index, presentingQuestionStageCount - 1);
+  }, [presenting?.promptPage, presentingQuestionStageCount]);
+
+  const stagedPresentingQuestion = useMemo<RoundQuestion | null>(() => {
+    if (!presentingQuestion) return null;
+    if (presentingQuestion.promptStages?.length) {
+      const stage = presentingQuestion.promptStages[currentPromptPage] ?? null;
+      return {
+        ...presentingQuestion,
+        prompt: stage?.text?.trim().length ? stage.text : null,
+        media: stage?.media ?? null,
+      };
+    }
+    return presentingQuestion;
+  }, [currentPromptPage, presentingQuestion]);
+
   const {
     answerImageError,
     clearCachedMedia,
@@ -152,10 +199,10 @@ export default function RoomContent({
     presentingMedia,
     presentingMediaUrl,
     presentingTextAnswer,
-    shouldShowMedia,
+    presentingTextAnswerStageCount,
   } = usePresentingMedia({
     presenting,
-    presentingQuestion,
+    presentingQuestion: stagedPresentingQuestion,
     presentingRoundMeta,
     roomSlug,
     roundImages,
@@ -179,8 +226,11 @@ export default function RoomContent({
             roundNumber: meta.order + 1 || index + 1,
             questions: questions.map((q) => ({
               ...q,
-              prompt: q.displayPrompt,
-              media: q.media,
+              prompt:
+                q.promptStages?.[0]?.text?.trim() ||
+                q.prompt ||
+                q.displayPrompt,
+              media: null,
             })),
           };
         }
@@ -202,11 +252,17 @@ export default function RoomContent({
           const descriptionQuestions = questions
             .filter((q) => {
               const promptText = q.prompt ?? "";
-              return promptText.trim().length > 0;
+              return promptText.trim().length > 0 || Boolean(q.media?.storagePath);
             })
             .map((q, qIdx) => ({
               ...q,
               prompt: q.displayPrompt || q.prompt || `Item ${qIdx + 1}`,
+              media: q.media?.storagePath
+                ? {
+                    ...q.media,
+                    storagePath: getCachedMediaUrl(q.media.storagePath) ?? MEDIA_PLACEHOLDER,
+                  }
+                : q.media,
             }));
 
           return {
@@ -280,18 +336,19 @@ export default function RoomContent({
 
   const presentingAnswer = useMemo(() => {
     if (!presenting?.round || !presenting?.question || !presenting?.withAnswer) return null;
+    if (presentingRoundMeta?.type === "text") {
+      return presentingTextAnswer?.trim().length ? presentingTextAnswer : null;
+    }
     const answerFromCollection =
       roundAnswers[presenting.round]?.[presenting.question] ?? null;
     const fallbackAnswer = presentingQuestion?.correctAnswer ?? null;
-    const resolved =
-      (presentingTextAnswer && presentingTextAnswer.trim().length
-        ? presentingTextAnswer
-        : answerFromCollection) ?? fallbackAnswer;
+    const resolved = answerFromCollection ?? fallbackAnswer;
     return resolved?.trim().length ? resolved : null;
   }, [
     presenting?.question,
     presenting?.round,
     presenting?.withAnswer,
+    presentingRoundMeta?.type,
     presentingQuestion,
     presentingTextAnswer,
     roundAnswers,
@@ -315,11 +372,13 @@ export default function RoomContent({
       teams?.map((team) => {
         const answers = questions.map((q, idx) => {
           const teamAnswer = roundEntry[team.id]?.[q.id as string];
+          const hint = (roundAnswerHints[presentingRoundMeta.id] ?? {})[q.id as string] ?? "";
           return {
             questionId: q.id as string,
             order: idx,
             answer: teamAnswer?.answer ?? "",
-            correct: teamAnswer?.correct,
+            hint,
+            awardedPoints: teamAnswer?.awardedPoints,
           };
         });
         return {
@@ -334,6 +393,7 @@ export default function RoomContent({
     isHost,
     presenting?.question,
     presentingRoundMeta,
+    roundAnswerHints,
     roundQuestions,
     teamAnswers,
     teams,
@@ -373,11 +433,31 @@ export default function RoomContent({
     return controlQuestions.findIndex((q) => q.id === presentingQuestion.id);
   }, [activeRoundForControls, controlQuestions, presenting?.round, presentingQuestion]);
 
+  const answerPageCount = useMemo(() => {
+    if (!presenting?.withAnswer || !presentingRoundMeta) return 0;
+    if (presentingRoundMeta.type === "text") {
+      return presentingTextAnswerStageCount;
+    }
+    return presentingAnswerImageUrl ? 1 : 0;
+  }, [
+    presenting?.withAnswer,
+    presentingAnswerImageUrl,
+    presentingRoundMeta,
+    presentingTextAnswerStageCount,
+  ]);
+
+  const currentAnswerPage = useMemo(() => {
+    if (!answerPageCount) return 0;
+    const index = Math.max(0, presenting?.answerPage ?? 0);
+    return Math.min(index, answerPageCount - 1);
+  }, [answerPageCount, presenting?.answerPage]);
+
   async function updatePresenting(next: {
     round: string | null;
     question: string | null;
     withAnswer: boolean;
-    playMedia?: boolean;
+    promptPage?: number;
+    answerPage?: number;
   }) {
     if (!isHost) return;
     setIsPresentingUpdatePending(true);
@@ -388,10 +468,8 @@ export default function RoomContent({
           round: next.round,
           question: next.question,
           withAnswer: next.withAnswer,
-          playMedia:
-            typeof next.playMedia === "boolean"
-              ? next.playMedia
-              : presenting?.playMedia ?? false,
+          promptPage: Math.max(0, next.promptPage ?? 0),
+          answerPage: Math.max(0, next.answerPage ?? 0),
         },
       });
     } catch (error) {
@@ -403,14 +481,12 @@ export default function RoomContent({
   }
 
   const presentQuestionFromPanel = async (roundId: string, questionId: string) => {
-    const question =
-      roundQuestions[roundId]?.find((q) => q.id === questionId) ?? null;
-    const autoPlay = shouldAutoStartMedia(question);
     await updatePresenting({
       round: roundId,
       question: questionId,
       withAnswer: false,
-      playMedia: autoPlay,
+      promptPage: 0,
+      answerPage: 0,
     });
   };
 
@@ -419,7 +495,8 @@ export default function RoomContent({
       round: activeRoundForControls?.id ?? null,
       question: null,
       withAnswer: false,
-      playMedia: false,
+      promptPage: 0,
+      answerPage: 0,
     });
   };
 
@@ -427,26 +504,12 @@ export default function RoomContent({
     if (!isHost || !activeRoundForControls) return;
     const firstQuestion = controlQuestions[0];
     if (!firstQuestion) return;
-    const autoPlay = shouldAutoStartMedia(firstQuestion);
     await updatePresenting({
       round: activeRoundForControls.id,
       question: firstQuestion.id,
       withAnswer: false,
-      playMedia: autoPlay,
-    });
-  }
-
-  async function handleShowNextQuestion() {
-    if (!isHost || !activeRoundForControls) return;
-    if (currentQuestionIndex < 0) return;
-    const nextQuestion = controlQuestions[currentQuestionIndex + 1];
-    if (!nextQuestion) return;
-    const autoPlay = shouldAutoStartMedia(nextQuestion);
-    await updatePresenting({
-      round: activeRoundForControls.id,
-      question: nextQuestion.id,
-      withAnswer: false,
-      playMedia: autoPlay,
+      promptPage: 0,
+      answerPage: 0,
     });
   }
 
@@ -456,7 +519,8 @@ export default function RoomContent({
       round: activeRoundForControls.id,
       question: null,
       withAnswer: false,
-      playMedia: false,
+      promptPage: 0,
+      answerPage: 0,
     });
   }
 
@@ -476,7 +540,8 @@ export default function RoomContent({
             round: roundId,
             question: null,
             withAnswer: false,
-            playMedia: false,
+            promptPage: 0,
+            answerPage: 0,
           },
         }),
       ]);
@@ -510,33 +575,87 @@ export default function RoomContent({
 
   async function handleToggleAnswer() {
     if (!isHost || !presentingQuestion || !presentingRoundMeta) return;
-    const currentPlayMedia =
-      presenting?.playMedia ?? shouldAutoStartMedia(presentingQuestion);
     await updatePresenting({
       round: presentingRoundMeta.id,
       question: presentingQuestion.id,
       withAnswer: !presenting?.withAnswer,
-      playMedia: currentPlayMedia,
+      promptPage: currentPromptPage,
+      answerPage: 0,
     });
   }
 
-  async function handlePlayMedia() {
-    if (!isHost || !presentingQuestion || !presentingRoundMeta) return;
+  async function handlePrevQuestion() {
+    if (!isHost || !activeRoundForControls || currentQuestionIndex <= 0) return;
+    const prevQuestion = controlQuestions[currentQuestionIndex - 1];
+    if (!prevQuestion) return;
     await updatePresenting({
-      round: presentingRoundMeta.id,
-      question: presentingQuestion.id,
-      withAnswer: presenting?.withAnswer ?? false,
-      playMedia: true,
+      round: activeRoundForControls.id,
+      question: prevQuestion.id,
+      withAnswer: false,
+      promptPage: 0,
+      answerPage: 0,
     });
   }
 
-  async function handleHideMedia() {
-    if (!isHost || !presentingQuestion || !presentingRoundMeta) return;
+  async function handleNextQuestion() {
+    if (!isHost || !activeRoundForControls || currentQuestionIndex < 0) return;
+    const isLast = currentQuestionIndex >= controlQuestions.length - 1;
+    const nextQuestion = isLast ? controlQuestions[0] : controlQuestions[currentQuestionIndex + 1];
+    if (!nextQuestion) return;
     await updatePresenting({
-      round: presentingRoundMeta.id,
+      round: activeRoundForControls.id,
+      question: nextQuestion.id,
+      withAnswer: false,
+      promptPage: 0,
+      answerPage: 0,
+    });
+  }
+
+  async function handlePrevPromptPage() {
+    if (!isHost || !presentingQuestion || currentPromptPage <= 0) return;
+    await updatePresenting({
+      round: presentingRoundMeta?.id ?? activeRoundForControls?.id ?? null,
       question: presentingQuestion.id,
-      withAnswer: presenting?.withAnswer ?? false,
-      playMedia: false,
+      withAnswer: Boolean(presenting?.withAnswer),
+      promptPage: currentPromptPage - 1,
+      answerPage: currentAnswerPage,
+    });
+  }
+
+  async function handleNextPromptPage() {
+    if (!isHost || !presentingQuestion || presentingQuestionStageCount <= 0) return;
+    const isLast = currentPromptPage >= presentingQuestionStageCount - 1;
+    await updatePresenting({
+      round: presentingRoundMeta?.id ?? activeRoundForControls?.id ?? null,
+      question: presentingQuestion.id,
+      withAnswer: Boolean(presenting?.withAnswer),
+      promptPage: isLast ? 0 : currentPromptPage + 1,
+      answerPage: currentAnswerPage,
+    });
+  }
+
+  async function handlePrevAnswerPage() {
+    if (!isHost || !presentingQuestion || !presenting?.withAnswer || currentAnswerPage <= 0) {
+      return;
+    }
+    await updatePresenting({
+      round: presentingRoundMeta?.id ?? activeRoundForControls?.id ?? null,
+      question: presentingQuestion.id,
+      withAnswer: true,
+      promptPage: currentPromptPage,
+      answerPage: currentAnswerPage - 1,
+    });
+  }
+
+  async function handleNextAnswerPage() {
+    if (!isHost || !presentingQuestion || !presenting?.withAnswer || answerPageCount <= 0) return;
+    const isLast = currentAnswerPage >= answerPageCount - 1;
+    await updatePresenting({
+      round: presentingRoundMeta?.id ?? activeRoundForControls?.id ?? null,
+      question: presentingQuestion.id,
+      withAnswer: true,
+      promptPage: currentPromptPage,
+      answerPage: isLast ? 0 : currentAnswerPage + 1,
     });
   }
 
@@ -685,7 +804,8 @@ export default function RoomContent({
             round: activeRoundForControls.id,
             question: null,
             withAnswer: false,
-            playMedia: false,
+            promptPage: 0,
+            answerPage: 0,
           },
         }),
       ]);
@@ -706,7 +826,7 @@ export default function RoomContent({
       const db = getClientFirestore();
       await updateDoc(doc(db, "rooms", roomSlug), {
         state: "ended",
-        presenting: { round: null, question: null, withAnswer: false, playMedia: false },
+        presenting: { round: null, question: null, withAnswer: false, promptPage: 0, answerPage: 0 },
       });
       clearCachedMedia();
     } catch (error) {
@@ -715,8 +835,28 @@ export default function RoomContent({
     }
   }
 
-  async function gradeAnswer(teamId: string, questionId: string, correct: boolean) {
+  async function gradeAnswer(teamId: string, questionId: string, awardedPoints: number) {
     if (!isHost || !presentingRoundMeta || presentingRoundMeta.state !== "closed") return;
+    const clampedPoints = Math.max(0, awardedPoints);
+    setTeamAnswers((prev) => {
+      const roundId = presentingRoundMeta.id;
+      const roundEntry = prev[roundId] ?? {};
+      const teamEntry = roundEntry[teamId] ?? {};
+      const existingAnswer = teamEntry[questionId] ?? { answer: "" };
+      return {
+        ...prev,
+        [roundId]: {
+          ...roundEntry,
+          [teamId]: {
+            ...teamEntry,
+            [questionId]: {
+              ...existingAnswer,
+              awardedPoints: clampedPoints,
+            },
+          },
+        },
+      };
+    });
     const db = getClientFirestore();
     const answerRef = doc(
       db,
@@ -732,12 +872,49 @@ export default function RoomContent({
     await setDoc(
       answerRef,
       {
-        correct,
+        awardedPoints: clampedPoints,
         gradedAt: serverTimestamp(),
         gradedBy: user?.uid ?? null,
       },
       { merge: true }
     );
+  }
+
+  async function recomputeTeamScores(teamId: string) {
+    if (!teamId) return;
+    const db = getClientFirestore();
+    const batch = writeBatch(db);
+    const sortedRoundIds = roundsMeta
+      .slice()
+      .sort((a, b) => a.order - b.order)
+      .map((round) => round.id);
+
+    const roundScores = await Promise.all(
+      sortedRoundIds.map(async (roundId) => {
+        const answersSnap = await getDocs(
+          collection(db, "rooms", roomSlug, "rounds", roundId, "teamAnswers", teamId, "answers")
+        );
+        const roundScore = answersSnap.docs.reduce((sum, answerDoc) => {
+          const data = answerDoc.data();
+          const rawPoints = typeof data.awardedPoints === "number" ? data.awardedPoints : 0;
+          return sum + Math.max(0, rawPoints);
+        }, 0);
+        return { roundId, roundScore };
+      })
+    );
+
+    const scoreTotal = roundScores.reduce((sum, entry) => sum + entry.roundScore, 0);
+    roundScores.forEach(({ roundId, roundScore }) => {
+      batch.set(
+        doc(db, "rooms", roomSlug, "teams", teamId, "scores", roundId),
+        { score: roundScore },
+        { merge: true }
+      );
+    });
+
+    batch.set(doc(db, "rooms", roomSlug, "teams", teamId), { scoreTotal }, { merge: true });
+    await batch.commit();
+    setTeamScoreOverrides((prev) => ({ ...prev, [teamId]: scoreTotal }));
   }
 
   async function finalizeScores() {
@@ -749,7 +926,10 @@ export default function RoomContent({
 
     const teamUpdates = await Promise.all(
       Object.entries(answersForRound).map(async ([teamId, answers]) => {
-        const correctCount = Object.values(answers).filter((ans) => ans.correct === true).length;
+        const awardedScore = Object.values(answers).reduce((sum, ans) => {
+          const points = typeof ans.awardedPoints === "number" ? ans.awardedPoints : 0;
+          return sum + Math.max(0, points);
+        }, 0);
         const scoreRef = doc(db, "rooms", roomSlug, "teams", teamId, "scores", roundId);
         const teamRef = doc(db, "rooms", roomSlug, "teams", teamId);
         const [scoreSnap, teamSnap] = await Promise.all([
@@ -764,14 +944,14 @@ export default function RoomContent({
           teamSnap.exists() && typeof teamSnap.data().scoreTotal === "number"
             ? (teamSnap.data().scoreTotal as number)
             : 0;
-        const nextTotal = Math.max(0, currentTotal - previousScore + correctCount);
+        const nextTotal = Math.max(0, currentTotal - previousScore + awardedScore);
 
-        return { teamId, correctCount, scoreRef, teamRef, nextTotal };
+        return { teamId, awardedScore, scoreRef, teamRef, nextTotal };
       })
     );
 
-    teamUpdates.forEach(({ teamId, correctCount, scoreRef, teamRef, nextTotal }) => {
-      batch.set(scoreRef, { score: correctCount }, { merge: true });
+    teamUpdates.forEach(({ teamId, awardedScore, scoreRef, teamRef, nextTotal }) => {
+      batch.set(scoreRef, { score: awardedScore }, { merge: true });
       batch.set(teamRef, { scoreTotal: nextTotal }, { merge: true });
       const teamAnswersRef = doc(db, "rooms", roomSlug, "rounds", roundId, "teamAnswers", teamId);
       batch.set(teamAnswersRef, { graded: true }, { merge: true });
@@ -940,11 +1120,11 @@ export default function RoomContent({
 
     if (shouldPlay) {
       if (!handAudioRef.current) {
-        handAudioRef.current = new Audio("/hand.mp3");
+      handAudioRef.current = new Audio("/hand.mp3");
       }
       handAudioRef.current.currentTime = 0;
       handAudioRef.current.play().catch(() => {
-        // ignore autoplay restrictions
+        // ignore browser media-playback restrictions
       });
     }
   }, [handMembers]);
@@ -980,19 +1160,25 @@ export default function RoomContent({
 
         const answersRef = collection(teamDoc.ref, "answers");
         const unsubAnswers = onSnapshot(answersRef, (answersSnap) => {
-          const answerMap: Record<string, { answer: string; correct?: boolean }> = {};
+          const answerMap: Record<string, { answer: string; awardedPoints?: number }> = {};
           answersSnap.forEach((ansDoc) => {
             const data = ansDoc.data();
             answerMap[ansDoc.id] = {
               answer: (data.answer as string) ?? "",
-              correct: data.correct as boolean | undefined,
+              awardedPoints:
+                typeof data.awardedPoints === "number"
+                  ? (data.awardedPoints as number)
+                  : undefined,
             };
           });
           setTeamAnswers((prev) => ({
             ...prev,
             [roundId]: {
               ...(prev[roundId] ?? {}),
-              [teamId]: answerMap,
+              [teamId]: {
+                ...((prev[roundId] ?? {})[teamId] ?? {}),
+                ...answerMap,
+              },
             },
           }));
         });
@@ -1109,7 +1295,13 @@ export default function RoomContent({
           gradingRequired: true,
         }),
         updateDoc(roomRef, {
-          presenting: { round: nextScheduledRound.id, question: null, withAnswer: false, playMedia: false },
+          presenting: {
+            round: nextScheduledRound.id,
+            question: null,
+            withAnswer: false,
+            promptPage: 0,
+            answerPage: 0,
+          },
         }),
       ]);
     } catch (error) {
@@ -1199,8 +1391,8 @@ export default function RoomContent({
               countdownIsUrgent={countdownIsUrgent}
               displayRoundMeta={displayRoundMeta}
               finalizeScores={() => void finalizeScores()}
-              gradeAnswer={(teamId, questionId, correct) =>
-                void gradeAnswer(teamId, questionId, correct)
+              gradeAnswer={(teamId, questionId, awardedPoints) =>
+                void gradeAnswer(teamId, questionId, awardedPoints)
               }
               gradingMatrix={gradingMatrix}
               gradingTeamIndex={gradingTeamIndex}
@@ -1215,98 +1407,139 @@ export default function RoomContent({
               presentingAnswerImageUrl={presentingAnswerImageUrl}
               presentingMedia={presentingMedia}
               presentingMediaUrl={presentingMediaUrl}
-              presentingQuestion={presentingQuestion}
+              presentingQuestion={stagedPresentingQuestion}
               presentingRoundMeta={presentingRoundMeta}
               setGradingTeamIndex={setGradingTeamIndex}
-              shouldShowMedia={shouldShowMedia}
             />
             {isHost && activeRoundForControls ? (
               <footer className="border-t border-white/10 bg-black/40 px-5 py-3 text-white">
-                <div className="flex flex-wrap items-center gap-2">
-                  {activeRoundForControls.state === "active" &&
-                  !presentingQuestion &&
-                  controlQuestions.length ? (
+                <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em]">
+                  <span className="text-zinc-300">Question:</span>
+                  {!presentingQuestion && controlQuestions.length ? (
                     <button
                       type="button"
                       onClick={handleShowFirstQuestion}
                       disabled={isPresentingUpdatePending}
-                      className="rounded-lg bg-emerald-500 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500 text-white transition hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
                     >
-                      Show first question
-                    </button>
-                  ) : null}
-
-                  {(activeRoundForControls.state === "active" ||
-                    activeRoundForControls.state === "closed") &&
-                  presentingQuestion &&
-                  currentQuestionIndex >= 0 &&
-                  currentQuestionIndex < controlQuestions.length - 1 ? (
-                    <button
-                      type="button"
-                      onClick={handleShowNextQuestion}
-                      disabled={isPresentingUpdatePending}
-                      className="rounded-lg bg-emerald-500 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
-                    >
-                      Next question
-                    </button>
-                  ) : null}
-
-                  {activeRoundForControls.state === "active" &&
-                  presentingQuestion &&
-                  currentQuestionIndex === controlQuestions.length - 1 ? (
-                    <button
-                      type="button"
-                      onClick={handleShowFirstQuestion}
-                      disabled={isPresentingUpdatePending}
-                      className="rounded-lg bg-emerald-500 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
-                    >
-                      Show first question
+                      <EyeIcon />
                     </button>
                   ) : null}
 
                   {presentingQuestion ? (
-                    <button
-                      type="button"
-                      onClick={handleHideQuestion}
-                      disabled={isPresentingUpdatePending}
-                      className="rounded-lg bg-zinc-700 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-zinc-600 focus:outline-none focus:ring-2 focus:ring-white/30 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
-                    >
-                      Hide question
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleHideQuestion}
+                        disabled={isPresentingUpdatePending}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-red-500 text-white transition hover:bg-red-400 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
+                      >
+                        <EyeOffIcon />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handlePrevQuestion}
+                        disabled={isPresentingUpdatePending || currentQuestionIndex <= 0}
+                        className="rounded-lg bg-zinc-700 px-2 py-2 text-white transition hover:bg-zinc-600 focus:outline-none focus:ring-2 focus:ring-white/30 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
+                      >
+                        {"<"}
+                      </button>
+                      <span className="min-w-3 text-center text-zinc-100">
+                        {currentQuestionIndex >= 0 ? currentQuestionIndex + 1 : 1}
+                      </span>
+                      {currentQuestionIndex >= 0 ? (
+                        <button
+                          type="button"
+                          onClick={handleNextQuestion}
+                          disabled={isPresentingUpdatePending}
+                          className="rounded-lg bg-zinc-700 px-2 py-2 text-white transition hover:bg-zinc-600 focus:outline-none focus:ring-2 focus:ring-white/30 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
+                        >
+                          {currentQuestionIndex < controlQuestions.length - 1 ? ">" : "↺"}
+                        </button>
+                      ) : null}
+
+                      {presentingQuestionStageCount > 1 ? (
+                        <>
+                          <span className="text-zinc-400">Page</span>
+                          <button
+                            type="button"
+                            onClick={handlePrevPromptPage}
+                            disabled={isPresentingUpdatePending || currentPromptPage <= 0}
+                            className="rounded-lg bg-zinc-700 px-2 py-2 text-white transition hover:bg-zinc-600 focus:outline-none focus:ring-2 focus:ring-white/30 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
+                          >
+                            {"<"}
+                          </button>
+                          <span className="min-w-3 text-center text-zinc-100">
+                            {currentPromptPage + 1}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={handleNextPromptPage}
+                            disabled={isPresentingUpdatePending}
+                            className="rounded-lg bg-zinc-700 px-2 py-2 text-white transition hover:bg-zinc-600 focus:outline-none focus:ring-2 focus:ring-white/30 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
+                          >
+                            {currentPromptPage < presentingQuestionStageCount - 1 ? ">" : "↺"}
+                          </button>
+                        </>
+                      ) : null}
+                    </>
                   ) : null}
 
-                  {presentingQuestion?.media && presentingQuestion?.prompt ? (
-                    <button
-                      type="button"
-                      onClick={shouldShowMedia ? handleHideMedia : handlePlayMedia}
-                      disabled={isPresentingUpdatePending}
-                      className="rounded-lg bg-emerald-500 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
-                    >
-                      {shouldShowMedia ? "Hide media" : "Play media"}
-                    </button>
-                  ) : null}
+                  <div className="ml-auto flex items-center gap-2">
+                    {activeRoundForControls.state === "active" ? (
+                      <button
+                        type="button"
+                        onClick={handleEndRound}
+                        disabled={isEndingRound}
+                        className="rounded-lg bg-red-500 px-3 py-2 text-white transition hover:bg-red-400 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
+                      >
+                        {isEndingRound ? "Ending..." : "End round"}
+                      </button>
+                    ) : null}
 
-                  {presentingRoundMeta?.state === "closed" && presentingQuestion ? (
-                    <button
-                      type="button"
-                      onClick={handleToggleAnswer}
-                      disabled={isPresentingUpdatePending}
-                      className="rounded-lg bg-amber-500 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
-                    >
-                      {presenting?.withAnswer ? "Hide answer" : "Show answer"}
-                    </button>
-                  ) : null}
-
-                  {activeRoundForControls.state === "active" ? (
-                    <button
-                      type="button"
-                      onClick={handleEndRound}
-                      disabled={isEndingRound}
-                      className="ml-auto rounded-lg bg-red-500 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-red-400 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
-                    >
-                      {isEndingRound ? "Ending..." : "End round"}
-                    </button>
-                  ) : null}
+                    {activeRoundForControls.state === "closed" && presentingQuestion ? (
+                      <>
+                        <span className="text-zinc-300">Answer:</span>
+                        <button
+                          type="button"
+                          onClick={handleToggleAnswer}
+                          disabled={isPresentingUpdatePending}
+                          className={`inline-flex h-9 w-9 items-center justify-center rounded-lg text-white transition focus:outline-none focus:ring-2 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70 ${
+                            presenting?.withAnswer
+                              ? "bg-red-500 hover:bg-red-400 focus:ring-red-400"
+                              : "bg-amber-500 hover:bg-amber-400 focus:ring-amber-400"
+                          }`}
+                        >
+                          {presenting?.withAnswer ? <EyeOffIcon /> : <EyeIcon />}
+                        </button>
+                        {presenting?.withAnswer && answerPageCount > 1 ? (
+                          <>
+                            <span className="text-zinc-400">Page</span>
+                            <button
+                              type="button"
+                              onClick={handlePrevAnswerPage}
+                              disabled={isPresentingUpdatePending || currentAnswerPage <= 0}
+                              className="rounded-lg bg-zinc-700 px-2 py-2 text-white transition hover:bg-zinc-600 focus:outline-none focus:ring-2 focus:ring-white/30 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
+                            >
+                              {"<"}
+                            </button>
+                            <span className="min-w-3 text-center text-zinc-100">
+                              {currentAnswerPage + 1}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={handleNextAnswerPage}
+                              disabled={isPresentingUpdatePending}
+                              className="rounded-lg bg-zinc-700 px-2 py-2 text-white transition hover:bg-zinc-600 focus:outline-none focus:ring-2 focus:ring-white/30 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
+                            >
+                              {currentAnswerPage < answerPageCount - 1 ? ">" : "↺"}
+                            </button>
+                          </>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </div>
                 </div>
               </footer>
             ) : null}
@@ -1329,12 +1562,44 @@ export default function RoomContent({
               <Team
                 name={teams[0].name}
                 color={teams[0].color ?? undefined}
-                score={teamsForDisplay[0]?.scoreTotal ?? teams[0].scoreTotal ?? undefined}
+                score={
+                  teamScoreOverrides[teams[0].id] ??
+                  teamsForDisplay[0]?.scoreTotal ??
+                  teams[0].scoreTotal ??
+                  undefined
+                }
                 members={teamsForDisplay[0]?.members ?? teams[0].members}
                 appearance="bare"
                 className="h-full justify-end"
                 memberSize={memberSize}
                 emptyLabel="No members yet."
+                scoreAction={
+                  isHost || viewerTeamId === teams[0].id ? (
+                  <button
+                    type="button"
+                    onClick={() => setScoreBreakdownTeamId(teams[0].id)}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-zinc-300/50 bg-zinc-200/70 text-zinc-700 transition hover:bg-zinc-300/80 dark:border-zinc-700 dark:bg-zinc-800/70 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                    title="Open score breakdown"
+                    aria-label={`Open ${teams[0].name} score breakdown`}
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="h-4 w-4"
+                    >
+                      <path d="M6 3h12v18l-2-1.5L14 21l-2-1.5L10 21l-2-1.5L6 21V3z" />
+                      <path d="M9 8h6" />
+                      <path d="M9 12h6" />
+                      <path d="M9 16h4" />
+                    </svg>
+                  </button>
+                  ) : null
+                }
               />
             </div>
           ) : null}
@@ -1478,17 +1743,62 @@ export default function RoomContent({
               <Team
                 name={teams[1].name}
                 color={teams[1].color ?? undefined}
-                score={teamsForDisplay[1]?.scoreTotal ?? teams[1].scoreTotal ?? undefined}
+                score={
+                  teamScoreOverrides[teams[1].id] ??
+                  teamsForDisplay[1]?.scoreTotal ??
+                  teams[1].scoreTotal ??
+                  undefined
+                }
                 members={teamsForDisplay[1]?.members ?? teams[1].members}
                 appearance="bare"
                 className="h-full justify-end text-right"
                 memberSize={memberSize}
                 emptyLabel="No members yet."
+                scoreAction={
+                  isHost || viewerTeamId === teams[1].id ? (
+                  <button
+                    type="button"
+                    onClick={() => setScoreBreakdownTeamId(teams[1].id)}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-zinc-300/50 bg-zinc-200/70 text-zinc-700 transition hover:bg-zinc-300/80 dark:border-zinc-700 dark:bg-zinc-800/70 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                    title="Open score breakdown"
+                    aria-label={`Open ${teams[1].name} score breakdown`}
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="h-4 w-4"
+                    >
+                      <path d="M6 3h12v18l-2-1.5L14 21l-2-1.5L10 21l-2-1.5L6 21V3z" />
+                      <path d="M9 8h6" />
+                      <path d="M9 12h6" />
+                      <path d="M9 16h4" />
+                    </svg>
+                  </button>
+                  ) : null
+                }
               />
             </div>
           ) : null}
         </section>
       </main>
+      <TeamScoreBreakdownDialog
+        isOpen={Boolean(scoreBreakdownTeamId)}
+        onClose={() => setScoreBreakdownTeamId(null)}
+        roomSlug={roomSlug}
+        teamId={scoreBreakdownTeamId}
+        teamName={teams?.find((team) => team.id === scoreBreakdownTeamId)?.name ?? null}
+        isHost={isHost}
+        roundsMeta={roundsMeta}
+        roundQuestions={roundQuestions}
+        onPointsUpdated={async (teamId) => {
+          await recomputeTeamScores(teamId);
+        }}
+      />
     </div>
   );
 }

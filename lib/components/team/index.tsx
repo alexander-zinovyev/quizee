@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState } from "react";
+import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import Member from "../member";
 
 export type TeamMember = {
@@ -83,6 +83,10 @@ export type TeamProps = {
    * Optional target width for each member tile so multiple teams can align sizes.
    */
   memberSize?: number;
+  /**
+   * Optional control rendered inline with score.
+   */
+  scoreAction?: ReactNode;
 };
 
 function getGridColumns(count: number) {
@@ -100,6 +104,7 @@ export default function Team({
   description,
   appearance = "default",
   memberSize,
+  scoreAction,
 }: TeamProps) {
   const memberCount = members.length;
   const isBare = appearance === "bare";
@@ -210,6 +215,7 @@ export default function Team({
                 {score}
               </span>
             ) : null}
+            {scoreAction}
           </div>
           {description ? (
             <p

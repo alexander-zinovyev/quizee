@@ -1,13 +1,12 @@
 "use client";
 
-import Image from "next/image";
-import { createPortal } from "react-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent } from "react";
 import type { Question, ImageItem } from "@/types/quiz";
 import { collection, doc, onSnapshot, setDoc } from "firebase/firestore";
 import { getClientFirestore } from "@/lib/firebase/client";
 import { useFirebaseAuth } from "@/app/providers/firebase-auth-provider";
+import ZoomableImage from "@/lib/components/zoomable-image";
 
 type ImageQuizRoundProps = {
   questions: Question[];
@@ -60,7 +59,6 @@ export default function ImageQuizRound({
 
   const questionListRef = useRef<HTMLDivElement>(null);
   const imageListRef = useRef<HTMLDivElement>(null);
-  const [zoomedImage, setZoomedImage] = useState<ImageItem | null>(null);
 
   useEffect(() => {
     if (!roomSlug || !teamId || !roundId) return;
@@ -93,19 +91,6 @@ export default function ImageQuizRound({
 
     return () => unsubscribe();
   }, [roomSlug, roundId, teamId]);
-
-  useEffect(() => {
-    if (!zoomedImage) return;
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setZoomedImage(null);
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [zoomedImage]);
 
   async function persistMatch(questionId: string, imageId: string | null, locked: boolean) {
     if (!roomSlug || !teamId || !roundId) return;
@@ -205,69 +190,6 @@ export default function ImageQuizRound({
     });
   }
 
-  function openZoom(image: ImageItem) {
-    setZoomedImage(image);
-  }
-
-  function closeZoom() {
-    setZoomedImage(null);
-  }
-
-  const zoomOverlay = zoomedImage ? (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-label={zoomedImage.alt ?? "Zoomed image preview"}
-      onClick={closeZoom}
-    >
-      <div
-        className="relative flex w-full max-w-5xl flex-col items-center gap-4"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div
-          className="relative w-full overflow-hidden rounded-2xl bg-black shadow-2xl"
-          style={{ width: "min(90vw, 960px)", height: "min(90vh, 600px)" }}
-        >
-          <button
-            type="button"
-            className="absolute right-3 top-3 z-10 flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-black/70 text-white transition hover:bg-black/90 focus:outline-none focus:ring-2 focus:ring-white/80"
-            aria-label="Close zoomed image"
-            onClick={(event) => {
-              event.stopPropagation();
-              closeZoom();
-            }}
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="h-5 w-5"
-            >
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-          <Image
-            src={zoomedImage.src}
-            alt={zoomedImage.alt ?? "Zoomed image"}
-            fill
-            sizes="(max-width: 1024px) 90vw, 960px"
-            className="object-contain"
-          />
-        </div>
-        {zoomedImage.label ? (
-          <p className="text-sm text-white/80">{zoomedImage.label}</p>
-        ) : null}
-      </div>
-    </div>
-  ) : null;
-
   if (!questions.length) return null;
 
   return (
@@ -286,16 +208,30 @@ export default function ImageQuizRound({
                   ? images[imageIds.indexOf(matchedImageId)]
                   : undefined;
               const label = `${index + 1}. ${question.prompt ?? ""}`;
+              const questionMediaSrc = question.media?.storagePath ?? null;
 
               return (
                 <div
                   key={questionId}
                   className="rounded-2xl border border-zinc-200 bg-white/80 p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/80"
                 >
-                  <div className="flex items-center gap-4">
-                    <p className="flex-1 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                  <div className="flex items-start gap-4">
+                    <div className="flex-1 space-y-2">
+                      <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
                       {label}
-                    </p>
+                      </p>
+                      {questionMediaSrc ? (
+                        <ZoomableImage
+                          src={questionMediaSrc}
+                          alt={`Prompt media ${index + 1}`}
+                          label={label}
+                          wrapperClassName="w-full"
+                          imageClassName="max-h-32 w-full rounded-xl object-contain"
+                          zoomLabel="Zoom prompt image"
+                          zoomButtonClassName="hidden group-hover:flex"
+                        />
+                      ) : null}
+                    </div>
                     <button
                       type="button"
                       onClick={() => handleToggleLock(questionId)}
@@ -332,10 +268,10 @@ export default function ImageQuizRound({
                     </button>
                   </div>
                   <div
-                    className={`relative flex-none aspect-square h-16 rounded-2xl border-2 border-dashed text-xs text-zinc-400 transition-colors dark:text-zinc-500 ${
+                    className={`relative flex-none h-16 rounded-2xl border-2 border-dashed text-xs text-zinc-400 transition-colors dark:text-zinc-500 ${
                       matchedImage
-                        ? "border-transparent bg-transparent"
-                        : "border-zinc-300 p-2 dark:border-zinc-700"
+                        ? "w-full border-transparent bg-transparent"
+                        : "aspect-square border-zinc-300 p-2 dark:border-zinc-700"
                     }`}
                     onDragOver={(event) => {
                       handleDragOver(event);
@@ -347,34 +283,31 @@ export default function ImageQuizRound({
                     aria-label={`Drop image for question ${index + 1}`}
                   >
                     {matchedImage ? (
-                      <div
-                        className="group relative flex h-full w-full cursor-grab items-center justify-center overflow-hidden rounded-xl"
-                        draggable
-                        onDragStart={(event) =>
-                          handleImageDrag(event, matchedImageId as string)
-                        }
-                      >
-                        <Image
-                          src={matchedImage.src}
-                          alt={matchedImage.alt ?? "Matched image"}
-                          fill
-                          sizes="(max-width: 640px) 70vw, 256px"
-                          className="object-cover"
-                        />
-                        <span
-                          role="button"
-                          tabIndex={0}
+                      <div className="flex h-full w-full items-center gap-2">
+                        <div
+                          className="group relative h-full w-16 shrink-0 cursor-grab overflow-hidden rounded-xl"
+                          draggable
+                          onDragStart={(event) =>
+                            handleImageDrag(event, matchedImageId as string)
+                          }
+                        >
+                          <ZoomableImage
+                            src={matchedImage.src}
+                            alt={matchedImage.alt ?? "Matched image"}
+                            label={label}
+                            wrapperClassName="h-full w-full overflow-hidden rounded-xl"
+                            imageClassName="h-full w-full object-cover"
+                            zoomLabel="Zoom matched image"
+                            zoomButtonClassName="bottom-2 right-2 hidden h-7 w-7 items-center justify-center group-hover:flex"
+                          />
+                        </div>
+                        <button
+                          type="button"
                           onClick={(event) => {
                             event.stopPropagation();
                             clearMatch(questionId);
                           }}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter" || event.key === " ") {
-                              event.preventDefault();
-                              clearMatch(questionId);
-                            }
-                          }}
-                          className="group absolute right-3 top-3 flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-black/60 text-white transition hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-white/70"
+                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-black/60 text-white transition hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-white/70"
                           aria-label="Remove image match"
                         >
                           <svg
@@ -390,7 +323,7 @@ export default function ImageQuizRound({
                             <line x1="18" y1="6" x2="6" y2="18" />
                             <line x1="6" y1="6" x2="18" y2="18" />
                           </svg>
-                        </span>
+                        </button>
                       </div>
                     ) : null}
                   </div>
@@ -415,58 +348,27 @@ export default function ImageQuizRound({
                       draggable
                       onDragStart={(event) => handleImageDrag(event, imageId)}
                     >
-                      <div className="relative h-16 w-16 overflow-hidden rounded-lg bg-zinc-100 dark:bg-zinc-900">
-                        <Image
-                          src={unmatchedImage.src}
-                          alt={unmatchedImage.alt ?? "Quiz image option"}
-                          fill
-                          sizes="(max-width: 640px) 40vw, 128px"
-                          className="object-cover"
-                        />
-                        <button
-                          type="button"
-                          className="absolute right-2 top-2 hidden rounded-full bg-black/70 p-1.5 text-white transition hover:bg-black/90 focus:outline-none focus:ring-2 focus:ring-white/90 group-hover:flex"
-                          aria-label="Zoom image"
-                          onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            openZoom(unmatchedImage);
-                          }}
-                          onMouseDown={(event) => event.stopPropagation()}
-                          onPointerDown={(event) => event.stopPropagation()}
-                        >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            className="h-4 w-4"
-                          >
-                            <circle cx="11" cy="11" r="8" />
-                            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                            <line x1="11" y1="8" x2="11" y2="14" />
-                            <line x1="8" y1="11" x2="14" y2="11" />
-                          </svg>
-                        </button>
-                      </div>
+                      <ZoomableImage
+                        src={unmatchedImage.src}
+                        alt={unmatchedImage.alt ?? "Quiz image option"}
+                        label={unmatchedImage.label}
+                        wrapperClassName="h-16 w-16 overflow-hidden rounded-lg bg-zinc-100 dark:bg-zinc-900"
+                        imageClassName="h-full w-full object-cover"
+                        zoomLabel="Zoom image"
+                        zoomButtonClassName="hidden group-hover:flex"
+                      />
                     </div>
                   );
                 })
               ) : (
-                <p className="col-span-full text-sm text-zinc-500 dark:text-zinc-400">
-                  All images have been assigned. Drag one away to adjust a match.
+                <p className="shrink-0 self-center whitespace-nowrap px-1 text-sm font-medium text-zinc-500 dark:text-zinc-400">
+                  All done!
                 </p>
               )}
             </div>
           </section>
         </div>
       </article>
-      {typeof document !== "undefined" && zoomOverlay
-        ? createPortal(zoomOverlay, document.body)
-        : null}
     </>
   );
 }

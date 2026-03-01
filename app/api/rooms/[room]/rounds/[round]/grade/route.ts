@@ -151,13 +151,12 @@ export async function POST(
     const batch = db.batch();
 
     for (const team of teamsToGrade) {
-      let correctCount = 0;
+      let awardedScore = 0;
       for (const [promptId, correctImageId] of Object.entries(correctMap)) {
         const answer = team.answers[promptId] ?? "";
         const correct = answer === correctImageId;
-        if (correct) {
-          correctCount += 1;
-        }
+        const awardedPoints = correct ? 1 : 0;
+        awardedScore += awardedPoints;
         const answerRef = roundRef
           .collection("teamAnswers")
           .doc(team.teamId)
@@ -166,7 +165,7 @@ export async function POST(
         batch.set(
           answerRef,
           {
-            correct,
+            awardedPoints,
             gradedAt: FieldValue.serverTimestamp(),
             gradedBy: authResult.uid,
           },
@@ -184,7 +183,7 @@ export async function POST(
         scoreSnap.exists && typeof scoreSnap.data()?.score === "number"
           ? (scoreSnap.data()?.score as number)
           : 0;
-      const delta = correctCount - previousScore;
+      const delta = awardedScore - previousScore;
 
       const teamAnswersRef = roundRef.collection("teamAnswers").doc(team.teamId);
       batch.set(
@@ -197,7 +196,7 @@ export async function POST(
         { merge: true }
       );
 
-      batch.set(scoreRef, { score: correctCount }, { merge: true });
+      batch.set(scoreRef, { score: awardedScore }, { merge: true });
 
       const teamRef = roomRef.collection("teams").doc(team.teamId);
       if (delta !== 0) {

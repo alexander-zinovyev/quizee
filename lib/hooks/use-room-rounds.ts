@@ -22,9 +22,13 @@ export type RoundQuestionMedia = {
   storagePath: string;
   contentType?: string | null;
   size?: number | null;
-  autoplay?: boolean;
   filename?: string | null;
   originalPath?: string | null;
+};
+
+export type RoundQuestionStage = {
+  text?: string | null;
+  media?: RoundQuestionMedia | null;
 };
 
 export type RoundQuestion = {
@@ -34,6 +38,9 @@ export type RoundQuestion = {
   order: number;
   correctAnswer?: string | null;
   media?: RoundQuestionMedia | null;
+  promptStages?: RoundQuestionStage[];
+  answerStages?: RoundQuestionStage[];
+  answerHint?: string | null;
 };
 
 export type RoundQuestions = Record<string, Array<RoundQuestion>>;
@@ -46,11 +53,52 @@ export type RoundImage = {
 export type RoundImages = Record<string, Array<RoundImage>>;
 
 export type RoundAnswers = Record<string, Record<string, string>>;
+export type RoundAnswerHints = Record<string, Record<string, string>>;
+
+function parseMedia(mediaRaw: unknown): RoundQuestionMedia | null {
+  if (
+    !mediaRaw ||
+    typeof mediaRaw !== "object" ||
+    typeof (mediaRaw as { storagePath?: unknown }).storagePath !== "string" ||
+    !(mediaRaw as { storagePath?: string }).storagePath?.length
+  ) {
+    return null;
+  }
+  const mediaObj = mediaRaw as Record<string, unknown>;
+  return {
+    storagePath: mediaObj.storagePath as string,
+    contentType: typeof mediaObj.contentType === "string" ? mediaObj.contentType : null,
+    size: typeof mediaObj.size === "number" ? mediaObj.size : Number(mediaObj.size) || null,
+    filename: typeof mediaObj.filename === "string" ? mediaObj.filename : null,
+    originalPath: typeof mediaObj.originalPath === "string" ? mediaObj.originalPath : null,
+  };
+}
+
+function parseStages(stagesRaw: unknown): RoundQuestionStage[] {
+  if (!Array.isArray(stagesRaw)) return [];
+  const parsed: RoundQuestionStage[] = [];
+  stagesRaw.forEach((stageRaw) => {
+    if (!stageRaw || typeof stageRaw !== "object") return;
+    const stage = stageRaw as Record<string, unknown>;
+    const text =
+      typeof stage.text === "string" && stage.text.trim().length
+        ? stage.text.trim()
+        : null;
+    const media = parseMedia(stage.media);
+    if (!text && !media) return;
+    const normalized: RoundQuestionStage = {};
+    if (text) normalized.text = text;
+    if (media) normalized.media = media;
+    parsed.push(normalized);
+  });
+  return parsed;
+}
 
 export function useRoomRounds(roomSlug: string, isHost?: boolean) {
   const [roundsMeta, setRoundsMeta] = useState<RoundMeta[]>([]);
   const [roundQuestions, setRoundQuestions] = useState<RoundQuestions>({});
   const [roundAnswers, setRoundAnswers] = useState<RoundAnswers>({});
+  const [roundAnswerHints, setRoundAnswerHints] = useState<RoundAnswerHints>({});
   const [roundImages, setRoundImages] = useState<RoundImages>({});
   const [gradingRequiredRounds, setGradingRequiredRounds] = useState<Record<string, boolean>>({});
   const [roundsError, setRoundsError] = useState<string | null>(null);
@@ -149,6 +197,11 @@ export function useRoomRounds(roomSlug: string, isHost?: boolean) {
               delete next[roundId];
               return next;
             });
+            setRoundAnswerHints((prev) => {
+              const next = { ...prev };
+              delete next[roundId];
+              return next;
+            });
           }
         });
 
@@ -167,9 +220,8 @@ export function useRoomRounds(roomSlug: string, isHost?: boolean) {
               });
             }
           } else if (!questionUnsubs.has(meta.id)) {
-            const collectionName = meta.type === "image" ? "prompts" : "questions";
             const questionsQuery = query(
-              collection(db, "rooms", roomSlug, "rounds", meta.id, collectionName),
+              collection(db, "rooms", roomSlug, "rounds", meta.id, "questions"),
               orderBy("order", "asc")
             );
 
@@ -180,51 +232,33 @@ export function useRoomRounds(roomSlug: string, isHost?: boolean) {
                 const questions = questionsSnapshot.docs
                   .map((questionSnap, qIndex) => {
                     const data = questionSnap.data();
-                    const mediaRaw = data.media;
                     const order =
                       typeof data.order === "number"
                         ? data.order
                         : Number(data.order) || qIndex;
+                    const promptStages = parseStages(data.stages);
+                    const stageText =
+                      promptStages.find((stage) => stage.text)?.text ?? null;
+                    const stageMedia =
+                      promptStages.find((stage) => stage.media)?.media ?? null;
                     const promptRaw =
-                      typeof data.prompt === "string" && data.prompt.trim().length
-                        ? data.prompt.trim()
-                        : null;
+                      typeof data.text === "string" && data.text.trim().length
+                        ? data.text.trim()
+                        : stageText;
+                    const media = parseMedia(data.media) ?? stageMedia;
                     const displayPrompt = promptRaw ?? `Question ${qIndex + 1}`;
-                    const media =
-                      mediaRaw &&
-                      typeof mediaRaw === "object" &&
-                      typeof mediaRaw.storagePath === "string" &&
-                      mediaRaw.storagePath.length
-                        ? {
-                            storagePath: mediaRaw.storagePath as string,
-                            contentType:
-                              typeof mediaRaw.contentType === "string"
-                                ? mediaRaw.contentType
-                                : null,
-                            size:
-                              typeof mediaRaw.size === "number"
-                                ? mediaRaw.size
-                                : Number(mediaRaw.size) || null,
-                            autoplay:
-                              typeof mediaRaw.autoplay === "boolean"
-                                ? mediaRaw.autoplay
-                                : false,
-                            filename:
-                              typeof mediaRaw.filename === "string"
-                                ? mediaRaw.filename
-                                : null,
-                            originalPath:
-                              typeof mediaRaw.originalPath === "string"
-                                ? mediaRaw.originalPath
-                                : null,
-                          }
-                        : null;
                     const correctAnswer =
                       typeof data.correctAnswer === "string" && data.correctAnswer.trim().length
                         ? data.correctAnswer.trim()
                         : typeof data.answer === "string" && data.answer.trim().length
                           ? data.answer.trim()
                           : null;
+
+                    const answerStages = parseStages(data.answerStages);
+                    const answerHint =
+                      typeof data.answerHint === "string" && data.answerHint.trim().length
+                        ? data.answerHint.trim()
+                        : null;
 
                     return {
                       id: questionSnap.id,
@@ -233,6 +267,14 @@ export function useRoomRounds(roomSlug: string, isHost?: boolean) {
                       order,
                       correctAnswer,
                       media,
+                      promptStages:
+                        promptStages.length > 0
+                          ? promptStages
+                          : promptRaw || media
+                            ? [{ text: promptRaw, media }]
+                            : [],
+                      answerStages: answerStages.length ? answerStages : undefined,
+                      answerHint,
                     };
                   })
                   .sort((a, b) => a.order - b.order);
@@ -277,36 +319,7 @@ export function useRoomRounds(roomSlug: string, isHost?: boolean) {
                   const images = imagesSnapshot.docs
                     .map((imageSnap) => {
                       const data = imageSnap.data();
-                      const mediaRaw = data.media;
-                      const media =
-                        mediaRaw &&
-                        typeof mediaRaw === "object" &&
-                        typeof mediaRaw.storagePath === "string" &&
-                        mediaRaw.storagePath.length
-                          ? {
-                              storagePath: mediaRaw.storagePath as string,
-                              contentType:
-                                typeof mediaRaw.contentType === "string"
-                                  ? mediaRaw.contentType
-                                  : null,
-                              size:
-                                typeof mediaRaw.size === "number"
-                                  ? mediaRaw.size
-                                  : Number(mediaRaw.size) || null,
-                              autoplay:
-                                typeof mediaRaw.autoplay === "boolean"
-                                  ? mediaRaw.autoplay
-                                  : false,
-                              filename:
-                                typeof mediaRaw.filename === "string"
-                                  ? mediaRaw.filename
-                                  : null,
-                              originalPath:
-                                typeof mediaRaw.originalPath === "string"
-                                  ? mediaRaw.originalPath
-                                  : null,
-                            }
-                          : null;
+                      const media = parseMedia(data.media);
 
                       return {
                         id: imageSnap.id,
@@ -341,6 +354,11 @@ export function useRoomRounds(roomSlug: string, isHost?: boolean) {
                 delete next[meta.id];
                 return next;
               });
+              setRoundAnswerHints((prev) => {
+                const next = { ...prev };
+                delete next[meta.id];
+                return next;
+              });
             }
           } else if (!answerUnsubs.has(meta.id)) {
             const answersQuery = collection(
@@ -358,9 +376,24 @@ export function useRoomRounds(roomSlug: string, isHost?: boolean) {
                 if (cancelled) return;
 
                 const answersForRound: Record<string, string> = {};
+                const hintsForRound: Record<string, string> = {};
                 answersSnapshot.docs.forEach((answerSnap) => {
                   const data = answerSnap.data();
+                  const hint =
+                    typeof data.hint === "string" && data.hint.trim().length
+                      ? data.hint.trim()
+                      : "";
+                  hintsForRound[answerSnap.id] = hint;
+                  const stageText = Array.isArray(data.stages)
+                    ? (data.stages as Array<Record<string, unknown>>)
+                        .map((stage) =>
+                          typeof stage?.text === "string" ? stage.text.trim() : ""
+                        )
+                        .find((value) => value.length > 0) ?? ""
+                    : "";
                   const raw =
+                    hint ||
+                    stageText ||
                     (typeof data.answer === "string" && data.answer) ||
                     (typeof data.value === "string" && data.value) ||
                     (typeof data.correctAnswer === "string" && data.correctAnswer) ||
@@ -372,6 +405,10 @@ export function useRoomRounds(roomSlug: string, isHost?: boolean) {
                 setRoundAnswers((prev) => ({
                   ...prev,
                   [meta.id]: answersForRound,
+                }));
+                setRoundAnswerHints((prev) => ({
+                  ...prev,
+                  [meta.id]: hintsForRound,
                 }));
               },
               (answersError) => {
@@ -421,6 +458,7 @@ export function useRoomRounds(roomSlug: string, isHost?: boolean) {
     gradingRequiredRounds,
     isLoadingRounds,
     roundAnswers: isCurrentRoom ? roundAnswers : {},
+    roundAnswerHints: isCurrentRoom ? roundAnswerHints : {},
     roundImages: isCurrentRoom ? roundImages : {},
     roundQuestions: isCurrentRoom ? roundQuestions : {},
     roundsError: isCurrentRoom ? roundsError : null,

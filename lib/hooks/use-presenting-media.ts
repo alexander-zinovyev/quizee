@@ -17,7 +17,7 @@ type PresentingState =
       round?: string | null;
       question?: string | null;
       withAnswer?: boolean;
-      playMedia?: boolean;
+      answerPage?: number;
     }
   | null;
 
@@ -43,15 +43,6 @@ function getMediaKind(media: RoundQuestionMedia | null | undefined): MediaKind {
     contentType.startsWith("video/") ||
     /\.(mp4|mov|webm)$/.test(name);
   return { isImage, isAudio, isVideo };
-}
-
-function shouldAutoStartMedia(question: RoundQuestion | null): boolean {
-  if (!question?.media) return false;
-  const kind = getMediaKind(question.media);
-  if (!question.prompt && (kind.isImage || question.media.autoplay)) {
-    return true;
-  }
-  return false;
 }
 
 function cacheMediaUrl(
@@ -96,6 +87,10 @@ export function usePresentingMedia({
   const [presentingImageAnswerId, setPresentingImageAnswerId] = useState<string | null>(null);
   const [presentingAnswerImageUrl, setPresentingAnswerImageUrl] = useState<string | null>(null);
   const [presentingTextAnswer, setPresentingTextAnswer] = useState<string | null>(null);
+  const [presentingTextAnswerMediaPath, setPresentingTextAnswerMediaPath] = useState<string | null>(
+    null
+  );
+  const [presentingTextAnswerStageCount, setPresentingTextAnswerStageCount] = useState(0);
   const [isAnswerImageLoading, setIsAnswerImageLoading] = useState(false);
   const [answerImageError, setAnswerImageError] = useState<string | null>(null);
 
@@ -113,21 +108,18 @@ export function usePresentingMedia({
     );
   }, [presentingImageAnswerId, presentingRoundMeta?.id, roundImages]);
 
-  const shouldShowMedia =
-    !!presentingQuestion?.media &&
-    (typeof presenting?.playMedia === "boolean"
-      ? presenting.playMedia
-      : shouldAutoStartMedia(presentingQuestion));
+  const shouldShowMedia = !!presentingQuestion?.media;
 
   const isPresentingImageRound = presentingRoundMeta?.type === "image";
 
   const mediaKind = useMemo(() => getMediaKind(presentingMedia), [presentingMedia]);
+  const presentingMediaResetKey = `${presentingQuestion?.id ?? ""}:${presentingQuestion?.media?.storagePath ?? ""}`;
 
   useEffect(() => {
     setMediaError(null);
     setPresentingMediaUrl(null);
     setIsMediaLoading(false);
-  }, [presentingQuestion?.id]);
+  }, [presentingMediaResetKey]);
 
   useEffect(() => {
     presentingAnswerUnsubRef.current?.();
@@ -137,6 +129,8 @@ export function usePresentingMedia({
     setPresentingAnswerImageUrl(null);
     setIsAnswerImageLoading(false);
     setPresentingTextAnswer(null);
+    setPresentingTextAnswerMediaPath(null);
+    setPresentingTextAnswerStageCount(0);
 
     if (
       !presentingRoundMeta?.id ||
@@ -212,21 +206,42 @@ export function usePresentingMedia({
       answerRef,
       (answerSnap) => {
         const data = answerSnap.data();
-        const answer =
-          data && typeof data.answer === "string" && data.answer.trim().length
-            ? data.answer.trim()
+        const stages = Array.isArray(data?.stages)
+          ? (data?.stages as Array<Record<string, unknown>>)
+          : [];
+        const hasStages = stages.length > 0;
+        const stageCount = hasStages ? stages.length : 1;
+        setPresentingTextAnswerStageCount(stageCount);
+        const requestedStage = Math.max(0, presenting?.answerPage ?? 0);
+        const stageIndex = Math.min(requestedStage, stageCount - 1);
+        const stage = stages[stageIndex];
+        const stageText =
+          stage && typeof stage.text === "string" && stage.text.trim().length
+            ? stage.text.trim()
             : null;
-        setPresentingTextAnswer(answer);
+        const mediaPath =
+          stage && stage.media && typeof stage.media === "object"
+            ? (() => {
+                const path = (stage.media as { storagePath?: unknown }).storagePath;
+                return typeof path === "string" && path.length ? path : null;
+              })()
+            : null;
+        const answer = hasStages ? stageText : null;
+        setPresentingTextAnswer(answer && answer.trim().length ? answer : null);
+        setPresentingTextAnswerMediaPath(mediaPath);
       },
       (error) => {
         console.error("[room-content] text answer reveal error", error);
         setPresentingTextAnswer(null);
+        setPresentingTextAnswerMediaPath(null);
+        setPresentingTextAnswerStageCount(0);
       }
     );
 
     return () => unsubscribe();
   }, [
     presenting?.question,
+    presenting?.answerPage,
     presenting?.withAnswer,
     presentingRoundMeta?.id,
     presentingRoundMeta?.type,
@@ -238,8 +253,9 @@ export function usePresentingMedia({
     setPresentingAnswerImageUrl(null);
     setIsAnswerImageLoading(false);
 
-    if (!presentingImageAnswer?.media?.storagePath) return;
-    const storagePath = presentingImageAnswer.media.storagePath;
+    const storagePath =
+      presentingImageAnswer?.media?.storagePath ?? presentingTextAnswerMediaPath;
+    if (!storagePath) return;
     const cached = mediaUrlCacheRef.current.get(storagePath);
     if (cached) {
       setPresentingAnswerImageUrl(cached.url);
@@ -288,7 +304,7 @@ export function usePresentingMedia({
     return () => {
       cancelled = true;
     };
-  }, [presentingImageAnswer?.media?.storagePath]);
+  }, [presentingImageAnswer?.media?.storagePath, presentingTextAnswerMediaPath]);
 
   useEffect(() => {
     if (!presentingMedia?.storagePath || !shouldShowMedia) return;
@@ -350,7 +366,10 @@ export function usePresentingMedia({
       const meta = roundsMeta.find((r) => r.id === roundId);
       const mediaItems =
         meta?.type === "image"
-          ? (roundImages[roundId] ?? []).map((img) => img.media)
+          ? [
+              ...(roundImages[roundId] ?? []).map((img) => img.media),
+              ...(roundQuestions[roundId] ?? []).map((q) => q.media),
+            ]
           : (roundQuestions[roundId] ?? []).map((q) => q.media);
       mediaItems.forEach((media) => {
         if (!media?.storagePath) return;
@@ -429,6 +448,7 @@ export function usePresentingMedia({
     presentingMedia,
     presentingMediaUrl,
     presentingTextAnswer,
+    presentingTextAnswerStageCount,
     shouldShowMedia,
     answerImageError,
     DEFAULT_MEDIA_VOLUME,

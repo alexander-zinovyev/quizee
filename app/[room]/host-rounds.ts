@@ -19,13 +19,13 @@ export function resolveHostRoundId(
   rounds: HostRound[],
   selectedRoundId: string | null
 ): string | null {
+  if (selectedRoundId && rounds.some((round) => round.id === selectedRoundId)) {
+    return selectedRoundId;
+  }
+
   const activeRoundId = rounds.find((round) => round.state === "active")?.id ?? null;
   if (activeRoundId) {
     return activeRoundId;
-  }
-
-  if (selectedRoundId && rounds.some((round) => round.id === selectedRoundId)) {
-    return selectedRoundId;
   }
 
   return rounds[0]?.id ?? null;

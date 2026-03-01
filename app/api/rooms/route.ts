@@ -156,11 +156,27 @@ export async function POST(request: NextRequest) {
     // Build media file map for referenced files only.
     const referencedMedia = new Set<string>();
     rounds.forEach((round) => {
-      round.questions.forEach((q) => {
-        if (q.media?.path) {
-          referencedMedia.add(q.media.path);
-        }
-      });
+      if (round.type === "text") {
+        round.questions.forEach((q) => {
+          q.promptStages.forEach((stage) => {
+            if (stage.media?.path) {
+              referencedMedia.add(stage.media.path);
+            }
+          });
+          q.answerStages.forEach((stage) => {
+            if (stage.media?.path) {
+              referencedMedia.add(stage.media.path);
+            }
+          });
+        });
+      } else {
+        round.questions.forEach((q) => {
+          if (q.prompt?.media?.path) {
+            referencedMedia.add(q.prompt.media.path);
+          }
+          referencedMedia.add(q.imagePath);
+        });
+      }
     });
 
     for (const relPath of referencedMedia) {
@@ -241,12 +257,47 @@ export async function POST(request: NextRequest) {
     }
 
     const batch = db.batch();
+    const uploadedMedia = new Set<string>();
+    const resolveMedia = async (path: string) => {
+      const mediaMeta = mediaFiles.get(path);
+      if (!mediaMeta) {
+        throw new Error(`Missing media file "${path}" in quiz pack.`);
+      }
+      const storagePath = posix.join(
+        "rooms",
+        roomId,
+        "media",
+        path.replace(/^[\\/]+/, "").replace(/\\/g, "/")
+      );
+      if (!uploadedMedia.has(storagePath)) {
+        await bucket.upload(mediaMeta.absolutePath, {
+          destination: storagePath,
+          metadata: {
+            contentType: mediaMeta.contentType,
+            cacheControl: "public,max-age=31536000,immutable",
+            metadata: {
+              originalPath: path,
+              filename: mediaMeta.filename,
+            },
+          },
+        });
+        uploadedMedia.add(storagePath);
+      }
+
+      return {
+        storagePath,
+        contentType: mediaMeta.contentType,
+        size: mediaMeta.size,
+        filename: mediaMeta.filename,
+        originalPath: path,
+      };
+    };
 
     batch.set(roomRef, {
       title: name,
       state: INITIAL_ROOM_STATE,
       createdAt: FieldValue.serverTimestamp(),
-      presenting: { round: null, question: null, withAnswer: false, playMedia: false },
+      presenting: { round: null, question: null, withAnswer: false, promptPage: 0, answerPage: 0 },
       handRaisingEnabled: true,
       countdownEndsAt: null,
     });
@@ -279,116 +330,94 @@ export async function POST(request: NextRequest) {
         state: "scheduled",
         activeWindow: { startedAt: null, endedAt: null },
         questionCount: round.questions.length,
+        gradingRequired: false,
       });
 
       if (round.type === "text") {
         for (const question of round.questions) {
           const questionId = `question-${question.order + 1}`;
           const questionRef = roundRef.collection("questions").doc(questionId);
-          const mediaMeta = question.media?.path
-            ? mediaFiles.get(question.media.path)
-            : null;
-          const storagePath =
-            mediaMeta && question.media
-              ? posix.join("rooms", roomId, "media", question.media.path.replace(/^[\\/]+/, "").replace(/\\/g, "/"))
-              : null;
-          if (mediaMeta && storagePath) {
-            await bucket.upload(mediaMeta.absolutePath, {
-              destination: storagePath,
-              metadata: {
-                contentType: mediaMeta.contentType,
-                cacheControl: "public,max-age=31536000,immutable",
-                metadata: {
-                  originalPath: question.media?.path ?? "",
-                  filename: mediaMeta.filename,
-                },
-              },
-            });
-            question.media!.storagePath = storagePath;
-            question.media!.contentType = mediaMeta.contentType;
-            question.media!.size = mediaMeta.size;
-            question.media!.filename = mediaMeta.filename;
-          }
+          const promptStages = await Promise.all(
+            question.promptStages.map(async (stage) => {
+              if (!stage.media?.path) {
+                return { text: stage.text ?? null, media: null };
+              }
+              const media = await resolveMedia(stage.media.path);
+              return {
+                text: stage.text ?? null,
+                media,
+              };
+            })
+          );
           batch.set(questionRef, {
             order: question.order,
-            prompt: question.prompt,
-            media: question.media?.storagePath
-              ? {
-                  storagePath: question.media.storagePath,
-                  contentType: question.media.contentType,
-                  size: question.media.size,
-                  autoplay: question.media.autoplay,
-                  filename: question.media.filename,
-                  originalPath: question.media.path,
-                }
-              : null,
+            stages: promptStages,
+          });
+
+          const answerRef = roundRef.collection("answers").doc(questionId);
+          const answerStages = await Promise.all(
+            question.answerStages.map(async (stage) => {
+              if (!stage.media?.path) {
+                return { text: stage.text ?? null, media: null };
+              }
+              const media = await resolveMedia(stage.media.path);
+              return {
+                text: stage.text ?? null,
+                media,
+              };
+            })
+          );
+          batch.set(answerRef, {
+            hint: question.answerHint,
+            stages: answerStages,
+          });
+        }
+      } else {
+        for (const question of round.questions) {
+          const imageMedia = await resolveMedia(question.imagePath);
+          const imageRef = roundRef.collection("images").doc();
+          batch.set(imageRef, {
+            media: {
+              storagePath: imageMedia.storagePath,
+              contentType: imageMedia.contentType,
+              size: imageMedia.size,
+              filename: imageMedia.filename,
+              originalPath: imageMedia.originalPath,
+            },
+          });
+
+          const hasPromptContent = Boolean(
+            question.prompt?.text || question.prompt?.media?.path
+          );
+          if (!hasPromptContent) {
+            continue;
+          }
+
+          const questionId = `question-${question.order + 1}`;
+          const questionRef = roundRef.collection("questions").doc(questionId);
+          let promptMedia:
+            | {
+                storagePath: string;
+                contentType: string;
+                size: number;
+                filename: string;
+                originalPath: string;
+              }
+            | null = null;
+          if (question.prompt?.media?.path) {
+            promptMedia = await resolveMedia(question.prompt.media.path);
+          }
+
+          batch.set(questionRef, {
+            order: question.order,
+            text: question.prompt?.text ?? null,
+            media: promptMedia,
           });
 
           const answerRef = roundRef.collection("answers").doc(questionId);
           batch.set(answerRef, {
-            answer: question.answer,
+            answer: imageRef.id,
           });
-        }
-      } else {
-        let promptOrder = 0;
-
-        for (const question of round.questions) {
-          const promptText =
-            question.prompt ??
-            (question.answer?.trim().length ? question.answer.trim() : null);
-          const mediaMeta = question.media?.path
-            ? mediaFiles.get(question.media.path)
-            : null;
-          const storagePath =
-            mediaMeta && question.media
-              ? posix.join("rooms", roomId, "media", question.media.path.replace(/^[\\/]+/, "").replace(/\\/g, "/"))
-              : null;
-          if (mediaMeta && storagePath) {
-            await bucket.upload(mediaMeta.absolutePath, {
-              destination: storagePath,
-              metadata: {
-                contentType: mediaMeta.contentType,
-                cacheControl: "public,max-age=31536000,immutable",
-                metadata: {
-                  originalPath: question.media?.path ?? "",
-                  filename: mediaMeta.filename,
-                },
-              },
-            });
-            question.media!.storagePath = storagePath;
-            question.media!.contentType = mediaMeta.contentType;
-            question.media!.size = mediaMeta.size;
-            question.media!.filename = mediaMeta.filename;
-          }
-
-          if (!storagePath || !question.media?.storagePath) {
-            continue;
-          }
-
-          const imageRef = roundRef.collection("images").doc();
-          batch.set(imageRef, {
-            media: {
-              storagePath: question.media.storagePath,
-              contentType: question.media.contentType,
-              size: question.media.size,
-              autoplay: question.media.autoplay,
-              filename: question.media.filename,
-              originalPath: question.media.path,
-            },
-          });
-
-          if (promptText) {
-            const promptRef = roundRef.collection("prompts").doc();
-            batch.set(promptRef, {
-              order: promptOrder,
-              prompt: promptText,
-            });
-            const answerRef = roundRef.collection("answers").doc(promptRef.id);
-            batch.set(answerRef, {
-              answer: imageRef.id,
-            });
-            promptOrder += 1;
-          }
         }
       }
     }
