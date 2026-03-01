@@ -148,8 +148,13 @@ service cloud.firestore {
             if isHost(roomId)
             || (
               isMember(roomId)
-              && memberTeam(roomId) == teamId
-              && roundDoc(roomId, roundId).data.state == "closed"
+              && (
+                roomDoc(roomId).data.state == "ended"
+                || (
+                  memberTeam(roomId) == teamId
+                  && roundDoc(roomId, roundId).data.state == "closed"
+                )
+              )
             );
           allow write: if isHost(roomId);
 
@@ -158,8 +163,13 @@ service cloud.firestore {
               if isHost(roomId)
               || (
                 isMember(roomId)
-                && memberTeam(roomId) == teamId
-                && roundDoc(roomId, roundId).data.state == "closed"
+                && (
+                  roomDoc(roomId).data.state == "ended"
+                  || (
+                    memberTeam(roomId) == teamId
+                    && roundDoc(roomId, roundId).data.state == "closed"
+                  )
+                )
               );
             allow write: if isHost(roomId);
           }

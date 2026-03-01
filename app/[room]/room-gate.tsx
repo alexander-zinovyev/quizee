@@ -607,6 +607,7 @@ export default function RoomGate({ roomSlug }: RoomGateProps) {
         unassignedMembers={unassignedWithMedia}
         host={hostWithMedia}
         isHost={viewerIsHost}
+        viewerTeamId={viewerTeamId}
       />
     );
   }

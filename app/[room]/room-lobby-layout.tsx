@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   addDoc,
   collection,
@@ -49,6 +49,9 @@ type RoomLobbyLayoutProps = {
   isStartDisabled?: boolean;
   allowTeamEditing?: boolean;
   allowReshuffle?: boolean;
+  viewerTeamId?: string | null;
+  renderTeamScoreAction?: (team: RoomRosterTeam) => ReactNode;
+  allowScoreActionForAllTeams?: boolean;
 };
 
 const TEAM_COLORS = [
@@ -134,6 +137,9 @@ export default function RoomLobbyLayout({
   isStartDisabled = false,
   allowTeamEditing = true,
   allowReshuffle = false,
+  viewerTeamId = null,
+  renderTeamScoreAction,
+  allowScoreActionForAllTeams = false,
 }: RoomLobbyLayoutProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -499,8 +505,14 @@ export default function RoomLobbyLayout({
                       />
                       <span className="break-words leading-snug">{team.name}</span>
                       {showScores ? (
-                        <span className="text-[0.75rem] font-semibold text-emerald-500 dark:text-emerald-300">
-                          {team.scoreTotal ?? 0}
+                        <span className="inline-flex items-center gap-1">
+                          <span className="text-[0.75rem] font-semibold text-emerald-500 dark:text-emerald-300">
+                            {team.scoreTotal ?? 0}
+                          </span>
+                          {renderTeamScoreAction &&
+                          (allowScoreActionForAllTeams || isHost || viewerTeamId === team.id)
+                            ? renderTeamScoreAction(team)
+                            : null}
                         </span>
                       ) : null}
                     </div>
