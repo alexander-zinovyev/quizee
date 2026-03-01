@@ -419,7 +419,7 @@ export function RoundStage({
             >
               <div className="flex h-full w-full items-center justify-center rounded-2xl border border-emerald-200/80 bg-emerald-700/98 px-8 py-6 text-center text-3xl font-semibold leading-tight text-white shadow-2xl">
                 <div
-                  className={`grid h-full w-full min-h-0 items-stretch gap-6 ${
+                  className={`grid h-full w-full min-h-0 grid-rows-[minmax(0,1fr)] items-stretch gap-6 ${
                     presentingAnswer && presentingAnswerImageUrl
                       ? "md:grid-cols-2"
                       : "grid-cols-1"
@@ -434,8 +434,9 @@ export function RoundStage({
                         src={presentingAnswerImageUrl}
                         alt="Answer media"
                         label={presentingAnswer ?? undefined}
-                        wrapperClassName="h-full max-h-full max-w-full"
-                        imageClassName="h-auto max-h-full w-auto max-w-full rounded-2xl object-contain"
+                        wrapperClassName="max-h-full max-w-full"
+                        imageClassName="rounded-2xl"
+                        fitToParent
                         zoomLabel="Zoom answer image"
                       />
                     </div>

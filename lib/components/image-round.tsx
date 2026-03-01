@@ -1,13 +1,12 @@
 "use client";
 
-import Image from "next/image";
-import { createPortal } from "react-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent } from "react";
 import type { Question, ImageItem } from "@/types/quiz";
 import { collection, doc, onSnapshot, setDoc } from "firebase/firestore";
 import { getClientFirestore } from "@/lib/firebase/client";
 import { useFirebaseAuth } from "@/app/providers/firebase-auth-provider";
+import ZoomableImage from "@/lib/components/zoomable-image";
 
 type ImageQuizRoundProps = {
   questions: Question[];
@@ -60,7 +59,6 @@ export default function ImageQuizRound({
 
   const questionListRef = useRef<HTMLDivElement>(null);
   const imageListRef = useRef<HTMLDivElement>(null);
-  const [zoomedImage, setZoomedImage] = useState<ImageItem | null>(null);
 
   useEffect(() => {
     if (!roomSlug || !teamId || !roundId) return;
@@ -93,19 +91,6 @@ export default function ImageQuizRound({
 
     return () => unsubscribe();
   }, [roomSlug, roundId, teamId]);
-
-  useEffect(() => {
-    if (!zoomedImage) return;
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setZoomedImage(null);
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [zoomedImage]);
 
   async function persistMatch(questionId: string, imageId: string | null, locked: boolean) {
     if (!roomSlug || !teamId || !roundId) return;
@@ -205,69 +190,6 @@ export default function ImageQuizRound({
     });
   }
 
-  function openZoom(image: ImageItem) {
-    setZoomedImage(image);
-  }
-
-  function closeZoom() {
-    setZoomedImage(null);
-  }
-
-  const zoomOverlay = zoomedImage ? (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-label={zoomedImage.alt ?? "Zoomed image preview"}
-      onClick={closeZoom}
-    >
-      <div
-        className="relative flex w-full max-w-5xl flex-col items-center gap-4"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div
-          className="relative w-full overflow-hidden rounded-2xl bg-black shadow-2xl"
-          style={{ width: "min(90vw, 960px)", height: "min(90vh, 600px)" }}
-        >
-          <button
-            type="button"
-            className="absolute right-3 top-3 z-10 flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-black/70 text-white transition hover:bg-black/90 focus:outline-none focus:ring-2 focus:ring-white/80"
-            aria-label="Close zoomed image"
-            onClick={(event) => {
-              event.stopPropagation();
-              closeZoom();
-            }}
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="h-5 w-5"
-            >
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-          <Image
-            src={zoomedImage.src}
-            alt={zoomedImage.alt ?? "Zoomed image"}
-            fill
-            sizes="(max-width: 1024px) 90vw, 960px"
-            className="object-contain"
-          />
-        </div>
-        {zoomedImage.label ? (
-          <p className="text-sm text-white/80">{zoomedImage.label}</p>
-        ) : null}
-      </div>
-    </div>
-  ) : null;
-
   if (!questions.length) return null;
 
   return (
@@ -299,47 +221,15 @@ export default function ImageQuizRound({
                       {label}
                       </p>
                       {questionMediaSrc ? (
-                        <div className="group relative w-full">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={questionMediaSrc}
-                            alt={`Prompt media ${index + 1}`}
-                            className="max-h-32 w-full rounded-xl object-contain"
-                          />
-                          <button
-                            type="button"
-                            className="absolute right-2 top-2 hidden rounded-full bg-black/70 p-1.5 text-white transition hover:bg-black/90 focus:outline-none focus:ring-2 focus:ring-white/90 group-hover:flex"
-                            aria-label="Zoom prompt image"
-                            onClick={(event) => {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              openZoom({
-                                id: `${questionId}-prompt`,
-                                src: questionMediaSrc,
-                                alt: `Prompt media ${index + 1}`,
-                                label: label,
-                              });
-                            }}
-                            onMouseDown={(event) => event.stopPropagation()}
-                            onPointerDown={(event) => event.stopPropagation()}
-                          >
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              className="h-4 w-4"
-                            >
-                              <circle cx="11" cy="11" r="8" />
-                              <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                              <line x1="11" y1="8" x2="11" y2="14" />
-                              <line x1="8" y1="11" x2="14" y2="11" />
-                            </svg>
-                          </button>
-                        </div>
+                        <ZoomableImage
+                          src={questionMediaSrc}
+                          alt={`Prompt media ${index + 1}`}
+                          label={label}
+                          wrapperClassName="w-full"
+                          imageClassName="max-h-32 w-full rounded-xl object-contain"
+                          zoomLabel="Zoom prompt image"
+                          zoomButtonClassName="hidden group-hover:flex"
+                        />
                       ) : null}
                     </div>
                     <button
@@ -401,41 +291,15 @@ export default function ImageQuizRound({
                             handleImageDrag(event, matchedImageId as string)
                           }
                         >
-                          <Image
+                          <ZoomableImage
                             src={matchedImage.src}
                             alt={matchedImage.alt ?? "Matched image"}
-                            fill
-                            sizes="(max-width: 640px) 70vw, 256px"
-                            className="object-cover"
+                            label={label}
+                            wrapperClassName="h-full w-full overflow-hidden rounded-xl"
+                            imageClassName="h-full w-full object-cover"
+                            zoomLabel="Zoom matched image"
+                            zoomButtonClassName="bottom-2 right-2 hidden h-7 w-7 items-center justify-center group-hover:flex"
                           />
-                          <button
-                            type="button"
-                            className="absolute bottom-2 right-2 hidden h-7 w-7 items-center justify-center rounded-full bg-black/70 text-white transition hover:bg-black/90 focus:outline-none focus:ring-2 focus:ring-white/90 group-hover:flex"
-                            aria-label="Zoom matched image"
-                            onClick={(event) => {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              openZoom(matchedImage);
-                            }}
-                            onMouseDown={(event) => event.stopPropagation()}
-                            onPointerDown={(event) => event.stopPropagation()}
-                          >
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              className="h-4 w-4"
-                            >
-                              <circle cx="11" cy="11" r="8" />
-                              <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                              <line x1="11" y1="8" x2="11" y2="14" />
-                              <line x1="8" y1="11" x2="14" y2="11" />
-                            </svg>
-                          </button>
                         </div>
                         <button
                           type="button"
@@ -484,43 +348,15 @@ export default function ImageQuizRound({
                       draggable
                       onDragStart={(event) => handleImageDrag(event, imageId)}
                     >
-                      <div className="relative h-16 w-16 overflow-hidden rounded-lg bg-zinc-100 dark:bg-zinc-900">
-                        <Image
-                          src={unmatchedImage.src}
-                          alt={unmatchedImage.alt ?? "Quiz image option"}
-                          fill
-                          sizes="(max-width: 640px) 40vw, 128px"
-                          className="object-cover"
-                        />
-                        <button
-                          type="button"
-                          className="absolute right-2 top-2 hidden rounded-full bg-black/70 p-1.5 text-white transition hover:bg-black/90 focus:outline-none focus:ring-2 focus:ring-white/90 group-hover:flex"
-                          aria-label="Zoom image"
-                          onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            openZoom(unmatchedImage);
-                          }}
-                          onMouseDown={(event) => event.stopPropagation()}
-                          onPointerDown={(event) => event.stopPropagation()}
-                        >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            className="h-4 w-4"
-                          >
-                            <circle cx="11" cy="11" r="8" />
-                            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                            <line x1="11" y1="8" x2="11" y2="14" />
-                            <line x1="8" y1="11" x2="14" y2="11" />
-                          </svg>
-                        </button>
-                      </div>
+                      <ZoomableImage
+                        src={unmatchedImage.src}
+                        alt={unmatchedImage.alt ?? "Quiz image option"}
+                        label={unmatchedImage.label}
+                        wrapperClassName="h-16 w-16 overflow-hidden rounded-lg bg-zinc-100 dark:bg-zinc-900"
+                        imageClassName="h-full w-full object-cover"
+                        zoomLabel="Zoom image"
+                        zoomButtonClassName="hidden group-hover:flex"
+                      />
                     </div>
                   );
                 })
@@ -533,9 +369,6 @@ export default function ImageQuizRound({
           </section>
         </div>
       </article>
-      {typeof document !== "undefined" && zoomOverlay
-        ? createPortal(zoomOverlay, document.body)
-        : null}
     </>
   );
 }

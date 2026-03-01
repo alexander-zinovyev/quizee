@@ -1,7 +1,7 @@
 "use client";
 
 import { createPortal } from "react-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type ZoomableImageProps = {
   src: string;
@@ -11,6 +11,7 @@ type ZoomableImageProps = {
   imageClassName?: string;
   zoomButtonClassName?: string;
   zoomLabel?: string;
+  fitToParent?: boolean;
 };
 
 export default function ZoomableImage({
@@ -21,8 +22,12 @@ export default function ZoomableImage({
   imageClassName,
   zoomButtonClassName,
   zoomLabel = "Zoom image",
+  fitToParent = false,
 }: ZoomableImageProps) {
   const [isZoomOpen, setIsZoomOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
+  const [fitSize, setFitSize] = useState<{ width: number; height: number } | null>(null);
 
   useEffect(() => {
     if (!isZoomOpen) return;
@@ -34,6 +39,53 @@ export default function ZoomableImage({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [isZoomOpen]);
+
+  useEffect(() => {
+    if (!fitToParent) return;
+    let cancelled = false;
+    const probe = new Image();
+    probe.onload = () => {
+      if (cancelled) return;
+      if (!probe.naturalWidth || !probe.naturalHeight) return;
+      setNaturalSize({
+        width: probe.naturalWidth,
+        height: probe.naturalHeight,
+      });
+    };
+    probe.src = src;
+    return () => {
+      cancelled = true;
+    };
+  }, [fitToParent, src]);
+
+  useEffect(() => {
+    if (!fitToParent || !naturalSize || !wrapperRef.current) return;
+    const wrapper = wrapperRef.current;
+    const parent = wrapper.parentElement;
+    if (!parent) return;
+
+    const recompute = () => {
+      const maxWidth = parent.clientWidth;
+      const maxHeight = parent.clientHeight;
+      if (!maxWidth || !maxHeight) return;
+      const scale = Math.min(
+        maxWidth / naturalSize.width,
+        maxHeight / naturalSize.height
+      );
+      const width = Math.max(1, Math.floor(naturalSize.width * scale));
+      const height = Math.max(1, Math.floor(naturalSize.height * scale));
+      setFitSize({ width, height });
+    };
+
+    recompute();
+    const observer = new ResizeObserver(() => recompute());
+    observer.observe(parent);
+    window.addEventListener("resize", recompute);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", recompute);
+    };
+  }, [fitToParent, naturalSize]);
 
   const overlay = isZoomOpen ? (
     <div
@@ -85,17 +137,21 @@ export default function ZoomableImage({
   return (
     <>
       <div
+        ref={wrapperRef}
         className={`group relative inline-flex max-h-full max-w-full items-center justify-center ${
           wrapperClassName ?? ""
         }`}
+        style={fitToParent && fitSize ? { width: fitSize.width, height: fitSize.height } : undefined}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={src}
           alt={alt}
           className={
-            imageClassName ??
-            "h-auto max-h-full w-auto max-w-full rounded-2xl object-contain"
+            fitToParent
+              ? `h-full w-full object-contain ${imageClassName ?? ""}`.trim()
+              : imageClassName ??
+                "h-auto max-h-full w-auto max-w-full rounded-2xl object-contain"
           }
         />
         <button
