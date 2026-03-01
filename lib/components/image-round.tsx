@@ -378,10 +378,10 @@ export default function ImageQuizRound({
                     </button>
                   </div>
                   <div
-                    className={`relative flex-none aspect-square h-16 rounded-2xl border-2 border-dashed text-xs text-zinc-400 transition-colors dark:text-zinc-500 ${
+                    className={`relative flex-none h-16 rounded-2xl border-2 border-dashed text-xs text-zinc-400 transition-colors dark:text-zinc-500 ${
                       matchedImage
-                        ? "border-transparent bg-transparent"
-                        : "border-zinc-300 p-2 dark:border-zinc-700"
+                        ? "w-full border-transparent bg-transparent"
+                        : "aspect-square border-zinc-300 p-2 dark:border-zinc-700"
                     }`}
                     onDragOver={(event) => {
                       handleDragOver(event);
@@ -393,34 +393,57 @@ export default function ImageQuizRound({
                     aria-label={`Drop image for question ${index + 1}`}
                   >
                     {matchedImage ? (
-                      <div
-                        className="group relative flex h-full w-full cursor-grab items-center justify-center overflow-hidden rounded-xl"
-                        draggable
-                        onDragStart={(event) =>
-                          handleImageDrag(event, matchedImageId as string)
-                        }
-                      >
-                        <Image
-                          src={matchedImage.src}
-                          alt={matchedImage.alt ?? "Matched image"}
-                          fill
-                          sizes="(max-width: 640px) 70vw, 256px"
-                          className="object-cover"
-                        />
-                        <span
-                          role="button"
-                          tabIndex={0}
+                      <div className="flex h-full w-full items-center gap-2">
+                        <div
+                          className="group relative h-full w-16 shrink-0 cursor-grab overflow-hidden rounded-xl"
+                          draggable
+                          onDragStart={(event) =>
+                            handleImageDrag(event, matchedImageId as string)
+                          }
+                        >
+                          <Image
+                            src={matchedImage.src}
+                            alt={matchedImage.alt ?? "Matched image"}
+                            fill
+                            sizes="(max-width: 640px) 70vw, 256px"
+                            className="object-cover"
+                          />
+                          <button
+                            type="button"
+                            className="absolute bottom-2 right-2 hidden h-7 w-7 items-center justify-center rounded-full bg-black/70 text-white transition hover:bg-black/90 focus:outline-none focus:ring-2 focus:ring-white/90 group-hover:flex"
+                            aria-label="Zoom matched image"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              openZoom(matchedImage);
+                            }}
+                            onMouseDown={(event) => event.stopPropagation()}
+                            onPointerDown={(event) => event.stopPropagation()}
+                          >
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              className="h-4 w-4"
+                            >
+                              <circle cx="11" cy="11" r="8" />
+                              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                              <line x1="11" y1="8" x2="11" y2="14" />
+                              <line x1="8" y1="11" x2="14" y2="11" />
+                            </svg>
+                          </button>
+                        </div>
+                        <button
+                          type="button"
                           onClick={(event) => {
                             event.stopPropagation();
                             clearMatch(questionId);
                           }}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter" || event.key === " ") {
-                              event.preventDefault();
-                              clearMatch(questionId);
-                            }
-                          }}
-                          className="group absolute right-3 top-3 flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-black/60 text-white transition hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-white/70"
+                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-black/60 text-white transition hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-white/70"
                           aria-label="Remove image match"
                         >
                           <svg
@@ -435,34 +458,6 @@ export default function ImageQuizRound({
                           >
                             <line x1="18" y1="6" x2="6" y2="18" />
                             <line x1="6" y1="6" x2="18" y2="18" />
-                          </svg>
-                        </span>
-                        <button
-                          type="button"
-                          className="absolute left-3 top-3 hidden rounded-full bg-black/70 p-1.5 text-white transition hover:bg-black/90 focus:outline-none focus:ring-2 focus:ring-white/90 group-hover:flex"
-                          aria-label="Zoom matched image"
-                          onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            openZoom(matchedImage);
-                          }}
-                          onMouseDown={(event) => event.stopPropagation()}
-                          onPointerDown={(event) => event.stopPropagation()}
-                        >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            className="h-4 w-4"
-                          >
-                            <circle cx="11" cy="11" r="8" />
-                            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                            <line x1="11" y1="8" x2="11" y2="14" />
-                            <line x1="8" y1="11" x2="14" y2="11" />
                           </svg>
                         </button>
                       </div>
@@ -530,8 +525,8 @@ export default function ImageQuizRound({
                   );
                 })
               ) : (
-                <p className="col-span-full text-sm text-zinc-500 dark:text-zinc-400">
-                  All images have been assigned. Drag one away to adjust a match.
+                <p className="shrink-0 self-center whitespace-nowrap px-1 text-sm font-medium text-zinc-500 dark:text-zinc-400">
+                  All done!
                 </p>
               )}
             </div>
