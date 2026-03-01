@@ -345,7 +345,7 @@ export async function POST(request: NextRequest) {
     title: roomName,
     state: "pending",
     createdAt: FieldValue.serverTimestamp(),
-    presenting: { round: null, question: null, withAnswer: false },
+    presenting: { round: null, question: null, withAnswer: false, promptPage: 0, answerPage: 0 },
     handRaisingEnabled: true,
     countdownEndsAt: null,
   });

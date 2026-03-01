@@ -24,6 +24,8 @@ type PresentingState =
       round?: string | null;
       question?: string | null;
       withAnswer?: boolean;
+      promptPage?: number;
+      answerPage?: number;
     }
   | null;
 
@@ -260,10 +262,19 @@ export default function RoomGate({ roomSlug }: RoomGateProps) {
                         ? presentingData.question
                         : presentingData.question ?? null,
                     withAnswer: Boolean(presentingData.withAnswer),
+                    promptPage:
+                      typeof (presentingData as { promptPage?: unknown }).promptPage === "number"
+                        ? Math.max(0, (presentingData as { promptPage?: number }).promptPage ?? 0)
+                        : 0,
+                    answerPage:
+                      typeof (presentingData as { answerPage?: unknown }).answerPage === "number"
+                        ? Math.max(0, (presentingData as { answerPage?: number }).answerPage ?? 0)
+                        : 0,
                   };
                 } else {
                   presentingValue = null;
                 }
+                setPresenting(presentingValue);
                 applyRoster();
                 setHandRaisingEnabled(handRaisingEnabledValue);
                 setCountdownEndsAt(countdownEndsAtValue);

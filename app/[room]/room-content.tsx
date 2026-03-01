@@ -20,6 +20,7 @@ import Team from "@/lib/components/team";
 import { RoundStage } from "@/lib/components/room/round-stage";
 import { usePresentingMedia } from "@/lib/hooks/use-presenting-media";
 import {
+  type RoundQuestion,
   useRoomRounds,
 } from "@/lib/hooks/use-room-rounds";
 import RoomChatPanel from "./room-chat-panel";
@@ -41,6 +42,8 @@ type RoomContentProps = {
     round?: string | null;
     question?: string | null;
     withAnswer?: boolean;
+    promptPage?: number;
+    answerPage?: number;
   } | null;
   viewerTeamId?: string | null;
   viewerName?: string | null;
@@ -55,6 +58,46 @@ type RoomContentProps = {
 const DEFAULT_MEDIA_VOLUME = 0.2;
 const MEDIA_PLACEHOLDER =
   "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
+
+function EyeIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      className={className}
+    >
+      <path
+        d="M2 12c2-3 5.6-6 10-6s8 3 10 6c-2 3-5.6 6-10 6s-8-3-10-6z"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx="12" cy="12" r="2.5" />
+    </svg>
+  );
+}
+
+function EyeOffIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      className={className}
+    >
+      <path d="M3 3l18 18" strokeLinecap="round" />
+      <path
+        d="M4.5 4.5C3 6 2 8 2 12c2 3 5.6 6 10 6 2.1 0 4-.5 5.6-1.4M9.88 9.88a3 3 0 104.24 4.24"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
 
 export default function RoomContent({
   roomSlug,
@@ -112,6 +155,32 @@ export default function RoomContent({
     return questions.find((q) => q.id === presenting.question) ?? null;
   }, [presenting?.question, presenting?.round, roundQuestions]);
 
+  const presentingQuestionStageCount = useMemo(() => {
+    if (!presentingQuestion) return 0;
+    if (presentingQuestion.promptStages?.length) return presentingQuestion.promptStages.length;
+    if (presentingQuestion.prompt || presentingQuestion.media) return 1;
+    return 0;
+  }, [presentingQuestion]);
+
+  const currentPromptPage = useMemo(() => {
+    if (!presentingQuestionStageCount) return 0;
+    const index = Math.max(0, presenting?.promptPage ?? 0);
+    return Math.min(index, presentingQuestionStageCount - 1);
+  }, [presenting?.promptPage, presentingQuestionStageCount]);
+
+  const stagedPresentingQuestion = useMemo<RoundQuestion | null>(() => {
+    if (!presentingQuestion) return null;
+    if (presentingQuestion.promptStages?.length) {
+      const stage = presentingQuestion.promptStages[currentPromptPage] ?? null;
+      return {
+        ...presentingQuestion,
+        prompt: stage?.text?.trim().length ? stage.text : null,
+        media: stage?.media ?? null,
+      };
+    }
+    return presentingQuestion;
+  }, [currentPromptPage, presentingQuestion]);
+
   const {
     answerImageError,
     clearCachedMedia,
@@ -126,9 +195,10 @@ export default function RoomContent({
     presentingMedia,
     presentingMediaUrl,
     presentingTextAnswer,
+    presentingTextAnswerStageCount,
   } = usePresentingMedia({
     presenting,
-    presentingQuestion,
+    presentingQuestion: stagedPresentingQuestion,
     presentingRoundMeta,
     roomSlug,
     roundImages,
@@ -264,18 +334,19 @@ export default function RoomContent({
 
   const presentingAnswer = useMemo(() => {
     if (!presenting?.round || !presenting?.question || !presenting?.withAnswer) return null;
+    if (presentingRoundMeta?.type === "text") {
+      return presentingTextAnswer?.trim().length ? presentingTextAnswer : null;
+    }
     const answerFromCollection =
       roundAnswers[presenting.round]?.[presenting.question] ?? null;
     const fallbackAnswer = presentingQuestion?.correctAnswer ?? null;
-    const resolved =
-      (presentingTextAnswer && presentingTextAnswer.trim().length
-        ? presentingTextAnswer
-        : answerFromCollection) ?? fallbackAnswer;
+    const resolved = answerFromCollection ?? fallbackAnswer;
     return resolved?.trim().length ? resolved : null;
   }, [
     presenting?.question,
     presenting?.round,
     presenting?.withAnswer,
+    presentingRoundMeta?.type,
     presentingQuestion,
     presentingTextAnswer,
     roundAnswers,
@@ -357,10 +428,31 @@ export default function RoomContent({
     return controlQuestions.findIndex((q) => q.id === presentingQuestion.id);
   }, [activeRoundForControls, controlQuestions, presenting?.round, presentingQuestion]);
 
+  const answerPageCount = useMemo(() => {
+    if (!presenting?.withAnswer || !presentingRoundMeta) return 0;
+    if (presentingRoundMeta.type === "text") {
+      return presentingTextAnswerStageCount;
+    }
+    return presentingAnswerImageUrl ? 1 : 0;
+  }, [
+    presenting?.withAnswer,
+    presentingAnswerImageUrl,
+    presentingRoundMeta,
+    presentingTextAnswerStageCount,
+  ]);
+
+  const currentAnswerPage = useMemo(() => {
+    if (!answerPageCount) return 0;
+    const index = Math.max(0, presenting?.answerPage ?? 0);
+    return Math.min(index, answerPageCount - 1);
+  }, [answerPageCount, presenting?.answerPage]);
+
   async function updatePresenting(next: {
     round: string | null;
     question: string | null;
     withAnswer: boolean;
+    promptPage?: number;
+    answerPage?: number;
   }) {
     if (!isHost) return;
     setIsPresentingUpdatePending(true);
@@ -371,6 +463,8 @@ export default function RoomContent({
           round: next.round,
           question: next.question,
           withAnswer: next.withAnswer,
+          promptPage: Math.max(0, next.promptPage ?? 0),
+          answerPage: Math.max(0, next.answerPage ?? 0),
         },
       });
     } catch (error) {
@@ -386,6 +480,8 @@ export default function RoomContent({
       round: roundId,
       question: questionId,
       withAnswer: false,
+      promptPage: 0,
+      answerPage: 0,
     });
   };
 
@@ -394,6 +490,8 @@ export default function RoomContent({
       round: activeRoundForControls?.id ?? null,
       question: null,
       withAnswer: false,
+      promptPage: 0,
+      answerPage: 0,
     });
   };
 
@@ -405,18 +503,8 @@ export default function RoomContent({
       round: activeRoundForControls.id,
       question: firstQuestion.id,
       withAnswer: false,
-    });
-  }
-
-  async function handleShowNextQuestion() {
-    if (!isHost || !activeRoundForControls) return;
-    if (currentQuestionIndex < 0) return;
-    const nextQuestion = controlQuestions[currentQuestionIndex + 1];
-    if (!nextQuestion) return;
-    await updatePresenting({
-      round: activeRoundForControls.id,
-      question: nextQuestion.id,
-      withAnswer: false,
+      promptPage: 0,
+      answerPage: 0,
     });
   }
 
@@ -426,6 +514,8 @@ export default function RoomContent({
       round: activeRoundForControls.id,
       question: null,
       withAnswer: false,
+      promptPage: 0,
+      answerPage: 0,
     });
   }
 
@@ -445,6 +535,8 @@ export default function RoomContent({
             round: roundId,
             question: null,
             withAnswer: false,
+            promptPage: 0,
+            answerPage: 0,
           },
         }),
       ]);
@@ -482,6 +574,83 @@ export default function RoomContent({
       round: presentingRoundMeta.id,
       question: presentingQuestion.id,
       withAnswer: !presenting?.withAnswer,
+      promptPage: currentPromptPage,
+      answerPage: 0,
+    });
+  }
+
+  async function handlePrevQuestion() {
+    if (!isHost || !activeRoundForControls || currentQuestionIndex <= 0) return;
+    const prevQuestion = controlQuestions[currentQuestionIndex - 1];
+    if (!prevQuestion) return;
+    await updatePresenting({
+      round: activeRoundForControls.id,
+      question: prevQuestion.id,
+      withAnswer: false,
+      promptPage: 0,
+      answerPage: 0,
+    });
+  }
+
+  async function handleNextQuestion() {
+    if (!isHost || !activeRoundForControls || currentQuestionIndex < 0) return;
+    const isLast = currentQuestionIndex >= controlQuestions.length - 1;
+    const nextQuestion = isLast ? controlQuestions[0] : controlQuestions[currentQuestionIndex + 1];
+    if (!nextQuestion) return;
+    await updatePresenting({
+      round: activeRoundForControls.id,
+      question: nextQuestion.id,
+      withAnswer: false,
+      promptPage: 0,
+      answerPage: 0,
+    });
+  }
+
+  async function handlePrevPromptPage() {
+    if (!isHost || !presentingQuestion || currentPromptPage <= 0) return;
+    await updatePresenting({
+      round: presentingRoundMeta?.id ?? activeRoundForControls?.id ?? null,
+      question: presentingQuestion.id,
+      withAnswer: Boolean(presenting?.withAnswer),
+      promptPage: currentPromptPage - 1,
+      answerPage: currentAnswerPage,
+    });
+  }
+
+  async function handleNextPromptPage() {
+    if (!isHost || !presentingQuestion || presentingQuestionStageCount <= 0) return;
+    const isLast = currentPromptPage >= presentingQuestionStageCount - 1;
+    await updatePresenting({
+      round: presentingRoundMeta?.id ?? activeRoundForControls?.id ?? null,
+      question: presentingQuestion.id,
+      withAnswer: Boolean(presenting?.withAnswer),
+      promptPage: isLast ? 0 : currentPromptPage + 1,
+      answerPage: currentAnswerPage,
+    });
+  }
+
+  async function handlePrevAnswerPage() {
+    if (!isHost || !presentingQuestion || !presenting?.withAnswer || currentAnswerPage <= 0) {
+      return;
+    }
+    await updatePresenting({
+      round: presentingRoundMeta?.id ?? activeRoundForControls?.id ?? null,
+      question: presentingQuestion.id,
+      withAnswer: true,
+      promptPage: currentPromptPage,
+      answerPage: currentAnswerPage - 1,
+    });
+  }
+
+  async function handleNextAnswerPage() {
+    if (!isHost || !presentingQuestion || !presenting?.withAnswer || answerPageCount <= 0) return;
+    const isLast = currentAnswerPage >= answerPageCount - 1;
+    await updatePresenting({
+      round: presentingRoundMeta?.id ?? activeRoundForControls?.id ?? null,
+      question: presentingQuestion.id,
+      withAnswer: true,
+      promptPage: currentPromptPage,
+      answerPage: isLast ? 0 : currentAnswerPage + 1,
     });
   }
 
@@ -630,6 +799,8 @@ export default function RoomContent({
             round: activeRoundForControls.id,
             question: null,
             withAnswer: false,
+            promptPage: 0,
+            answerPage: 0,
           },
         }),
       ]);
@@ -650,7 +821,7 @@ export default function RoomContent({
       const db = getClientFirestore();
       await updateDoc(doc(db, "rooms", roomSlug), {
         state: "ended",
-        presenting: { round: null, question: null, withAnswer: false },
+        presenting: { round: null, question: null, withAnswer: false, promptPage: 0, answerPage: 0 },
       });
       clearCachedMedia();
     } catch (error) {
@@ -1053,7 +1224,13 @@ export default function RoomContent({
           gradingRequired: true,
         }),
         updateDoc(roomRef, {
-          presenting: { round: nextScheduledRound.id, question: null, withAnswer: false },
+          presenting: {
+            round: nextScheduledRound.id,
+            question: null,
+            withAnswer: false,
+            promptPage: 0,
+            answerPage: 0,
+          },
         }),
       ]);
     } catch (error) {
@@ -1159,86 +1336,139 @@ export default function RoomContent({
               presentingAnswerImageUrl={presentingAnswerImageUrl}
               presentingMedia={presentingMedia}
               presentingMediaUrl={presentingMediaUrl}
-              presentingQuestion={presentingQuestion}
+              presentingQuestion={stagedPresentingQuestion}
               presentingRoundMeta={presentingRoundMeta}
               setGradingTeamIndex={setGradingTeamIndex}
             />
             {isHost && activeRoundForControls ? (
               <footer className="border-t border-white/10 bg-black/40 px-5 py-3 text-white">
-                <div className="flex flex-wrap items-center gap-2">
-                  {activeRoundForControls.state === "active" &&
-                  !presentingQuestion &&
-                  controlQuestions.length ? (
+                <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em]">
+                  <span className="text-zinc-300">Question:</span>
+                  {!presentingQuestion && controlQuestions.length ? (
                     <button
                       type="button"
                       onClick={handleShowFirstQuestion}
                       disabled={isPresentingUpdatePending}
-                      className="rounded-lg bg-emerald-500 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500 text-white transition hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
                     >
-                      Show first question
-                    </button>
-                  ) : null}
-
-                  {(activeRoundForControls.state === "active" ||
-                    activeRoundForControls.state === "closed") &&
-                  presentingQuestion &&
-                  currentQuestionIndex >= 0 &&
-                  currentQuestionIndex < controlQuestions.length - 1 ? (
-                    <button
-                      type="button"
-                      onClick={handleShowNextQuestion}
-                      disabled={isPresentingUpdatePending}
-                      className="rounded-lg bg-emerald-500 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
-                    >
-                      Next question
-                    </button>
-                  ) : null}
-
-                  {activeRoundForControls.state === "active" &&
-                  presentingQuestion &&
-                  currentQuestionIndex === controlQuestions.length - 1 ? (
-                    <button
-                      type="button"
-                      onClick={handleShowFirstQuestion}
-                      disabled={isPresentingUpdatePending}
-                      className="rounded-lg bg-emerald-500 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
-                    >
-                      Show first question
+                      <EyeIcon />
                     </button>
                   ) : null}
 
                   {presentingQuestion ? (
-                    <button
-                      type="button"
-                      onClick={handleHideQuestion}
-                      disabled={isPresentingUpdatePending}
-                      className="rounded-lg bg-zinc-700 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-zinc-600 focus:outline-none focus:ring-2 focus:ring-white/30 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
-                    >
-                      Hide question
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleHideQuestion}
+                        disabled={isPresentingUpdatePending}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-red-500 text-white transition hover:bg-red-400 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
+                      >
+                        <EyeOffIcon />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handlePrevQuestion}
+                        disabled={isPresentingUpdatePending || currentQuestionIndex <= 0}
+                        className="rounded-lg bg-zinc-700 px-2 py-2 text-white transition hover:bg-zinc-600 focus:outline-none focus:ring-2 focus:ring-white/30 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
+                      >
+                        {"<"}
+                      </button>
+                      <span className="min-w-3 text-center text-zinc-100">
+                        {currentQuestionIndex >= 0 ? currentQuestionIndex + 1 : 1}
+                      </span>
+                      {currentQuestionIndex >= 0 ? (
+                        <button
+                          type="button"
+                          onClick={handleNextQuestion}
+                          disabled={isPresentingUpdatePending}
+                          className="rounded-lg bg-zinc-700 px-2 py-2 text-white transition hover:bg-zinc-600 focus:outline-none focus:ring-2 focus:ring-white/30 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
+                        >
+                          {currentQuestionIndex < controlQuestions.length - 1 ? ">" : "↺"}
+                        </button>
+                      ) : null}
+
+                      {presentingQuestionStageCount > 1 ? (
+                        <>
+                          <span className="text-zinc-400">Page</span>
+                          <button
+                            type="button"
+                            onClick={handlePrevPromptPage}
+                            disabled={isPresentingUpdatePending || currentPromptPage <= 0}
+                            className="rounded-lg bg-zinc-700 px-2 py-2 text-white transition hover:bg-zinc-600 focus:outline-none focus:ring-2 focus:ring-white/30 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
+                          >
+                            {"<"}
+                          </button>
+                          <span className="min-w-3 text-center text-zinc-100">
+                            {currentPromptPage + 1}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={handleNextPromptPage}
+                            disabled={isPresentingUpdatePending}
+                            className="rounded-lg bg-zinc-700 px-2 py-2 text-white transition hover:bg-zinc-600 focus:outline-none focus:ring-2 focus:ring-white/30 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
+                          >
+                            {currentPromptPage < presentingQuestionStageCount - 1 ? ">" : "↺"}
+                          </button>
+                        </>
+                      ) : null}
+                    </>
                   ) : null}
 
-                  {presentingRoundMeta?.state === "closed" && presentingQuestion ? (
-                    <button
-                      type="button"
-                      onClick={handleToggleAnswer}
-                      disabled={isPresentingUpdatePending}
-                      className="rounded-lg bg-amber-500 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
-                    >
-                      {presenting?.withAnswer ? "Hide answer" : "Show answer"}
-                    </button>
-                  ) : null}
+                  <div className="ml-auto flex items-center gap-2">
+                    {activeRoundForControls.state === "active" ? (
+                      <button
+                        type="button"
+                        onClick={handleEndRound}
+                        disabled={isEndingRound}
+                        className="rounded-lg bg-red-500 px-3 py-2 text-white transition hover:bg-red-400 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
+                      >
+                        {isEndingRound ? "Ending..." : "End round"}
+                      </button>
+                    ) : null}
 
-                  {activeRoundForControls.state === "active" ? (
-                    <button
-                      type="button"
-                      onClick={handleEndRound}
-                      disabled={isEndingRound}
-                      className="ml-auto rounded-lg bg-red-500 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-red-400 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
-                    >
-                      {isEndingRound ? "Ending..." : "End round"}
-                    </button>
-                  ) : null}
+                    {activeRoundForControls.state === "closed" && presentingQuestion ? (
+                      <>
+                        <span className="text-zinc-300">Answer:</span>
+                        <button
+                          type="button"
+                          onClick={handleToggleAnswer}
+                          disabled={isPresentingUpdatePending}
+                          className={`inline-flex h-9 w-9 items-center justify-center rounded-lg text-white transition focus:outline-none focus:ring-2 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70 ${
+                            presenting?.withAnswer
+                              ? "bg-red-500 hover:bg-red-400 focus:ring-red-400"
+                              : "bg-amber-500 hover:bg-amber-400 focus:ring-amber-400"
+                          }`}
+                        >
+                          {presenting?.withAnswer ? <EyeOffIcon /> : <EyeIcon />}
+                        </button>
+                        {presenting?.withAnswer && answerPageCount > 1 ? (
+                          <>
+                            <span className="text-zinc-400">Page</span>
+                            <button
+                              type="button"
+                              onClick={handlePrevAnswerPage}
+                              disabled={isPresentingUpdatePending || currentAnswerPage <= 0}
+                              className="rounded-lg bg-zinc-700 px-2 py-2 text-white transition hover:bg-zinc-600 focus:outline-none focus:ring-2 focus:ring-white/30 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
+                            >
+                              {"<"}
+                            </button>
+                            <span className="min-w-3 text-center text-zinc-100">
+                              {currentAnswerPage + 1}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={handleNextAnswerPage}
+                              disabled={isPresentingUpdatePending}
+                              className="rounded-lg bg-zinc-700 px-2 py-2 text-white transition hover:bg-zinc-600 focus:outline-none focus:ring-2 focus:ring-white/30 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
+                            >
+                              {currentAnswerPage < answerPageCount - 1 ? ">" : "↺"}
+                            </button>
+                          </>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </div>
                 </div>
               </footer>
             ) : null}

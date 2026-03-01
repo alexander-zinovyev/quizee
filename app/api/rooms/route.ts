@@ -297,7 +297,7 @@ export async function POST(request: NextRequest) {
       title: name,
       state: INITIAL_ROOM_STATE,
       createdAt: FieldValue.serverTimestamp(),
-      presenting: { round: null, question: null, withAnswer: false },
+      presenting: { round: null, question: null, withAnswer: false, promptPage: 0, answerPage: 0 },
       handRaisingEnabled: true,
       countdownEndsAt: null,
     });

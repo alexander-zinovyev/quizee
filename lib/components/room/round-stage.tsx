@@ -1,6 +1,7 @@
-import NextImage from "next/image";
+"use client";
 
 import type { RoundMeta, RoundQuestion } from "@/lib/hooks/use-room-rounds";
+import ZoomableImage from "@/lib/components/zoomable-image";
 
 type GradingAnswer = {
   answer: string;
@@ -70,6 +71,12 @@ export function RoundStage({
   setGradingTeamIndex: React.Dispatch<React.SetStateAction<number>>;
   mediaVolume: number;
 }) {
+  const isMediaOnlyStage = Boolean(
+    presentingQuestion &&
+      presentingMedia &&
+      !presentingQuestion.prompt
+  );
+
   return (
     <div className="relative flex-1 overflow-hidden bg-black">
       {!presenting?.round ? (
@@ -195,12 +202,16 @@ export function RoundStage({
         )
       ) : presentingQuestion ? (
         <div className="relative h-full w-full text-white">
-          <div className="presenting-scroll h-full w-full overflow-auto">
+          <div
+            className="presenting-scroll h-full w-full overflow-auto"
+          >
             <div
               className={
-                presentingMedia
-                  ? "flex max-h-full px-4 py-4"
-                  : "flex flex-col gap-6 px-8 py-10"
+                isMediaOnlyStage
+                  ? "flex h-full items-center justify-center px-4 py-4"
+                  : presentingMedia
+                    ? "flex max-h-full px-4 py-4"
+                    : "flex flex-col gap-6 px-8 py-10"
               }
             >
               {isPresentingImageRound && presenting?.withAnswer ? (
@@ -218,12 +229,13 @@ export function RoundStage({
                           <p className="text-sm text-zinc-300">Loading media…</p>
                         ) : presentingMediaUrl ? (
                           mediaKind.isImage ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              key={presentingQuestion.id}
+                            <ZoomableImage
                               src={presentingMediaUrl}
                               alt={presentingMedia.filename ?? "Question media"}
-                              className="max-h-[55vh] w-full rounded-2xl object-contain"
+                              label={presentingQuestion.prompt ?? undefined}
+                              wrapperClassName="w-full"
+                              imageClassName="max-h-[55vh] w-full rounded-2xl object-contain"
+                              zoomLabel="Zoom question image"
                             />
                           ) : mediaKind.isVideo ? (
                             <video
@@ -273,13 +285,13 @@ export function RoundStage({
                     {isAnswerImageLoading ? (
                       <p className="text-sm text-emerald-100">Loading answer…</p>
                     ) : presentingAnswerImageUrl ? (
-                      <NextImage
+                      <ZoomableImage
                         src={presentingAnswerImageUrl}
                         alt="Correct answer"
-                        width={1400}
-                        height={900}
-                        unoptimized
-                        className="max-h-[65vh] h-auto w-full rounded-2xl bg-black object-contain"
+                        label={presentingQuestion.prompt ?? undefined}
+                        wrapperClassName="w-full"
+                        imageClassName="max-h-[65vh] h-auto w-full rounded-2xl object-contain"
+                        zoomLabel="Zoom answer image"
                       />
                     ) : answerImageError ? (
                       <p className="text-sm text-red-300">{answerImageError}</p>
@@ -292,30 +304,63 @@ export function RoundStage({
                 </div>
               ) : (
                 <>
-                  {presentingQuestion.prompt ? (
-                    <h2 className="text-3xl font-semibold leading-tight text-white">
-                      {presentingQuestion.prompt}
-                    </h2>
-                  ) : null}
-
-                  {presentingMedia ? (
+                  {presentingMedia && mediaKind.isImage ? (
                     <>
                       {isMediaLoading ? (
                         <p className="text-sm text-zinc-300">Loading media…</p>
                       ) : presentingMediaUrl ? (
-                        mediaKind.isImage ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            key={presentingQuestion.id}
-                            src={presentingMediaUrl}
-                            alt={presentingMedia.filename ?? "Question media"}
-                            className="max-h-[55vh] w-full rounded-2xl object-contain"
-                          />
-                        ) : mediaKind.isVideo ? (
+                        presentingQuestion.prompt ? (
+                          <div className="w-full">
+                            <ZoomableImage
+                              src={presentingMediaUrl}
+                              alt={presentingMedia.filename ?? "Question media"}
+                              label={presentingQuestion.prompt ?? undefined}
+                              wrapperClassName="mb-4 w-full md:float-right md:mb-3 md:ml-6 md:w-1/3 md:max-w-[33%]"
+                              imageClassName="max-h-[55vh] w-full rounded-2xl object-contain"
+                              zoomLabel="Zoom question image"
+                            />
+                            <h2 className="whitespace-pre-wrap text-3xl font-semibold leading-tight text-white">
+                              {presentingQuestion.prompt}
+                            </h2>
+                            <div className="clear-both" />
+                          </div>
+                        ) : (
+                          <div className="flex h-full min-h-0 w-full items-center justify-center">
+                            <ZoomableImage
+                              src={presentingMediaUrl}
+                              alt={presentingMedia.filename ?? "Question media"}
+                              wrapperClassName="h-full max-h-full max-w-full"
+                              imageClassName="h-auto max-h-full w-auto max-w-full rounded-2xl object-contain"
+                              zoomLabel="Zoom question image"
+                            />
+                          </div>
+                        )
+                      ) : null}
+                      {mediaError ? (
+                        <p className="text-sm text-red-300">{mediaError}</p>
+                      ) : null}
+                    </>
+                  ) : (
+                    <>
+                      {presentingQuestion.prompt ? (
+                        <h2 className="text-3xl font-semibold leading-tight text-white">
+                          {presentingQuestion.prompt}
+                        </h2>
+                      ) : null}
+                      {presentingMedia ? (
+                        <>
+                          {isMediaLoading ? (
+                            <p className="text-sm text-zinc-300">Loading media…</p>
+                          ) : presentingMediaUrl ? (
+                            mediaKind.isVideo ? (
                           <video
                             key={presentingQuestion.id}
                             src={presentingMediaUrl}
-                            className="max-h-[55vh] w-full rounded-2xl bg-black object-contain"
+                            className={
+                              isMediaOnlyStage
+                                ? "h-full w-full rounded-2xl bg-black object-contain"
+                                : "max-h-[55vh] w-full rounded-2xl bg-black object-contain"
+                            }
                             controls
                             playsInline
                             autoPlay
@@ -323,7 +368,7 @@ export function RoundStage({
                               event.currentTarget.volume = mediaVolume;
                             }}
                           />
-                        ) : mediaKind.isAudio ? (
+                            ) : mediaKind.isAudio ? (
                           <audio
                             key={presentingQuestion.id}
                             src={presentingMediaUrl}
@@ -334,22 +379,24 @@ export function RoundStage({
                               event.currentTarget.volume = mediaVolume;
                             }}
                           />
-                        ) : (
-                          <a
-                            href={presentingMediaUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-sm text-emerald-300 underline"
-                          >
-                            Open media
-                          </a>
-                        )
-                      ) : null}
-                      {mediaError ? (
-                        <p className="text-sm text-red-300">{mediaError}</p>
+                            ) : (
+                              <a
+                                href={presentingMediaUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-sm text-emerald-300 underline"
+                              >
+                                Open media
+                              </a>
+                            )
+                          ) : null}
+                          {mediaError ? (
+                            <p className="text-sm text-red-300">{mediaError}</p>
+                          ) : null}
+                        </>
                       ) : null}
                     </>
-                  ) : null}
+                  )}
                 </>
               )}
 
@@ -362,7 +409,7 @@ export function RoundStage({
           !isPresentingImageRound &&
           (presentingAnswer || presentingAnswerImageUrl) ? (
             <div
-              className="pointer-events-none absolute inset-0 flex items-center justify-center"
+              className="absolute inset-0 flex items-center justify-center"
               style={{
                 top: "10%",
                 left: "10%",
@@ -372,24 +419,26 @@ export function RoundStage({
             >
               <div className="flex h-full w-full items-center justify-center rounded-2xl border border-emerald-200/80 bg-emerald-700/98 px-8 py-6 text-center text-3xl font-semibold leading-tight text-white shadow-2xl">
                 <div
-                  className={`grid h-full w-full items-center gap-6 ${
+                  className={`grid h-full w-full min-h-0 items-stretch gap-6 ${
                     presentingAnswer && presentingAnswerImageUrl
                       ? "md:grid-cols-2"
                       : "grid-cols-1"
                   }`}
                 >
                   {presentingAnswer ? (
-                    <span className="block break-words">{presentingAnswer}</span>
+                    <span className="block self-center break-words">{presentingAnswer}</span>
                   ) : null}
                   {presentingAnswerImageUrl ? (
-                    <NextImage
-                      src={presentingAnswerImageUrl}
-                      alt="Answer media"
-                      width={1200}
-                      height={800}
-                      unoptimized
-                      className="max-h-[55vh] h-auto w-full rounded-2xl bg-black object-contain"
-                    />
+                    <div className="flex h-full min-h-0 w-full self-stretch items-center justify-center">
+                      <ZoomableImage
+                        src={presentingAnswerImageUrl}
+                        alt="Answer media"
+                        label={presentingAnswer ?? undefined}
+                        wrapperClassName="h-full max-h-full max-w-full"
+                        imageClassName="h-auto max-h-full w-auto max-w-full rounded-2xl object-contain"
+                        zoomLabel="Zoom answer image"
+                      />
+                    </div>
                   ) : null}
                 </div>
               </div>

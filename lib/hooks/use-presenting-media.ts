@@ -17,6 +17,7 @@ type PresentingState =
       round?: string | null;
       question?: string | null;
       withAnswer?: boolean;
+      answerPage?: number;
     }
   | null;
 
@@ -89,6 +90,7 @@ export function usePresentingMedia({
   const [presentingTextAnswerMediaPath, setPresentingTextAnswerMediaPath] = useState<string | null>(
     null
   );
+  const [presentingTextAnswerStageCount, setPresentingTextAnswerStageCount] = useState(0);
   const [isAnswerImageLoading, setIsAnswerImageLoading] = useState(false);
   const [answerImageError, setAnswerImageError] = useState<string | null>(null);
 
@@ -111,12 +113,13 @@ export function usePresentingMedia({
   const isPresentingImageRound = presentingRoundMeta?.type === "image";
 
   const mediaKind = useMemo(() => getMediaKind(presentingMedia), [presentingMedia]);
+  const presentingMediaResetKey = `${presentingQuestion?.id ?? ""}:${presentingQuestion?.media?.storagePath ?? ""}`;
 
   useEffect(() => {
     setMediaError(null);
     setPresentingMediaUrl(null);
     setIsMediaLoading(false);
-  }, [presentingQuestion?.id]);
+  }, [presentingMediaResetKey]);
 
   useEffect(() => {
     presentingAnswerUnsubRef.current?.();
@@ -127,6 +130,7 @@ export function usePresentingMedia({
     setIsAnswerImageLoading(false);
     setPresentingTextAnswer(null);
     setPresentingTextAnswerMediaPath(null);
+    setPresentingTextAnswerStageCount(0);
 
     if (
       !presentingRoundMeta?.id ||
@@ -202,44 +206,42 @@ export function usePresentingMedia({
       answerRef,
       (answerSnap) => {
         const data = answerSnap.data();
-        const hint =
-          data && typeof data.hint === "string" && data.hint.trim().length
-            ? data.hint.trim()
-            : null;
         const stages = Array.isArray(data?.stages)
           ? (data?.stages as Array<Record<string, unknown>>)
           : [];
+        const hasStages = stages.length > 0;
+        const stageCount = hasStages ? stages.length : 1;
+        setPresentingTextAnswerStageCount(stageCount);
+        const requestedStage = Math.max(0, presenting?.answerPage ?? 0);
+        const stageIndex = Math.min(requestedStage, stageCount - 1);
+        const stage = stages[stageIndex];
         const stageText =
-          stages
-            .map((stage) =>
-              typeof stage?.text === "string" && stage.text.trim().length
-                ? stage.text.trim()
-                : null
-            )
-            .find((value): value is string => Boolean(value)) ?? null;
+          stage && typeof stage.text === "string" && stage.text.trim().length
+            ? stage.text.trim()
+            : null;
         const mediaPath =
-          stages
-            .map((stage) => {
-              const media = stage?.media;
-              if (!media || typeof media !== "object") return null;
-              const path = (media as { storagePath?: unknown }).storagePath;
-              return typeof path === "string" && path.length ? path : null;
-            })
-            .find((value): value is string => Boolean(value)) ?? null;
-        const answer = stageText ?? hint;
-        setPresentingTextAnswer(answer);
+          stage && stage.media && typeof stage.media === "object"
+            ? (() => {
+                const path = (stage.media as { storagePath?: unknown }).storagePath;
+                return typeof path === "string" && path.length ? path : null;
+              })()
+            : null;
+        const answer = hasStages ? stageText : null;
+        setPresentingTextAnswer(answer && answer.trim().length ? answer : null);
         setPresentingTextAnswerMediaPath(mediaPath);
       },
       (error) => {
         console.error("[room-content] text answer reveal error", error);
         setPresentingTextAnswer(null);
         setPresentingTextAnswerMediaPath(null);
+        setPresentingTextAnswerStageCount(0);
       }
     );
 
     return () => unsubscribe();
   }, [
     presenting?.question,
+    presenting?.answerPage,
     presenting?.withAnswer,
     presentingRoundMeta?.id,
     presentingRoundMeta?.type,
@@ -446,6 +448,7 @@ export function usePresentingMedia({
     presentingMedia,
     presentingMediaUrl,
     presentingTextAnswer,
+    presentingTextAnswerStageCount,
     shouldShowMedia,
     answerImageError,
     DEFAULT_MEDIA_VOLUME,
