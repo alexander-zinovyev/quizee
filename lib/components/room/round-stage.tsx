@@ -19,8 +19,6 @@ type GradingTeam = {
 
 export function RoundStage({
   answerImageError,
-  countdownDisplay,
-  countdownIsUrgent,
   displayRoundMeta,
   finalizeScores,
   gradeAnswer,
@@ -42,8 +40,6 @@ export function RoundStage({
   mediaVolume,
 }: {
   answerImageError: string | null;
-  countdownDisplay: string | null;
-  countdownIsUrgent: boolean;
   displayRoundMeta: RoundMeta | null;
   finalizeScores: () => void;
   gradeAnswer: (teamId: string, questionId: string, awardedPoints: number) => void;
@@ -475,17 +471,6 @@ export function RoundStage({
         </div>
       )}
 
-      {countdownDisplay ? (
-        <div className="pointer-events-none absolute right-4 top-4">
-          <span
-            className={`text-xs font-semibold uppercase tracking-[0.3em] ${
-              countdownIsUrgent ? "text-red-300" : "text-zinc-400"
-            }`}
-          >
-            {countdownDisplay}
-          </span>
-        </div>
-      ) : null}
     </div>
   );
 }

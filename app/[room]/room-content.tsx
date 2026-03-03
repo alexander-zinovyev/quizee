@@ -1385,8 +1385,6 @@ export default function RoomContent({
             </header>
             <RoundStage
               answerImageError={answerImageError}
-              countdownDisplay={countdownDisplay}
-              countdownIsUrgent={countdownIsUrgent}
               displayRoundMeta={displayRoundMeta}
               finalizeScores={() => void finalizeScores()}
               gradeAnswer={(teamId, questionId, awardedPoints) =>
