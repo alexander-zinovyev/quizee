@@ -132,7 +132,6 @@ export default function RoomContent({
   const [localCountdownEndsAt, setLocalCountdownEndsAt] = useState<Date | null>(null);
   const [gradingTeamIndex, setGradingTeamIndex] = useState(0);
   const [activeEavesdropTeamId, setActiveEavesdropTeamId] = useState<string | null>(null);
-  const [teamScoreOverrides, setTeamScoreOverrides] = useState<Record<string, number>>({});
   const [scoreBreakdownTeamId, setScoreBreakdownTeamId] = useState<string | null>(null);
   const activeTextRoundIdRef = useRef<string | null>(null);
 
@@ -914,7 +913,6 @@ export default function RoomContent({
 
     batch.set(doc(db, "rooms", roomSlug, "teams", teamId), { scoreTotal }, { merge: true });
     await batch.commit();
-    setTeamScoreOverrides((prev) => ({ ...prev, [teamId]: scoreTotal }));
   }
 
   async function finalizeScores() {
@@ -1563,10 +1561,7 @@ export default function RoomContent({
                 name={teams[0].name}
                 color={teams[0].color ?? undefined}
                 score={
-                  teamScoreOverrides[teams[0].id] ??
-                  teamsForDisplay[0]?.scoreTotal ??
-                  teams[0].scoreTotal ??
-                  undefined
+                  teamsForDisplay[0]?.scoreTotal ?? teams[0].scoreTotal ?? undefined
                 }
                 members={teamsForDisplay[0]?.members ?? teams[0].members}
                 appearance="bare"
@@ -1744,10 +1739,7 @@ export default function RoomContent({
                 name={teams[1].name}
                 color={teams[1].color ?? undefined}
                 score={
-                  teamScoreOverrides[teams[1].id] ??
-                  teamsForDisplay[1]?.scoreTotal ??
-                  teams[1].scoreTotal ??
-                  undefined
+                  teamsForDisplay[1]?.scoreTotal ?? teams[1].scoreTotal ?? undefined
                 }
                 members={teamsForDisplay[1]?.members ?? teams[1].members}
                 appearance="bare"
