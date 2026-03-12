@@ -1,9 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import quizSchema from "@/types/quiz.schema.json";
-import { createTarGz } from "@/lib/build/tar-gz";
-import { validateAgainstQuizSchema } from "@/lib/build/quiz-schema-validator";
 import type { MediaTreeFile } from "@/lib/components/build/media-tree-shared";
 import MediaSelector from "@/lib/components/build/media-selector";
 
@@ -38,34 +35,6 @@ export type BuildRound = {
   type: RoundType;
   textQuestions: TextQuestion[];
   imageItems: ImageItem[];
-};
-
-type QuizStage = {
-  text?: string;
-  media?: string;
-};
-
-type QuizTextRound = {
-  type: "text";
-  title: string;
-  questions: Array<{
-    prompt: {
-      stages: QuizStage[];
-    };
-    answer: {
-      hint: string;
-      stages: QuizStage[];
-    };
-  }>;
-};
-
-type QuizImageRound = {
-  type: "image";
-  title: string;
-  questions: Array<{
-    prompt?: QuizStage;
-    image: string;
-  }>;
 };
 
 function makeId() {
@@ -112,18 +81,6 @@ function createRound(): BuildRound {
     textQuestions: [createTextQuestion()],
     imageItems: [],
   };
-}
-
-function sanitizeStage(stage: Stage): QuizStage | null {
-  const text = stage.text.trim();
-  const media = stage.mediaPath?.trim() ?? "";
-  if (!text && !media) {
-    return null;
-  }
-  const next: QuizStage = {};
-  if (text) next.text = text;
-  if (media) next.media = media;
-  return next;
 }
 
 function StageEditor({
@@ -212,9 +169,6 @@ export default function RoundBuilderPanel({
   const [rounds, setRounds] = useState<BuildRound[]>(() => initialRounds ?? []);
   const [editingRoundId, setEditingRoundId] = useState<string | null>(null);
   const [editingRoundName, setEditingRoundName] = useState("");
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [generateErrors, setGenerateErrors] = useState<string[]>([]);
-  const [generateSuccess, setGenerateSuccess] = useState<string | null>(null);
 
   const roundCountLabel = useMemo(() => `${rounds.length} round${rounds.length === 1 ? "" : "s"}`, [rounds.length]);
 
@@ -272,188 +226,6 @@ export default function RoundBuilderPanel({
     setEditingRoundName("");
   }
 
-  async function handleGeneratePack() {
-    setGenerateErrors([]);
-    setGenerateSuccess(null);
-
-    const errors: string[] = [];
-    const mediaByPath = new Map<string, MediaTreeFile>();
-    const usedMediaPaths = new Set<string>();
-    mediaFiles.forEach((file) => {
-      if (mediaByPath.has(file.path)) {
-        errors.push(`Duplicate media path: ${file.path}`);
-      } else {
-        mediaByPath.set(file.path, file);
-      }
-    });
-
-    if (!rounds.length) {
-      errors.push("Add at least one round.");
-    }
-
-    const quizRounds: Array<QuizTextRound | QuizImageRound> = [];
-
-    rounds.forEach((round, roundIndex) => {
-      const roundNo = roundIndex + 1;
-      const title = round.name.trim();
-      if (!title) {
-        errors.push(`Round ${roundNo}: name is required.`);
-      }
-
-      if (round.type === "text") {
-        if (!round.textQuestions.length) {
-          errors.push(`Round ${roundNo}: add at least one question.`);
-          return;
-        }
-
-        const questions: QuizTextRound["questions"] = [];
-        round.textQuestions.forEach((question, questionIndex) => {
-          const qNo = questionIndex + 1;
-          const promptStages: QuizStage[] = [];
-          question.promptStages.forEach((stage, stageIndex) => {
-            const normalized = sanitizeStage(stage);
-            if (!normalized) {
-              errors.push(`Round ${roundNo}, question ${qNo}, prompt stage ${stageIndex + 1}: text or media is required.`);
-              return;
-            }
-            if (normalized.media && !mediaByPath.has(normalized.media)) {
-              errors.push(
-                `Round ${roundNo}, question ${qNo}, prompt stage ${stageIndex + 1}: media file not found (${normalized.media}).`
-              );
-            } else if (normalized.media) {
-              usedMediaPaths.add(normalized.media);
-            }
-            promptStages.push(normalized);
-          });
-
-          const answerHint = question.answerHint.trim();
-          if (!answerHint) {
-            errors.push(`Round ${roundNo}, question ${qNo}: hint is required.`);
-          }
-
-          const answerStages: QuizStage[] = [];
-          question.answerStages.forEach((stage, stageIndex) => {
-            const normalized = sanitizeStage(stage);
-            if (!normalized) {
-              errors.push(`Round ${roundNo}, question ${qNo}, answer stage ${stageIndex + 1}: text or media is required.`);
-              return;
-            }
-            if (normalized.media && !mediaByPath.has(normalized.media)) {
-              errors.push(
-                `Round ${roundNo}, question ${qNo}, answer stage ${stageIndex + 1}: media file not found (${normalized.media}).`
-              );
-            } else if (normalized.media) {
-              usedMediaPaths.add(normalized.media);
-            }
-            answerStages.push(normalized);
-          });
-
-          questions.push({
-            prompt: { stages: promptStages },
-            answer: {
-              hint: answerHint,
-              stages: answerStages,
-            },
-          });
-        });
-
-        quizRounds.push({
-          type: "text",
-          title: title || `Round ${roundNo}`,
-          questions,
-        });
-        return;
-      }
-
-      if (!round.imageItems.length) {
-        errors.push(`Round ${roundNo}: add at least one image.`);
-        return;
-      }
-
-      const questions: QuizImageRound["questions"] = [];
-      round.imageItems.forEach((item, itemIndex) => {
-        const qNo = itemIndex + 1;
-        const imagePath = item.imagePath?.trim() ?? "";
-        if (!imagePath) {
-          errors.push(`Round ${roundNo}, image ${qNo}: image is required.`);
-          return;
-        }
-        if (!mediaByPath.has(imagePath)) {
-          errors.push(`Round ${roundNo}, image ${qNo}: media file not found (${imagePath}).`);
-        } else {
-          usedMediaPaths.add(imagePath);
-        }
-
-        const prompt = sanitizeStage(item.answerStage);
-        if (prompt?.media && !mediaByPath.has(prompt.media)) {
-          errors.push(`Round ${roundNo}, image ${qNo}: prompt media file not found (${prompt.media}).`);
-        } else if (prompt?.media) {
-          usedMediaPaths.add(prompt.media);
-        }
-
-        questions.push(prompt ? { prompt, image: imagePath } : { image: imagePath });
-      });
-
-      quizRounds.push({
-        type: "image",
-        title: title || `Round ${roundNo}`,
-        questions,
-      });
-    });
-
-    mediaByPath.forEach((_file, path) => {
-      if (!usedMediaPaths.has(path)) {
-        errors.push(`Unused media file: ${path}`);
-      }
-    });
-
-    if (errors.length) {
-      setGenerateErrors(errors);
-      return;
-    }
-
-    const schemaErrors = validateAgainstQuizSchema(quizRounds, quizSchema);
-    if (schemaErrors.length) {
-      setGenerateErrors(schemaErrors);
-      return;
-    }
-
-    setIsGenerating(true);
-    try {
-      const entries: Array<{ name: string; data: Uint8Array }> = [];
-      const quizBytes = new TextEncoder().encode(`${JSON.stringify(quizRounds, null, 2)}\n`);
-      entries.push({ name: "quiz.json", data: quizBytes });
-
-      const allMediaFiles = [...mediaByPath.values()].sort((a, b) => a.path.localeCompare(b.path));
-      for (const mediaFile of allMediaFiles) {
-        const bytes = new Uint8Array(await mediaFile.file.arrayBuffer());
-        entries.push({
-          name: `media/${mediaFile.path}`,
-          data: bytes,
-        });
-      }
-
-      const archive = createTarGz(entries);
-      const archiveBuffer = new ArrayBuffer(archive.byteLength);
-      new Uint8Array(archiveBuffer).set(archive);
-      const blob = new Blob([archiveBuffer], { type: "application/gzip" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = "quiz-pack.tar.gz";
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-
-      setGenerateSuccess("Pack generated and downloaded.");
-    } catch {
-      setGenerateErrors(["Failed to generate pack."]);
-    } finally {
-      setIsGenerating(false);
-    }
-  }
-
   return (
     <section className="flex min-h-0 flex-col rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
       <header className="flex items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
@@ -463,43 +235,18 @@ export default function RoundBuilderPanel({
           </p>
           <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">{roundCountLabel}</p>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={addRound}
-            className="rounded-lg bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-emerald-400"
-            aria-label="Add round"
-            title="Add round"
-          >
-            Add round
-          </button>
-          <button
-            type="button"
-            onClick={handleGeneratePack}
-            disabled={isGenerating}
-            className="rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-semibold text-zinc-100 transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
-            aria-label="Generate pack"
-            title="Generate pack"
-          >
-            {isGenerating ? "Generating..." : "Generate pack"}
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={addRound}
+          className="rounded-lg bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-emerald-400"
+          aria-label="Add round"
+          title="Add round"
+        >
+          Add round
+        </button>
       </header>
 
       <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
-        {generateErrors.length ? (
-          <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200">
-            {generateErrors.map((error) => (
-              <p key={error}>{error}</p>
-            ))}
-          </div>
-        ) : null}
-        {generateSuccess ? (
-          <div className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200">
-            {generateSuccess}
-          </div>
-        ) : null}
-
         {!rounds.length ? (
           <div className="px-4 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
             No rounds yet.
