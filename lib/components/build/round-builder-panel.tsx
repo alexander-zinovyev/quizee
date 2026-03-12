@@ -1,8 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { RoundStage } from "@/lib/components/room/round-stage";
 import type { MediaTreeFile } from "@/lib/components/build/media-tree-shared";
 import MediaSelector from "@/lib/components/build/media-selector";
+import type {
+  RoundMeta,
+  RoundQuestion,
+  RoundQuestionMedia,
+  RoundQuestionStage,
+} from "@/lib/hooks/use-room-rounds";
 
 type RoundType = "text" | "image";
 
@@ -35,6 +42,11 @@ export type BuildRound = {
   type: RoundType;
   textQuestions: TextQuestion[];
   imageItems: ImageItem[];
+};
+
+type PreviewTarget = {
+  roundId: string;
+  questionIndex: number;
 };
 
 function makeId() {
@@ -80,6 +92,58 @@ function createRound(): BuildRound {
     type: "text",
     textQuestions: [createTextQuestion()],
     imageItems: [],
+  };
+}
+
+function EyeIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      className={className}
+    >
+      <path
+        d="M2 12c2-3 5.6-6 10-6s8 3 10 6c-2 3-5.6 6-10 6s-8-3-10-6z"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx="12" cy="12" r="2.5" />
+    </svg>
+  );
+}
+
+function EyeOffIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      className={className}
+    >
+      <path d="M3 3l18 18" strokeLinecap="round" />
+      <path
+        d="M4.5 4.5C3 6 2 8 2 12c2 3 5.6 6 10 6 2.1 0 4-.5 5.6-1.4M9.88 9.88a3 3 0 104.24 4.24"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function inferMediaKind(path: string | null): { isAudio: boolean; isImage: boolean; isVideo: boolean } {
+  if (!path) {
+    return { isAudio: false, isImage: false, isVideo: false };
+  }
+  const ext = path.toLowerCase().split(".").pop() ?? "";
+  return {
+    isImage: ["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext),
+    isAudio: ["mp3", "wav", "ogg", "m4a"].includes(ext),
+    isVideo: ["mp4", "mov", "webm"].includes(ext),
   };
 }
 
@@ -169,12 +233,33 @@ export default function RoundBuilderPanel({
   const [rounds, setRounds] = useState<BuildRound[]>(() => initialRounds ?? []);
   const [editingRoundId, setEditingRoundId] = useState<string | null>(null);
   const [editingRoundName, setEditingRoundName] = useState("");
+  const [previewTarget, setPreviewTarget] = useState<PreviewTarget | null>(null);
+  const [isPreviewQuestionVisible, setIsPreviewQuestionVisible] = useState(true);
+  const [previewQuestionIndex, setPreviewQuestionIndex] = useState(0);
+  const [previewPromptPage, setPreviewPromptPage] = useState(0);
+  const [previewWithAnswer, setPreviewWithAnswer] = useState(false);
+  const [previewAnswerPage, setPreviewAnswerPage] = useState(0);
+  const [previewGradingTeamIndex, setPreviewGradingTeamIndex] = useState(0);
 
   const roundCountLabel = useMemo(() => `${rounds.length} round${rounds.length === 1 ? "" : "s"}`, [rounds.length]);
 
   useEffect(() => {
     onRoundsChange?.(rounds);
   }, [onRoundsChange, rounds]);
+
+  const previewMediaUrls = useMemo(() => {
+    const next: Record<string, string> = {};
+    mediaFiles.forEach((mediaFile) => {
+      next[mediaFile.path] = URL.createObjectURL(mediaFile.file);
+    });
+    return next;
+  }, [mediaFiles]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(previewMediaUrls).forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [previewMediaUrls]);
 
   function updateRound(roundId: string, updater: (round: BuildRound) => BuildRound) {
     setRounds((prev) => prev.map((round) => (round.id === roundId ? updater(round) : round)));
@@ -226,8 +311,231 @@ export default function RoundBuilderPanel({
     setEditingRoundName("");
   }
 
+  function openPreview(roundId: string, questionIndex: number) {
+    setPreviewTarget({ roundId, questionIndex });
+    setIsPreviewQuestionVisible(true);
+    setPreviewQuestionIndex(questionIndex);
+    setPreviewPromptPage(0);
+    setPreviewWithAnswer(false);
+    setPreviewAnswerPage(0);
+  }
+
+  function closePreview() {
+    setPreviewTarget(null);
+    setPreviewWithAnswer(false);
+    setPreviewAnswerPage(0);
+    setPreviewPromptPage(0);
+  }
+
+  const previewRound = useMemo(
+    () => (previewTarget ? rounds.find((round) => round.id === previewTarget.roundId) ?? null : null),
+    [previewTarget, rounds]
+  );
+
+  const previewQuestionsCount = useMemo(() => {
+    if (!previewRound) return 0;
+    return previewRound.type === "text"
+      ? previewRound.textQuestions.length
+      : previewRound.imageItems.length;
+  }, [previewRound]);
+
+  const boundedPreviewQuestionIndex = useMemo(() => {
+    if (!previewQuestionsCount) return 0;
+    return Math.min(Math.max(previewQuestionIndex, 0), previewQuestionsCount - 1);
+  }, [previewQuestionIndex, previewQuestionsCount]);
+
+  const previewCurrentTextQuestion = useMemo(() => {
+    if (!previewRound || previewRound.type !== "text") return null;
+    return previewRound.textQuestions[boundedPreviewQuestionIndex] ?? null;
+  }, [boundedPreviewQuestionIndex, previewRound]);
+
+  const previewCurrentImageItem = useMemo(() => {
+    if (!previewRound || previewRound.type !== "image") return null;
+    return previewRound.imageItems[boundedPreviewQuestionIndex] ?? null;
+  }, [boundedPreviewQuestionIndex, previewRound]);
+
+  const previewQuestionStageCount = useMemo(() => {
+    if (!previewRound) return 0;
+    if (previewRound.type === "text") {
+      return previewCurrentTextQuestion?.promptStages.length ?? 0;
+    }
+    const promptStage = previewCurrentImageItem?.answerStage;
+    if (!promptStage) return 0;
+    return promptStage.text.trim() || promptStage.mediaPath ? 1 : 0;
+  }, [previewCurrentImageItem, previewCurrentTextQuestion, previewRound]);
+
+  const boundedPreviewPromptPage = useMemo(() => {
+    if (!previewQuestionStageCount) return 0;
+    return Math.min(Math.max(previewPromptPage, 0), previewQuestionStageCount - 1);
+  }, [previewPromptPage, previewQuestionStageCount]);
+
+  const previewAnswerStageCount = useMemo(() => {
+    if (!previewRound || !previewWithAnswer) return 0;
+    if (previewRound.type === "text") {
+      return previewCurrentTextQuestion?.answerStages.length ?? 0;
+    }
+    return previewCurrentImageItem?.imagePath ? 1 : 0;
+  }, [previewCurrentImageItem, previewCurrentTextQuestion, previewRound, previewWithAnswer]);
+
+  const boundedPreviewAnswerPage = useMemo(() => {
+    if (!previewAnswerStageCount) return 0;
+    return Math.min(Math.max(previewAnswerPage, 0), previewAnswerStageCount - 1);
+  }, [previewAnswerPage, previewAnswerStageCount]);
+
+  const stagedPreviewQuestion = useMemo<RoundQuestion | null>(() => {
+    if (!previewRound || !isPreviewQuestionVisible) return null;
+
+    if (previewRound.type === "text") {
+      if (!previewCurrentTextQuestion) return null;
+      const currentStage = previewCurrentTextQuestion.promptStages[boundedPreviewPromptPage];
+      const stageText = currentStage?.text?.trim() ? currentStage.text.trim() : null;
+      const stageMediaPath = currentStage?.mediaPath ?? null;
+      const stageMedia: RoundQuestionMedia | null = stageMediaPath
+        ? {
+            storagePath: stageMediaPath,
+            filename: stageMediaPath.split("/").pop() ?? stageMediaPath,
+            originalPath: stageMediaPath,
+          }
+        : null;
+      const promptStages: RoundQuestionStage[] = previewCurrentTextQuestion.promptStages.map((stage) => ({
+        text: stage.text.trim() ? stage.text.trim() : null,
+        media: stage.mediaPath
+          ? {
+              storagePath: stage.mediaPath,
+              filename: stage.mediaPath.split("/").pop() ?? stage.mediaPath,
+              originalPath: stage.mediaPath,
+            }
+          : null,
+      }));
+      const answerStages: RoundQuestionStage[] = previewCurrentTextQuestion.answerStages.map((stage) => ({
+        text: stage.text.trim() ? stage.text.trim() : null,
+        media: stage.mediaPath
+          ? {
+              storagePath: stage.mediaPath,
+              filename: stage.mediaPath.split("/").pop() ?? stage.mediaPath,
+              originalPath: stage.mediaPath,
+            }
+          : null,
+      }));
+
+      return {
+        id: previewCurrentTextQuestion.id,
+        order: boundedPreviewQuestionIndex,
+        displayPrompt: stageText ?? `Question ${boundedPreviewQuestionIndex + 1}`,
+        prompt: stageText,
+        media: stageMedia,
+        promptStages,
+        answerStages,
+        answerHint: previewCurrentTextQuestion.answerHint,
+        correctAnswer: null,
+      };
+    }
+
+    if (!previewCurrentImageItem) return null;
+    const promptStage = previewCurrentImageItem.answerStage;
+    const promptText = promptStage?.text?.trim() ? promptStage.text.trim() : null;
+    const promptMediaPath = promptStage?.mediaPath ?? null;
+    const promptMedia: RoundQuestionMedia | null = promptMediaPath
+      ? {
+          storagePath: promptMediaPath,
+          filename: promptMediaPath.split("/").pop() ?? promptMediaPath,
+          originalPath: promptMediaPath,
+        }
+      : null;
+
+    return {
+      id: previewCurrentImageItem.id,
+      order: boundedPreviewQuestionIndex,
+      displayPrompt: promptText ?? `Image ${boundedPreviewQuestionIndex + 1}`,
+      prompt: promptText,
+      media: promptMedia,
+      promptStages: promptText || promptMedia ? [{ text: promptText, media: promptMedia }] : [],
+      answerStages: undefined,
+      answerHint: null,
+      correctAnswer: null,
+    };
+  }, [
+    boundedPreviewPromptPage,
+    isPreviewQuestionVisible,
+    boundedPreviewQuestionIndex,
+    previewCurrentImageItem,
+    previewCurrentTextQuestion,
+    previewRound,
+  ]);
+
+  const previewPresentingMedia = useMemo(
+    () => stagedPreviewQuestion?.media ?? null,
+    [stagedPreviewQuestion]
+  );
+  const previewPresentingMediaUrl = useMemo(
+    () => (previewPresentingMedia ? previewMediaUrls[previewPresentingMedia.storagePath] ?? null : null),
+    [previewMediaUrls, previewPresentingMedia]
+  );
+
+  const previewMediaKind = useMemo(
+    () => inferMediaKind(previewPresentingMedia?.storagePath ?? null),
+    [previewPresentingMedia?.storagePath]
+  );
+
+  const previewPresentingAnswer = useMemo(() => {
+    if (!previewWithAnswer || !previewRound) return null;
+    if (previewRound.type === "image") return null;
+    if (!previewCurrentTextQuestion) return null;
+    const stage = previewCurrentTextQuestion.answerStages[boundedPreviewAnswerPage];
+    const text = stage?.text?.trim();
+    return text ? text : null;
+  }, [boundedPreviewAnswerPage, previewCurrentTextQuestion, previewRound, previewWithAnswer]);
+
+  const previewPresentingAnswerImageUrl = useMemo(() => {
+    if (!previewWithAnswer || !previewRound) return null;
+    if (previewRound.type === "image") {
+      const imagePath = previewCurrentImageItem?.imagePath ?? null;
+      return imagePath ? previewMediaUrls[imagePath] ?? null : null;
+    }
+    if (!previewCurrentTextQuestion) return null;
+    const stage = previewCurrentTextQuestion.answerStages[boundedPreviewAnswerPage];
+    const mediaPath = stage?.mediaPath ?? null;
+    if (!mediaPath) return null;
+    const kind = inferMediaKind(mediaPath);
+    return kind.isImage ? previewMediaUrls[mediaPath] ?? null : null;
+  }, [
+    boundedPreviewAnswerPage,
+    previewCurrentImageItem,
+    previewCurrentTextQuestion,
+    previewMediaUrls,
+    previewRound,
+    previewWithAnswer,
+  ]);
+
+  const previewRoundMeta = useMemo<RoundMeta | null>(() => {
+    if (!previewRound) return null;
+    const roundOrder = rounds.findIndex((round) => round.id === previewRound.id);
+    return {
+      id: previewRound.id,
+      title: previewRound.name,
+      order: roundOrder >= 0 ? roundOrder : 0,
+      type: previewRound.type,
+      state: "closed",
+      gradingRequired: false,
+    };
+  }, [previewRound, rounds]);
+
+  const previewPresentingPayload = useMemo(
+    () =>
+      previewRoundMeta
+        ? {
+            round: previewRoundMeta.id,
+            question: isPreviewQuestionVisible && stagedPreviewQuestion ? stagedPreviewQuestion.id : null,
+            withAnswer: previewWithAnswer,
+          }
+        : null,
+    [isPreviewQuestionVisible, previewRoundMeta, previewWithAnswer, stagedPreviewQuestion]
+  );
+  const previewHasQuestion = Boolean(isPreviewQuestionVisible && stagedPreviewQuestion);
+
   return (
-    <section className="flex min-h-0 flex-col rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+    <>
+      <section className="flex min-h-0 flex-col rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
       <header className="flex items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.25em] text-emerald-500">
@@ -383,13 +691,22 @@ export default function RoundBuilderPanel({
                           </p>
                           <button
                             type="button"
+                            onClick={() => openPreview(round.id, questionIndex)}
+                            className="ml-auto inline-flex h-6 w-6 items-center justify-center rounded bg-zinc-200 text-zinc-700 hover:bg-zinc-300 dark:bg-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-600"
+                            aria-label="Preview question"
+                            title="Preview"
+                          >
+                            <EyeIcon className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
                             onClick={() =>
                               updateRound(round.id, (prev) => ({
                                 ...prev,
                                 textQuestions: prev.textQuestions.filter((item) => item.id !== question.id),
                               }))
                             }
-                            className="ml-auto inline-flex h-6 w-6 items-center justify-center rounded bg-red-100 text-sm font-semibold text-red-600 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-200 dark:hover:bg-red-900/60"
+                            className="inline-flex h-6 w-6 items-center justify-center rounded bg-red-100 text-sm font-semibold text-red-600 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-200 dark:hover:bg-red-900/60"
                             aria-label="Remove question"
                             title="Remove question"
                           >
@@ -625,13 +942,22 @@ export default function RoundBuilderPanel({
                           </p>
                           <button
                             type="button"
+                            onClick={() => openPreview(round.id, itemIndex)}
+                            className="ml-auto inline-flex h-6 w-6 items-center justify-center rounded bg-zinc-200 text-zinc-700 hover:bg-zinc-300 dark:bg-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-600"
+                            aria-label="Preview image"
+                            title="Preview"
+                          >
+                            <EyeIcon className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
                             onClick={() =>
                               updateRound(round.id, (prev) => ({
                                 ...prev,
                                 imageItems: prev.imageItems.filter((entry) => entry.id !== item.id),
                               }))
                             }
-                            className="ml-auto inline-flex h-6 w-6 items-center justify-center rounded bg-red-100 text-sm font-semibold text-red-600 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-200 dark:hover:bg-red-900/60"
+                            className="inline-flex h-6 w-6 items-center justify-center rounded bg-red-100 text-sm font-semibold text-red-600 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-200 dark:hover:bg-red-900/60"
                             aria-label="Remove image item"
                             title="Remove image item"
                           >
@@ -724,6 +1050,198 @@ export default function RoundBuilderPanel({
           </article>
         ))}
       </div>
-    </section>
+      </section>
+      {previewRoundMeta ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4"
+          onClick={closePreview}
+        >
+          <div
+            className="flex h-[88vh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-zinc-700 bg-zinc-950 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="flex items-center justify-between border-b border-white/10 px-5 py-3 text-white">
+              <p className="text-sm font-semibold uppercase tracking-[0.25em] text-emerald-300">
+                Preview
+              </p>
+              <button
+                type="button"
+                onClick={closePreview}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-700 text-sm text-zinc-100 hover:bg-zinc-600"
+              >
+                ×
+              </button>
+            </header>
+
+            <div className="flex min-h-0 flex-1 flex-col">
+              <RoundStage
+                answerImageError={null}
+                displayRoundMeta={previewRoundMeta}
+                finalizeScores={() => undefined}
+                gradeAnswer={() => Promise.resolve()}
+                gradingMatrix={[]}
+                gradingTeamIndex={previewGradingTeamIndex}
+                isAnswerImageLoading={false}
+                isMediaLoading={false}
+                isPresentingImageRound={previewRoundMeta.type === "image"}
+                mediaError={null}
+                mediaKind={previewMediaKind}
+                mediaVolume={0.2}
+                presenting={previewPresentingPayload}
+                presentingAnswer={previewPresentingAnswer}
+                presentingAnswerImageUrl={previewPresentingAnswerImageUrl}
+                presentingMedia={previewPresentingMedia}
+                presentingMediaUrl={previewPresentingMediaUrl}
+                presentingQuestion={stagedPreviewQuestion}
+                presentingRoundMeta={previewRoundMeta}
+                setGradingTeamIndex={setPreviewGradingTeamIndex}
+              />
+
+              <footer className="border-t border-white/10 bg-black/40 px-5 py-3 text-white">
+                <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em]">
+                  <span className="text-zinc-300">Question:</span>
+                  {!isPreviewQuestionVisible && previewQuestionsCount > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsPreviewQuestionVisible(true);
+                        setPreviewWithAnswer(false);
+                        setPreviewPromptPage(0);
+                        setPreviewAnswerPage(0);
+                      }}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500 text-white transition hover:bg-emerald-400"
+                    >
+                      <EyeIcon />
+                    </button>
+                  ) : null}
+
+                  {previewHasQuestion ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsPreviewQuestionVisible(false);
+                          setPreviewWithAnswer(false);
+                          setPreviewAnswerPage(0);
+                        }}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-red-500 text-white transition hover:bg-red-400"
+                      >
+                        <EyeOffIcon />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (previewQuestionIndex <= 0) return;
+                          setPreviewQuestionIndex((prev) => Math.max(0, prev - 1));
+                          setPreviewWithAnswer(false);
+                          setPreviewPromptPage(0);
+                          setPreviewAnswerPage(0);
+                        }}
+                        disabled={previewQuestionIndex <= 0}
+                        className="rounded-lg bg-zinc-700 px-2 py-2 text-white transition hover:bg-zinc-600 disabled:cursor-not-allowed disabled:opacity-70"
+                      >
+                        {"<"}
+                      </button>
+                      <span className="min-w-3 text-center text-zinc-100">
+                        {previewQuestionIndex + 1}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const isLast = boundedPreviewQuestionIndex >= previewQuestionsCount - 1;
+                          setPreviewQuestionIndex(isLast ? 0 : previewQuestionIndex + 1);
+                          setPreviewWithAnswer(false);
+                          setPreviewPromptPage(0);
+                          setPreviewAnswerPage(0);
+                        }}
+                        className="rounded-lg bg-zinc-700 px-2 py-2 text-white transition hover:bg-zinc-600"
+                      >
+                        {boundedPreviewQuestionIndex < previewQuestionsCount - 1 ? ">" : "↺"}
+                      </button>
+
+                      {previewQuestionStageCount > 1 ? (
+                        <>
+                          <span className="text-zinc-400">Page</span>
+                          <button
+                            type="button"
+                            onClick={() => setPreviewPromptPage((prev) => Math.max(0, prev - 1))}
+                            disabled={boundedPreviewPromptPage <= 0}
+                            className="rounded-lg bg-zinc-700 px-2 py-2 text-white transition hover:bg-zinc-600 disabled:cursor-not-allowed disabled:opacity-70"
+                          >
+                            {"<"}
+                          </button>
+                          <span className="min-w-3 text-center text-zinc-100">
+                            {boundedPreviewPromptPage + 1}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const isLast = boundedPreviewPromptPage >= previewQuestionStageCount - 1;
+                              setPreviewPromptPage(isLast ? 0 : boundedPreviewPromptPage + 1);
+                            }}
+                            className="rounded-lg bg-zinc-700 px-2 py-2 text-white transition hover:bg-zinc-600"
+                          >
+                            {boundedPreviewPromptPage < previewQuestionStageCount - 1 ? ">" : "↺"}
+                          </button>
+                        </>
+                      ) : null}
+                    </>
+                  ) : null}
+
+                  <div className="ml-auto flex items-center gap-2">
+                    {previewHasQuestion ? (
+                      <>
+                        <span className="text-zinc-300">Answer:</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = !previewWithAnswer;
+                            setPreviewWithAnswer(next);
+                            if (!next) {
+                              setPreviewAnswerPage(0);
+                            }
+                          }}
+                          className={`inline-flex h-9 w-9 items-center justify-center rounded-lg text-white transition ${
+                            previewWithAnswer ? "bg-red-500 hover:bg-red-400" : "bg-amber-500 hover:bg-amber-400"
+                          }`}
+                        >
+                          {previewWithAnswer ? <EyeOffIcon /> : <EyeIcon />}
+                        </button>
+                        {previewWithAnswer && previewAnswerStageCount > 1 ? (
+                          <>
+                            <span className="text-zinc-400">Page</span>
+                            <button
+                              type="button"
+                              onClick={() => setPreviewAnswerPage((prev) => Math.max(0, prev - 1))}
+                              disabled={boundedPreviewAnswerPage <= 0}
+                              className="rounded-lg bg-zinc-700 px-2 py-2 text-white transition hover:bg-zinc-600 disabled:cursor-not-allowed disabled:opacity-70"
+                            >
+                              {"<"}
+                            </button>
+                            <span className="min-w-3 text-center text-zinc-100">
+                              {boundedPreviewAnswerPage + 1}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const isLast = boundedPreviewAnswerPage >= previewAnswerStageCount - 1;
+                                setPreviewAnswerPage(isLast ? 0 : boundedPreviewAnswerPage + 1);
+                              }}
+                              className="rounded-lg bg-zinc-700 px-2 py-2 text-white transition hover:bg-zinc-600"
+                            >
+                              {boundedPreviewAnswerPage < previewAnswerStageCount - 1 ? ">" : "↺"}
+                            </button>
+                          </>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+              </footer>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }
