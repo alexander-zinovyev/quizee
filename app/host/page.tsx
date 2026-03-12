@@ -64,9 +64,10 @@ export default function HostPage() {
         return;
       }
 
-      if (trimmedRoomId === "host") {
+      const reservedRoomNames = ["host", "build"];
+      if (reservedRoomNames.includes(trimmedRoomId)) {
         setSlugStatus("unavailable");
-        setStatusMessage("Room id \"host\" is reserved.");
+        setStatusMessage(`Room id "${trimmedRoomId}" is reserved.`);
         return;
       }
 
