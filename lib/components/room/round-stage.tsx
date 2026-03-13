@@ -1,7 +1,7 @@
 "use client";
 
 import type { RoundMeta, RoundQuestion } from "@/lib/hooks/use-room-rounds";
-import ZoomableImage from "@/lib/components/zoomable-image";
+import StageMedia from "@/lib/components/room/stage-media";
 
 type GradingAnswer = {
   answer: string;
@@ -54,6 +54,7 @@ export function RoundStage({
     round?: string | null;
     question?: string | null;
     withAnswer?: boolean;
+    answerPage?: number;
   } | null;
   presentingAnswer: string | null;
   presentingAnswerImageUrl: string | null;
@@ -73,6 +74,22 @@ export function RoundStage({
       presentingMedia &&
       !presentingQuestion.prompt
   );
+  const answerStageIndex = Math.max(0, presenting?.answerPage ?? 0);
+  const answerStageMedia = presentingQuestion?.answerStages?.[answerStageIndex]?.media ?? null;
+  const answerMediaKind = {
+    isAudio:
+      typeof answerStageMedia?.contentType === "string"
+        ? answerStageMedia.contentType.toLowerCase().startsWith("audio/")
+        : false,
+    isImage:
+      typeof answerStageMedia?.contentType === "string"
+        ? answerStageMedia.contentType.toLowerCase().startsWith("image/")
+        : false,
+    isVideo:
+      typeof answerStageMedia?.contentType === "string"
+        ? answerStageMedia.contentType.toLowerCase().startsWith("video/")
+        : false,
+  };
 
   return (
     <div className="relative flex-1 overflow-hidden bg-black">
@@ -247,48 +264,18 @@ export function RoundStage({
                         {isMediaLoading ? (
                           <p className="text-sm text-zinc-300">Loading media…</p>
                         ) : presentingMediaUrl ? (
-                          mediaKind.isImage ? (
-                            <ZoomableImage
-                              src={presentingMediaUrl}
-                              alt={presentingMedia.filename ?? "Question media"}
-                              label={presentingQuestion.prompt ?? undefined}
-                              wrapperClassName="w-full"
-                              imageClassName="max-h-[55vh] w-full rounded-2xl object-contain"
-                              zoomLabel="Zoom question image"
-                            />
-                          ) : mediaKind.isVideo ? (
-                            <video
-                              key={presentingQuestion.id}
-                              src={presentingMediaUrl}
-                              className="max-h-[55vh] w-full rounded-2xl bg-black object-contain"
-                              controls
-                              playsInline
-                              autoPlay
-                              onLoadedMetadata={(event) => {
-                                event.currentTarget.volume = mediaVolume;
-                              }}
-                            />
-                          ) : mediaKind.isAudio ? (
-                            <audio
-                              key={presentingQuestion.id}
-                              src={presentingMediaUrl}
-                              className="w-full"
-                              controls
-                              autoPlay
-                              onLoadedMetadata={(event) => {
-                                event.currentTarget.volume = mediaVolume;
-                              }}
-                            />
-                          ) : (
-                            <a
-                              href={presentingMediaUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-sm text-emerald-300 underline"
-                            >
-                              Open media
-                            </a>
-                          )
+                          <StageMedia
+                            url={presentingMediaUrl}
+                            kind={mediaKind}
+                            fallbackName={presentingMedia.filename}
+                            alt={presentingMedia.filename ?? "Question media"}
+                            label={presentingQuestion.prompt ?? undefined}
+                            mediaVolume={mediaVolume}
+                            imageWrapperClassName="w-full"
+                            imageClassName="max-h-[55vh] w-full rounded-2xl object-contain"
+                            zoomLabel="Zoom question image"
+                            mediaClassName="max-h-[55vh] w-full rounded-2xl bg-black object-contain"
+                          />
                         ) : null}
                         {mediaError ? (
                           <p className="text-sm text-red-300">{mediaError}</p>
@@ -304,13 +291,21 @@ export function RoundStage({
                     {isAnswerImageLoading ? (
                       <p className="text-sm text-emerald-100">Loading answer…</p>
                     ) : presentingAnswerImageUrl ? (
-                      <ZoomableImage
-                        src={presentingAnswerImageUrl}
+                      <StageMedia
+                        url={presentingAnswerImageUrl}
+                        kind={answerMediaKind}
+                        fallbackName={
+                          answerStageMedia?.filename ??
+                          answerStageMedia?.originalPath ??
+                          null
+                        }
                         alt="Correct answer"
                         label={presentingQuestion.prompt ?? undefined}
-                        wrapperClassName="w-full"
+                        mediaVolume={mediaVolume}
+                        imageWrapperClassName="w-full"
                         imageClassName="max-h-[65vh] h-auto w-full rounded-2xl object-contain"
                         zoomLabel="Zoom answer image"
+                        mediaClassName="max-h-[65vh] w-full rounded-2xl bg-black object-contain"
                       />
                     ) : answerImageError ? (
                       <p className="text-sm text-red-300">{answerImageError}</p>
@@ -328,13 +323,16 @@ export function RoundStage({
                       {isMediaLoading ? (
                         <p className="text-sm text-zinc-300">Loading media…</p>
                       ) : presentingMediaUrl ? (
-                        presentingQuestion.prompt ? (
+                        mediaKind.isImage && presentingQuestion.prompt ? (
                           <div className="w-full">
-                            <ZoomableImage
-                              src={presentingMediaUrl}
+                            <StageMedia
+                              url={presentingMediaUrl}
+                              kind={mediaKind}
+                              fallbackName={presentingMedia.filename}
                               alt={presentingMedia.filename ?? "Question media"}
                               label={presentingQuestion.prompt ?? undefined}
-                              wrapperClassName="mb-4 w-full md:float-right md:mb-3 md:ml-6 md:w-1/3 md:max-w-[33%]"
+                              mediaVolume={mediaVolume}
+                              imageWrapperClassName="mb-4 w-full md:float-right md:mb-3 md:ml-6 md:w-1/3 md:max-w-[33%]"
                               imageClassName="max-h-[55vh] w-full rounded-2xl object-contain"
                               zoomLabel="Zoom question image"
                             />
@@ -345,10 +343,13 @@ export function RoundStage({
                           </div>
                         ) : (
                           <div className="flex h-full min-h-0 w-full items-center justify-center">
-                            <ZoomableImage
-                              src={presentingMediaUrl}
+                            <StageMedia
+                              url={presentingMediaUrl}
+                              kind={mediaKind}
+                              fallbackName={presentingMedia.filename}
                               alt={presentingMedia.filename ?? "Question media"}
-                              wrapperClassName="h-full max-h-full max-w-full"
+                              mediaVolume={mediaVolume}
+                              imageWrapperClassName="h-full max-h-full max-w-full"
                               imageClassName="h-auto max-h-full w-auto max-w-full rounded-2xl object-contain"
                               zoomLabel="Zoom question image"
                             />
@@ -371,43 +372,18 @@ export function RoundStage({
                           {isMediaLoading ? (
                             <p className="text-sm text-zinc-300">Loading media…</p>
                           ) : presentingMediaUrl ? (
-                            mediaKind.isVideo ? (
-                          <video
-                            key={presentingQuestion.id}
-                            src={presentingMediaUrl}
-                            className={
-                              isMediaOnlyStage
-                                ? "h-full w-full rounded-2xl bg-black object-contain"
-                                : "max-h-[55vh] w-full rounded-2xl bg-black object-contain"
-                            }
-                            controls
-                            playsInline
-                            autoPlay
-                            onLoadedMetadata={(event) => {
-                              event.currentTarget.volume = mediaVolume;
-                            }}
-                          />
-                            ) : mediaKind.isAudio ? (
-                          <audio
-                            key={presentingQuestion.id}
-                            src={presentingMediaUrl}
-                            className="w-full"
-                            controls
-                            autoPlay
-                            onLoadedMetadata={(event) => {
-                              event.currentTarget.volume = mediaVolume;
-                            }}
-                          />
-                            ) : (
-                              <a
-                                href={presentingMediaUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-sm text-emerald-300 underline"
-                              >
-                                Open media
-                              </a>
-                            )
+                            <StageMedia
+                              url={presentingMediaUrl}
+                              kind={mediaKind}
+                              fallbackName={presentingMedia.filename}
+                              alt={presentingMedia.filename ?? "Question media"}
+                              mediaVolume={mediaVolume}
+                              mediaClassName={
+                                isMediaOnlyStage
+                                  ? "h-full w-full rounded-2xl bg-black object-contain"
+                                  : "max-h-[55vh] w-full rounded-2xl bg-black object-contain"
+                              }
+                            />
                           ) : null}
                           {mediaError ? (
                             <p className="text-sm text-red-300">{mediaError}</p>
@@ -449,14 +425,22 @@ export function RoundStage({
                   ) : null}
                   {presentingAnswerImageUrl ? (
                     <div className="flex h-full min-h-0 w-full self-stretch items-center justify-center">
-                      <ZoomableImage
-                        src={presentingAnswerImageUrl}
+                      <StageMedia
+                        url={presentingAnswerImageUrl}
+                        kind={answerMediaKind}
+                        fallbackName={
+                          answerStageMedia?.filename ??
+                          answerStageMedia?.originalPath ??
+                          null
+                        }
                         alt="Answer media"
                         label={presentingAnswer ?? undefined}
-                        wrapperClassName="max-h-full max-w-full"
+                        mediaVolume={mediaVolume}
+                        imageWrapperClassName="max-h-full max-w-full"
                         imageClassName="rounded-2xl"
-                        fitToParent
+                        fitImageToParent
                         zoomLabel="Zoom answer image"
+                        mediaClassName="h-full max-h-full w-full rounded-2xl bg-black object-contain"
                       />
                     </div>
                   ) : null}
