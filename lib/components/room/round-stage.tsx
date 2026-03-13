@@ -254,7 +254,7 @@ export function RoundStage({
                 <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
                   <div className="space-y-6">
                     {presentingQuestion.prompt ? (
-                      <h2 className="text-3xl font-semibold leading-tight text-white">
+                      <h2 className="whitespace-pre-wrap text-3xl font-semibold leading-tight text-white">
                         {presentingQuestion.prompt}
                       </h2>
                     ) : null}
@@ -363,7 +363,7 @@ export function RoundStage({
                   ) : (
                     <>
                       {presentingQuestion.prompt ? (
-                        <h2 className="text-3xl font-semibold leading-tight text-white">
+                        <h2 className="whitespace-pre-wrap text-3xl font-semibold leading-tight text-white">
                           {presentingQuestion.prompt}
                         </h2>
                       ) : null}
@@ -421,7 +421,7 @@ export function RoundStage({
                   }`}
                 >
                   {presentingAnswer ? (
-                    <span className="block self-center break-words">{presentingAnswer}</span>
+                    <span className="block self-center whitespace-pre-wrap break-words">{presentingAnswer}</span>
                   ) : null}
                   {presentingAnswerImageUrl ? (
                     <div className="flex h-full min-h-0 w-full self-stretch items-center justify-center">
