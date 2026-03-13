@@ -486,26 +486,46 @@ export default function RoundBuilderPanel({
     return text ? text : null;
   }, [boundedPreviewAnswerPage, previewCurrentTextQuestion, previewRound, previewWithAnswer]);
 
-  const previewPresentingAnswerImageUrl = useMemo(() => {
+  const previewPresentingAnswerMedia = useMemo<RoundQuestionMedia | null>(() => {
     if (!previewWithAnswer || !previewRound) return null;
     if (previewRound.type === "image") {
       const imagePath = previewCurrentImageItem?.imagePath ?? null;
-      return imagePath ? previewMediaUrls[imagePath] ?? null : null;
+      if (!imagePath) return null;
+      return {
+        storagePath: imagePath,
+        filename: imagePath.split("/").pop() ?? imagePath,
+        originalPath: imagePath,
+      };
     }
     if (!previewCurrentTextQuestion) return null;
     const stage = previewCurrentTextQuestion.answerStages[boundedPreviewAnswerPage];
     const mediaPath = stage?.mediaPath ?? null;
     if (!mediaPath) return null;
-    const kind = inferMediaKind(mediaPath);
-    return kind.isImage ? previewMediaUrls[mediaPath] ?? null : null;
+    return {
+      storagePath: mediaPath,
+      filename: mediaPath.split("/").pop() ?? mediaPath,
+      originalPath: mediaPath,
+    };
   }, [
     boundedPreviewAnswerPage,
     previewCurrentImageItem,
     previewCurrentTextQuestion,
-    previewMediaUrls,
     previewRound,
     previewWithAnswer,
   ]);
+
+  const previewPresentingAnswerMediaUrl = useMemo(
+    () =>
+      previewPresentingAnswerMedia
+        ? previewMediaUrls[previewPresentingAnswerMedia.storagePath] ?? null
+        : null,
+    [previewMediaUrls, previewPresentingAnswerMedia]
+  );
+
+  const previewAnswerMediaKind = useMemo(
+    () => inferMediaKind(previewPresentingAnswerMedia?.storagePath ?? null),
+    [previewPresentingAnswerMedia?.storagePath]
+  );
 
   const previewRoundMeta = useMemo<RoundMeta | null>(() => {
     if (!previewRound) return null;
@@ -1075,21 +1095,23 @@ export default function RoundBuilderPanel({
 
             <div className="flex min-h-0 flex-1 flex-col">
               <RoundStage
-                answerImageError={null}
+                answerMediaError={null}
                 displayRoundMeta={previewRoundMeta}
                 finalizeScores={() => undefined}
                 gradeAnswer={() => Promise.resolve()}
                 gradingMatrix={[]}
                 gradingTeamIndex={previewGradingTeamIndex}
-                isAnswerImageLoading={false}
+                isAnswerMediaLoading={false}
                 isMediaLoading={false}
                 isPresentingImageRound={previewRoundMeta.type === "image"}
                 mediaError={null}
+                answerMediaKind={previewAnswerMediaKind}
                 mediaKind={previewMediaKind}
                 mediaVolume={0.2}
                 presenting={previewPresentingPayload}
                 presentingAnswer={previewPresentingAnswer}
-                presentingAnswerImageUrl={previewPresentingAnswerImageUrl}
+                presentingAnswerMedia={previewPresentingAnswerMedia}
+                presentingAnswerMediaUrl={previewPresentingAnswerMediaUrl}
                 presentingMedia={previewPresentingMedia}
                 presentingMediaUrl={previewPresentingMediaUrl}
                 presentingQuestion={stagedPreviewQuestion}

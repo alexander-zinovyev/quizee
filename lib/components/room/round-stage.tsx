@@ -18,20 +18,22 @@ type GradingTeam = {
 };
 
 export function RoundStage({
-  answerImageError,
+  answerMediaError,
   displayRoundMeta,
   finalizeScores,
   gradeAnswer,
   gradingMatrix,
   gradingTeamIndex,
-  isAnswerImageLoading,
+  isAnswerMediaLoading,
   isMediaLoading,
   isPresentingImageRound,
   mediaError,
+  answerMediaKind,
   mediaKind,
   presenting,
   presentingAnswer,
-  presentingAnswerImageUrl,
+  presentingAnswerMedia,
+  presentingAnswerMediaUrl,
   presentingMedia,
   presentingMediaUrl,
   presentingQuestion,
@@ -39,16 +41,17 @@ export function RoundStage({
   setGradingTeamIndex,
   mediaVolume,
 }: {
-  answerImageError: string | null;
+  answerMediaError: string | null;
   displayRoundMeta: RoundMeta | null;
   finalizeScores: () => void;
   gradeAnswer: (teamId: string, questionId: string, awardedPoints: number) => void;
   gradingMatrix: GradingTeam[];
   gradingTeamIndex: number;
-  isAnswerImageLoading: boolean;
+  isAnswerMediaLoading: boolean;
   isMediaLoading: boolean;
   isPresentingImageRound: boolean;
   mediaError: string | null;
+  answerMediaKind: { isAudio: boolean; isImage: boolean; isVideo: boolean };
   mediaKind: { isAudio: boolean; isImage: boolean; isVideo: boolean };
   presenting: {
     round?: string | null;
@@ -57,7 +60,13 @@ export function RoundStage({
     answerPage?: number;
   } | null;
   presentingAnswer: string | null;
-  presentingAnswerImageUrl: string | null;
+  presentingAnswerMedia:
+    | {
+        filename?: string | null;
+        originalPath?: string | null;
+      }
+    | null;
+  presentingAnswerMediaUrl: string | null;
   presentingMedia:
     | {
         filename?: string | null;
@@ -74,22 +83,6 @@ export function RoundStage({
       presentingMedia &&
       !presentingQuestion.prompt
   );
-  const answerStageIndex = Math.max(0, presenting?.answerPage ?? 0);
-  const answerStageMedia = presentingQuestion?.answerStages?.[answerStageIndex]?.media ?? null;
-  const answerMediaKind = {
-    isAudio:
-      typeof answerStageMedia?.contentType === "string"
-        ? answerStageMedia.contentType.toLowerCase().startsWith("audio/")
-        : false,
-    isImage:
-      typeof answerStageMedia?.contentType === "string"
-        ? answerStageMedia.contentType.toLowerCase().startsWith("image/")
-        : false,
-    isVideo:
-      typeof answerStageMedia?.contentType === "string"
-        ? answerStageMedia.contentType.toLowerCase().startsWith("video/")
-        : false,
-  };
 
   return (
     <div className="relative flex-1 overflow-hidden bg-black">
@@ -275,6 +268,7 @@ export function RoundStage({
                             imageClassName="max-h-[55vh] w-full rounded-2xl object-contain"
                             zoomLabel="Zoom question image"
                             mediaClassName="max-h-[55vh] w-full rounded-2xl bg-black object-contain"
+                            audioClassName="w-full"
                           />
                         ) : null}
                         {mediaError ? (
@@ -288,15 +282,15 @@ export function RoundStage({
                     <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-200">
                       Answer
                     </p>
-                    {isAnswerImageLoading ? (
+                    {isAnswerMediaLoading ? (
                       <p className="text-sm text-emerald-100">Loading answer…</p>
-                    ) : presentingAnswerImageUrl ? (
+                    ) : presentingAnswerMediaUrl ? (
                       <StageMedia
-                        url={presentingAnswerImageUrl}
+                        url={presentingAnswerMediaUrl}
                         kind={answerMediaKind}
                         fallbackName={
-                          answerStageMedia?.filename ??
-                          answerStageMedia?.originalPath ??
+                          presentingAnswerMedia?.filename ??
+                          presentingAnswerMedia?.originalPath ??
                           null
                         }
                         alt="Correct answer"
@@ -305,10 +299,11 @@ export function RoundStage({
                         imageWrapperClassName="w-full"
                         imageClassName="max-h-[65vh] h-auto w-full rounded-2xl object-contain"
                         zoomLabel="Zoom answer image"
-                        mediaClassName="max-h-[65vh] w-full rounded-2xl bg-black object-contain"
+                        mediaClassName="max-h-[65vh] w-full rounded-2xl object-contain"
+                        audioClassName="w-full"
                       />
-                    ) : answerImageError ? (
-                      <p className="text-sm text-red-300">{answerImageError}</p>
+                    ) : answerMediaError ? (
+                      <p className="text-sm text-red-300">{answerMediaError}</p>
                     ) : (
                       <p className="text-sm text-emerald-100">
                         Answer not available.
@@ -383,6 +378,7 @@ export function RoundStage({
                                   ? "h-full w-full rounded-2xl bg-black object-contain"
                                   : "max-h-[55vh] w-full rounded-2xl bg-black object-contain"
                               }
+                              audioClassName="w-full"
                             />
                           ) : null}
                           {mediaError ? (
@@ -402,7 +398,7 @@ export function RoundStage({
           </div>
           {presenting?.withAnswer &&
           !isPresentingImageRound &&
-          (presentingAnswer || presentingAnswerImageUrl) ? (
+          (presentingAnswer || presentingAnswerMediaUrl) ? (
             <div
               className="absolute inset-0 flex items-center justify-center"
               style={{
@@ -415,7 +411,7 @@ export function RoundStage({
               <div className="flex h-full w-full items-center justify-center rounded-2xl border border-emerald-200/80 bg-emerald-700/98 px-8 py-6 text-center text-3xl font-semibold leading-tight text-white shadow-2xl">
                 <div
                   className={`grid h-full w-full min-h-0 grid-rows-[minmax(0,1fr)] items-stretch gap-6 ${
-                    presentingAnswer && presentingAnswerImageUrl
+                    presentingAnswer && presentingAnswerMediaUrl
                       ? "md:grid-cols-2"
                       : "grid-cols-1"
                   }`}
@@ -423,14 +419,14 @@ export function RoundStage({
                   {presentingAnswer ? (
                     <span className="block self-center whitespace-pre-wrap break-words">{presentingAnswer}</span>
                   ) : null}
-                  {presentingAnswerImageUrl ? (
+                  {presentingAnswerMediaUrl ? (
                     <div className="flex h-full min-h-0 w-full self-stretch items-center justify-center">
                       <StageMedia
-                        url={presentingAnswerImageUrl}
+                        url={presentingAnswerMediaUrl}
                         kind={answerMediaKind}
                         fallbackName={
-                          answerStageMedia?.filename ??
-                          answerStageMedia?.originalPath ??
+                          presentingAnswerMedia?.filename ??
+                          presentingAnswerMedia?.originalPath ??
                           null
                         }
                         alt="Answer media"
@@ -440,7 +436,8 @@ export function RoundStage({
                         imageClassName="rounded-2xl"
                         fitImageToParent
                         zoomLabel="Zoom answer image"
-                        mediaClassName="h-full max-h-full w-full rounded-2xl bg-black object-contain"
+                        mediaClassName="h-full max-h-full w-full rounded-2xl object-contain"
+                        audioClassName="w-full"
                       />
                     </div>
                   ) : null}

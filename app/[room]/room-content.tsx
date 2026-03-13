@@ -185,16 +185,18 @@ export default function RoomContent({
   }, [currentPromptPage, presentingQuestion]);
 
   const {
-    answerImageError,
+    answerMediaError,
     clearCachedMedia,
     getCachedMediaUrl,
-    isAnswerImageLoading,
+    isAnswerMediaLoading,
     isMediaLoading,
     isPresentingImageRound,
     mediaCacheVersion,
     mediaError,
+    answerMediaKind,
     mediaKind,
-    presentingAnswerImageUrl,
+    presentingAnswerMedia,
+    presentingAnswerMediaUrl,
     presentingMedia,
     presentingMediaUrl,
     presentingTextAnswer,
@@ -437,10 +439,10 @@ export default function RoomContent({
     if (presentingRoundMeta.type === "text") {
       return presentingTextAnswerStageCount;
     }
-    return presentingAnswerImageUrl ? 1 : 0;
+    return presentingAnswerMediaUrl ? 1 : 0;
   }, [
     presenting?.withAnswer,
-    presentingAnswerImageUrl,
+    presentingAnswerMediaUrl,
     presentingRoundMeta,
     presentingTextAnswerStageCount,
   ]);
@@ -1384,7 +1386,7 @@ export default function RoomContent({
               </div>
             </header>
             <RoundStage
-              answerImageError={answerImageError}
+              answerMediaError={answerMediaError}
               displayRoundMeta={displayRoundMeta}
               finalizeScores={() => void finalizeScores()}
               gradeAnswer={(teamId, questionId, awardedPoints) =>
@@ -1392,15 +1394,17 @@ export default function RoomContent({
               }
               gradingMatrix={gradingMatrix}
               gradingTeamIndex={gradingTeamIndex}
-              isAnswerImageLoading={isAnswerImageLoading}
+              isAnswerMediaLoading={isAnswerMediaLoading}
               isMediaLoading={isMediaLoading}
               isPresentingImageRound={isPresentingImageRound}
               mediaError={mediaError}
+              answerMediaKind={answerMediaKind}
               mediaKind={mediaKind}
               mediaVolume={DEFAULT_MEDIA_VOLUME}
               presenting={presenting}
               presentingAnswer={presentingAnswer}
-              presentingAnswerImageUrl={presentingAnswerImageUrl}
+              presentingAnswerMedia={presentingAnswerMedia}
+              presentingAnswerMediaUrl={presentingAnswerMediaUrl}
               presentingMedia={presentingMedia}
               presentingMediaUrl={presentingMediaUrl}
               presentingQuestion={stagedPresentingQuestion}

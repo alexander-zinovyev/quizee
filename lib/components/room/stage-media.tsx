@@ -29,6 +29,8 @@ export default function StageMedia({
   imageClassName,
   zoomLabel,
   mediaClassName,
+  audioClassName,
+  videoClassName,
   fitImageToParent = false,
 }: {
   url: string;
@@ -41,6 +43,8 @@ export default function StageMedia({
   imageClassName?: string;
   zoomLabel?: string;
   mediaClassName?: string;
+  audioClassName?: string;
+  videoClassName?: string;
   fitImageToParent?: boolean;
 }) {
   const resolvedKind =
@@ -66,7 +70,7 @@ export default function StageMedia({
     return (
       <video
         src={url}
-        className={mediaClassName}
+        className={videoClassName ?? mediaClassName}
         controls
         playsInline
         autoPlay
@@ -81,7 +85,7 @@ export default function StageMedia({
     return (
       <audio
         src={url}
-        className={mediaClassName}
+        className={audioClassName ?? "w-full"}
         controls
         autoPlay
         onLoadedMetadata={(event) => {
