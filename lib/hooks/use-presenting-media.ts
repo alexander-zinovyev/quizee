@@ -85,14 +85,12 @@ export function usePresentingMedia({
   const mediaPreloadInFlightRef = useRef<Set<string>>(new Set());
   const presentingAnswerUnsubRef = useRef<Unsubscribe | null>(null);
   const [presentingImageAnswerId, setPresentingImageAnswerId] = useState<string | null>(null);
-  const [presentingAnswerImageUrl, setPresentingAnswerImageUrl] = useState<string | null>(null);
+  const [presentingAnswerMediaUrl, setPresentingAnswerMediaUrl] = useState<string | null>(null);
   const [presentingTextAnswer, setPresentingTextAnswer] = useState<string | null>(null);
-  const [presentingTextAnswerMediaPath, setPresentingTextAnswerMediaPath] = useState<string | null>(
-    null
-  );
+  const [presentingTextAnswerMedia, setPresentingTextAnswerMedia] = useState<RoundQuestionMedia | null>(null);
   const [presentingTextAnswerStageCount, setPresentingTextAnswerStageCount] = useState(0);
-  const [isAnswerImageLoading, setIsAnswerImageLoading] = useState(false);
-  const [answerImageError, setAnswerImageError] = useState<string | null>(null);
+  const [isAnswerMediaLoading, setIsAnswerMediaLoading] = useState(false);
+  const [answerMediaError, setAnswerMediaError] = useState<string | null>(null);
 
   const presentingMedia = useMemo(
     () => presentingQuestion?.media ?? null,
@@ -125,11 +123,11 @@ export function usePresentingMedia({
     presentingAnswerUnsubRef.current?.();
     presentingAnswerUnsubRef.current = null;
     setPresentingImageAnswerId(null);
-    setAnswerImageError(null);
-    setPresentingAnswerImageUrl(null);
-    setIsAnswerImageLoading(false);
+    setAnswerMediaError(null);
+    setPresentingAnswerMediaUrl(null);
+    setIsAnswerMediaLoading(false);
     setPresentingTextAnswer(null);
-    setPresentingTextAnswerMediaPath(null);
+    setPresentingTextAnswerMedia(null);
     setPresentingTextAnswerStageCount(0);
 
     if (
@@ -163,7 +161,7 @@ export function usePresentingMedia({
       },
       (error) => {
         console.error("[room-content] answer reveal error", error);
-        setAnswerImageError("Unable to load the answer right now.");
+        setAnswerMediaError("Unable to load the answer right now.");
       }
     );
     presentingAnswerUnsubRef.current = unsubscribe;
@@ -219,21 +217,38 @@ export function usePresentingMedia({
           stage && typeof stage.text === "string" && stage.text.trim().length
             ? stage.text.trim()
             : null;
-        const mediaPath =
+        const stageMedia =
           stage && stage.media && typeof stage.media === "object"
             ? (() => {
-                const path = (stage.media as { storagePath?: unknown }).storagePath;
-                return typeof path === "string" && path.length ? path : null;
+                const media = stage.media as Record<string, unknown>;
+                const storagePath =
+                  typeof media.storagePath === "string" && media.storagePath.length
+                    ? media.storagePath
+                    : null;
+                if (!storagePath) return null;
+                return {
+                  storagePath,
+                  contentType:
+                    typeof media.contentType === "string" ? media.contentType : null,
+                  size:
+                    typeof media.size === "number"
+                      ? media.size
+                      : Number(media.size) || null,
+                  filename:
+                    typeof media.filename === "string" ? media.filename : null,
+                  originalPath:
+                    typeof media.originalPath === "string" ? media.originalPath : null,
+                } satisfies RoundQuestionMedia;
               })()
             : null;
         const answer = hasStages ? stageText : null;
         setPresentingTextAnswer(answer && answer.trim().length ? answer : null);
-        setPresentingTextAnswerMediaPath(mediaPath);
+        setPresentingTextAnswerMedia(stageMedia);
       },
       (error) => {
         console.error("[room-content] text answer reveal error", error);
         setPresentingTextAnswer(null);
-        setPresentingTextAnswerMediaPath(null);
+        setPresentingTextAnswerMedia(null);
         setPresentingTextAnswerStageCount(0);
       }
     );
@@ -248,22 +263,30 @@ export function usePresentingMedia({
     roomSlug,
   ]);
 
-  useEffect(() => {
-    setAnswerImageError(null);
-    setPresentingAnswerImageUrl(null);
-    setIsAnswerImageLoading(false);
+  const presentingAnswerMedia = useMemo<RoundQuestionMedia | null>(() => {
+    return presentingImageAnswer?.media ?? presentingTextAnswerMedia ?? null;
+  }, [presentingImageAnswer?.media, presentingTextAnswerMedia]);
 
-    const storagePath =
-      presentingImageAnswer?.media?.storagePath ?? presentingTextAnswerMediaPath;
+  const answerMediaKind = useMemo(
+    () => getMediaKind(presentingAnswerMedia),
+    [presentingAnswerMedia]
+  );
+
+  useEffect(() => {
+    setAnswerMediaError(null);
+    setPresentingAnswerMediaUrl(null);
+    setIsAnswerMediaLoading(false);
+
+    const storagePath = presentingAnswerMedia?.storagePath;
     if (!storagePath) return;
     const cached = mediaUrlCacheRef.current.get(storagePath);
     if (cached) {
-      setPresentingAnswerImageUrl(cached.url);
+      setPresentingAnswerMediaUrl(cached.url);
       return;
     }
 
     let cancelled = false;
-    setIsAnswerImageLoading(true);
+    setIsAnswerMediaLoading(true);
     const storage = getStorage(getFirebaseClientApp());
     getDownloadURL(ref(storage, storagePath))
       .then(async (url) => {
@@ -279,7 +302,7 @@ export function usePresentingMedia({
             true,
             () => setMediaCacheVersion((v) => v + 1)
           );
-          setPresentingAnswerImageUrl(objectUrl);
+          setPresentingAnswerMediaUrl(objectUrl);
         } catch (fetchError) {
           console.error("[room-content] answer media fetch error", fetchError);
           cacheMediaUrl(
@@ -289,22 +312,22 @@ export function usePresentingMedia({
             false,
             () => setMediaCacheVersion((v) => v + 1)
           );
-          setPresentingAnswerImageUrl(url);
+          setPresentingAnswerMediaUrl(url);
         } finally {
-          setIsAnswerImageLoading(false);
+          setIsAnswerMediaLoading(false);
         }
       })
       .catch((error) => {
         if (cancelled) return;
         console.error("[room-content] answer media load error", error);
-        setAnswerImageError("Unable to load the answer media.");
-        setIsAnswerImageLoading(false);
+        setAnswerMediaError("Unable to load the answer media.");
+        setIsAnswerMediaLoading(false);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [presentingImageAnswer?.media?.storagePath, presentingTextAnswerMediaPath]);
+  }, [presentingAnswerMedia?.storagePath]);
 
   useEffect(() => {
     if (!presentingMedia?.storagePath || !shouldShowMedia) return;
@@ -437,20 +460,21 @@ export function usePresentingMedia({
   return {
     clearCachedMedia,
     getCachedMediaUrl,
-    isAnswerImageLoading,
+    isAnswerMediaLoading,
     isMediaLoading,
     isPresentingImageRound,
     mediaCacheVersion,
     mediaError,
+    answerMediaKind,
     mediaKind,
-    presentingAnswerImageUrl,
-    presentingImageAnswer,
+    presentingAnswerMedia,
+    presentingAnswerMediaUrl,
     presentingMedia,
     presentingMediaUrl,
     presentingTextAnswer,
     presentingTextAnswerStageCount,
     shouldShowMedia,
-    answerImageError,
+    answerMediaError,
     DEFAULT_MEDIA_VOLUME,
   };
 }
