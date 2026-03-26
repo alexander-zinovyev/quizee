@@ -56,6 +56,7 @@ export default function Member({
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const speakingFrameRef = useRef<number | null>(null);
+  const speakingReleaseTimeoutRef = useRef<number | null>(null);
   const [isMuted, setIsMuted] = useState(muted);
   const [volume, setVolume] = useState(1);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -172,11 +173,28 @@ export default function Member({
       }
 
       const rms = Math.sqrt(sumSquares / samples.length);
-      activeFrames = rms > 0.02 ? Math.min(activeFrames + 1, 3) : 0;
-      setIsSpeaking((prev) => {
-        const next = activeFrames >= 2;
-        return prev === next ? prev : next;
-      });
+      if (rms > 0.02) {
+        activeFrames = Math.min(activeFrames + 1, 3);
+
+        if (speakingReleaseTimeoutRef.current !== null) {
+          window.clearTimeout(speakingReleaseTimeoutRef.current);
+          speakingReleaseTimeoutRef.current = null;
+        }
+
+        if (activeFrames >= 2) {
+          setIsSpeaking((prev) => (prev ? prev : true));
+        }
+      } else {
+        activeFrames = 0;
+
+        if (speakingReleaseTimeoutRef.current === null) {
+          speakingReleaseTimeoutRef.current = window.setTimeout(() => {
+            setIsSpeaking(false);
+            speakingReleaseTimeoutRef.current = null;
+          }, 300);
+        }
+      }
+
       speakingFrameRef.current = window.requestAnimationFrame(updateSpeakingState);
     };
 
@@ -192,6 +210,11 @@ export default function Member({
       if (speakingFrameRef.current !== null) {
         window.cancelAnimationFrame(speakingFrameRef.current);
         speakingFrameRef.current = null;
+      }
+
+      if (speakingReleaseTimeoutRef.current !== null) {
+        window.clearTimeout(speakingReleaseTimeoutRef.current);
+        speakingReleaseTimeoutRef.current = null;
       }
 
       setIsSpeaking(false);
