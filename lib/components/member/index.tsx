@@ -208,7 +208,7 @@ export default function Member({
       <div
         className={`relative aspect-video w-full overflow-hidden rounded-2xl border border-black/40 bg-zinc-900/80 shadow-xl transition-shadow ${
           isSpeaking
-            ? "ring-2 ring-emerald-200/60 dark:ring-emerald-400/40"
+            ? "ring-2 ring-emerald-200-80 dark:ring-emerald-400/80"
             : "ring-0 ring-transparent"
         } dark:border-black/60 dark:bg-zinc-950/80`}
       >
