@@ -443,7 +443,7 @@ export default function RoomLobbyLayout({
             <div className="flex items-center justify-between gap-3 pb-3">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-500">
-                  Everyone in the lobby
+                  Pending
                 </p>
               </div>
               <div className="flex items-center gap-2">
