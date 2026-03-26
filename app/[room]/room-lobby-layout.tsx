@@ -1,6 +1,13 @@
 "use client";
 
-import { FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
+import {
+  FormEvent,
+  type DragEvent as ReactDragEvent,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   addDoc,
   collection,
@@ -30,6 +37,8 @@ type RosterCard = {
   videoTrack?: MediaStreamTrack;
   muted?: boolean;
 };
+
+const UNASSIGNED_DROP_ZONE = "__unassigned__";
 
 type RoomLobbyLayoutProps = {
   roomTitle: string;
@@ -187,11 +196,24 @@ export default function RoomLobbyLayout({
   const [assignError, setAssignError] = useState<string | null>(null);
   const [isReshuffling, setIsReshuffling] = useState(false);
   const [reshuffleError, setReshuffleError] = useState<string | null>(null);
+  const [draggedMemberId, setDraggedMemberId] = useState<string | null>(null);
+  const [activeDropZone, setActiveDropZone] = useState<string | null>(null);
   const hasTeams = teams.length > 0;
-  const unassignedRosterCards = useMemo(
-    () => rosterCards.filter((card) => !card.teamId),
-    [rosterCards]
-  );
+  const rosterByTeamId = useMemo(() => {
+    const next = new Map<string | null, RosterCard[]>();
+    rosterCards.forEach((card) => {
+      const key = card.teamId ?? null;
+      const cards = next.get(key);
+      if (cards) {
+        cards.push(card);
+      } else {
+        next.set(key, [card]);
+      }
+    });
+    return next;
+  }, [rosterCards]);
+  const unassignedRosterCards = rosterByTeamId.get(null) ?? [];
+  const isDragEnabled = isHost && allowTeamEditing;
 
   useEffect(() => {
     setNewTeamColor(toColor(suggestedColor));
@@ -276,24 +298,88 @@ export default function RoomLobbyLayout({
     }
   }
 
-  async function handleAssignTeam(teamId: string | null) {
-    if (!allowTeamEditing || !isHost) return;
-    if (!assignTarget || isAssigning) return;
+  async function assignMemberToTeam(memberId: string, teamId: string | null) {
+    if (!allowTeamEditing || !isHost || isAssigning) return false;
     try {
       setIsAssigning(true);
       setAssignError(null);
       const db = getClientFirestore();
-      await updateDoc(doc(db, "rooms", roomSlug, "members", assignTarget.id), {
+      await updateDoc(doc(db, "rooms", roomSlug, "members", memberId), {
         team: teamId,
       });
-      setAssignTarget(null);
+      return true;
     } catch (error) {
       console.error("[team-assign]", error);
       setAssignError("Unable to update member right now.");
+      return false;
     } finally {
       setIsAssigning(false);
     }
   }
+
+  async function handleAssignTeam(teamId: string | null) {
+    if (!assignTarget) return;
+    const didAssign = await assignMemberToTeam(assignTarget.id, teamId);
+    if (didAssign) {
+      setAssignTarget(null);
+    }
+  }
+
+  const clearDragState = () => {
+    setDraggedMemberId(null);
+    setActiveDropZone(null);
+  };
+
+  const handleMemberDragStart = (event: ReactDragEvent<HTMLDivElement>, card: RosterCard) => {
+    if (!isDragEnabled || !card.memberId) {
+      event.preventDefault();
+      return;
+    }
+
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", card.memberId);
+    setDraggedMemberId(card.memberId);
+    setAssignError(null);
+  };
+
+  const handleDropZoneDragOver = (
+    event: ReactDragEvent<HTMLElement>,
+    targetTeamId: string | null
+  ) => {
+    if (!isDragEnabled || !draggedMemberId) return;
+    const draggedCard = rosterCards.find((card) => card.memberId === draggedMemberId);
+    if (!draggedCard || (draggedCard.teamId ?? null) === targetTeamId) return;
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setActiveDropZone(targetTeamId ?? UNASSIGNED_DROP_ZONE);
+  };
+
+  const handleDropZoneDragLeave = (
+    event: ReactDragEvent<HTMLElement>,
+    targetTeamId: string | null
+  ) => {
+    const nextTarget = event.relatedTarget as Node | null;
+    if (nextTarget && event.currentTarget.contains(nextTarget)) return;
+    if (activeDropZone === (targetTeamId ?? UNASSIGNED_DROP_ZONE)) {
+      setActiveDropZone(null);
+    }
+  };
+
+  const handleDropOnZone = async (
+    event: ReactDragEvent<HTMLElement>,
+    targetTeamId: string | null
+  ) => {
+    event.preventDefault();
+    const memberId = event.dataTransfer.getData("text/plain") || draggedMemberId;
+    clearDragState();
+
+    if (!isDragEnabled || !memberId) return;
+    const draggedCard = rosterCards.find((card) => card.memberId === memberId);
+    if (!draggedCard || (draggedCard.teamId ?? null) === targetTeamId) return;
+
+    await assignMemberToTeam(memberId, targetTeamId);
+  };
 
   async function handleReshuffle() {
     if (!allowReshuffle || !allowTeamEditing || !isHost || isReshuffling) return;
@@ -376,14 +462,40 @@ export default function RoomLobbyLayout({
               </div>
             </div>
 
-            <div className="min-h-0 flex-1">
+            <div
+              className={[
+                "min-h-0 flex-1 rounded-2xl transition",
+                isDragEnabled && activeDropZone === UNASSIGNED_DROP_ZONE
+                  ? "ring-2 ring-emerald-400 ring-offset-2 ring-offset-transparent"
+                  : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              onDragOver={
+                isDragEnabled ? (event) => handleDropZoneDragOver(event, null) : undefined
+              }
+              onDragLeave={
+                isDragEnabled ? (event) => handleDropZoneDragLeave(event, null) : undefined
+              }
+              onDrop={isDragEnabled ? (event) => void handleDropOnZone(event, null) : undefined}
+            >
               {unassignedRosterCards.length ? (
                 <div className="flex h-full flex-wrap content-start justify-center gap-3 overflow-auto p-1">
                   {unassignedRosterCards.map((card) => {
+                    const isDragging = draggedMemberId === card.memberId;
                     return (
                       <div
                         key={card.id}
-                        className="relative w-full min-w-[240px] max-w-[320px] sm:w-[calc(50%-0.375rem)] lg:w-[calc(33.333%-0.5rem)] xl:w-[calc(25%-0.5625rem)]"
+                        className={[
+                          "relative w-full min-w-[240px] max-w-[320px] sm:w-[calc(50%-0.375rem)] lg:w-[calc(33.333%-0.5rem)] xl:w-[calc(25%-0.5625rem)]",
+                          isDragging ? "opacity-40" : "",
+                          isDragEnabled && card.memberId ? "cursor-grab active:cursor-grabbing" : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                        draggable={isDragEnabled && Boolean(card.memberId)}
+                        onDragStart={(event) => handleMemberDragStart(event, card)}
+                        onDragEnd={clearDragState}
                       >
                         <Member
                           name={card.name}
@@ -409,14 +521,38 @@ export default function RoomLobbyLayout({
                 <div className="grid gap-4 xl:grid-cols-2">
                   {teams.map((team) => {
                     const teamColor = getColorForTeam(team.id);
+                    const teamRosterCards = rosterByTeamId.get(team.id) ?? [];
+                    const isTeamDropActive = activeDropZone === team.id;
                     return (
                       <section
                         key={team.id}
-                        className="relative rounded-[28px] border p-4 pt-8 shadow-md"
+                        className={[
+                          "relative rounded-[28px] border p-4 pt-8 shadow-md transition",
+                          isDragEnabled && isTeamDropActive
+                            ? "ring-2 ring-emerald-400 ring-offset-2 ring-offset-transparent"
+                            : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
                         style={{
                           borderColor: withAlpha(teamColor, 0.4),
                           background: `linear-gradient(180deg, ${withAlpha(teamColor, 0.18)} 0%, ${withAlpha(teamColor, 0.06)} 100%)`,
                         }}
+                        onDragOver={
+                          isDragEnabled
+                            ? (event) => handleDropZoneDragOver(event, team.id)
+                            : undefined
+                        }
+                        onDragLeave={
+                          isDragEnabled
+                            ? (event) => handleDropZoneDragLeave(event, team.id)
+                            : undefined
+                        }
+                        onDrop={
+                          isDragEnabled
+                            ? (event) => void handleDropOnZone(event, team.id)
+                            : undefined
+                        }
                       >
                         <div className="absolute left-4 top-0 -translate-y-1/2">
                           <div
@@ -489,14 +625,26 @@ export default function RoomLobbyLayout({
                           </div>
                         ) : null}
 
-                        {team.members.length ? (
+                        {teamRosterCards.length ? (
                           <div className="flex flex-wrap gap-3 justify-center">
-                            {team.members.map((member, index) => {
-                              const key = member.id?.toString() ?? `${team.id}-${member.name}-${index}`;
+                            {teamRosterCards.map((member, index) => {
+                              const key = member.memberId?.toString() ?? `${team.id}-${member.name}-${index}`;
+                              const isDragging = draggedMemberId === member.memberId;
                               return (
                                 <div
                                   key={key}
-                                  className="w-full max-w-[220px] sm:w-[calc(50%-0.375rem)]"
+                                  className={[
+                                    "w-full max-w-[220px] sm:w-[calc(50%-0.375rem)]",
+                                    isDragging ? "opacity-40" : "",
+                                    isDragEnabled && member.memberId
+                                      ? "cursor-grab active:cursor-grabbing"
+                                      : "",
+                                  ]
+                                    .filter(Boolean)
+                                    .join(" ")}
+                                  draggable={isDragEnabled && Boolean(member.memberId)}
+                                  onDragStart={(event) => handleMemberDragStart(event, member)}
+                                  onDragEnd={clearDragState}
                                 >
                                   <Member
                                     name={member.name}
@@ -704,7 +852,8 @@ export default function RoomLobbyLayout({
                     <span className="break-words text-left leading-snug">{team.name}</span>
                   </span>
                   <span className="text-xs text-zinc-500">
-                    {team.members.length} player{team.members.length === 1 ? "" : "s"}
+                    {(rosterByTeamId.get(team.id) ?? []).length} player
+                    {(rosterByTeamId.get(team.id) ?? []).length === 1 ? "" : "s"}
                   </span>
                 </button>
               ))}
