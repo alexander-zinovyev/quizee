@@ -114,7 +114,6 @@ export default function RoomContent({
   onMediaPolicyChange,
 }: RoomContentProps) {
   const { user, getToken } = useFirebaseAuth();
-  const [memberSize, setMemberSize] = useState<number | undefined>(undefined);
   const [teamAnswers, setTeamAnswers] = useState<
     Record<string, Record<string, Record<string, { answer: string; awardedPoints?: number }>>>
   >({});
@@ -1214,47 +1213,6 @@ export default function RoomContent({
     };
   }, [isHost, presentingRoundMeta?.id, presentingRoundMeta?.state, roomSlug]);
 
-  useEffect(() => {
-    function computeSize() {
-      if (!teams || !teams.length) {
-        setMemberSize(undefined);
-        return;
-      }
-
-      const maxMembers = Math.max(...teams.map((team) => team.members.length));
-      if (maxMembers <= 0) {
-        setMemberSize(undefined);
-        return;
-      }
-
-      const gap = 12; // approx gap-3
-      const padding = 24; // approx p-6/p-4 overall
-      const viewportWidth = window.innerWidth || 0;
-      const viewportHeight = window.innerHeight || 0;
-
-      // Team panels take 2/5 of the 5-column grid (with gaps).
-      const gridWidth = Math.max(0, viewportWidth - padding * 2);
-      const teamWidth = ((gridWidth - gap * 4) * 2) / 5;
-
-      // Second row roughly half the screen height minus padding/gaps.
-      const gridHeight = Math.max(0, viewportHeight - padding * 2);
-      const teamHeight = Math.max(0, (gridHeight - gap * 3) / 2);
-
-      const cols = Math.ceil(Math.sqrt(maxMembers));
-      const rows = Math.ceil(maxMembers / cols);
-
-      const tileWidth = teamWidth / cols - gap;
-      const tileHeight = teamHeight / rows - gap;
-      const size = Math.floor(Math.min(tileWidth, tileHeight));
-
-      setMemberSize(size > 0 ? size : undefined);
-    }
-
-    computeSize();
-    window.addEventListener("resize", computeSize);
-    return () => window.removeEventListener("resize", computeSize);
-  }, [teams]);
-
   const roundsPanel = isHost ? (
     <RoomHostRoundsPanel
       rounds={hostRounds}
@@ -1568,7 +1526,6 @@ export default function RoomContent({
                 members={teamsForDisplay[0]?.members ?? teams[0].members}
                 appearance="bare"
                 className="h-full justify-end"
-                memberSize={memberSize}
                 emptyLabel="No members yet."
                 scoreAction={
                   isHost || viewerTeamId === teams[0].id ? (
@@ -1746,7 +1703,6 @@ export default function RoomContent({
                 members={teamsForDisplay[1]?.members ?? teams[1].members}
                 appearance="bare"
                 className="h-full justify-end text-right"
-                memberSize={memberSize}
                 emptyLabel="No members yet."
                 scoreAction={
                   isHost || viewerTeamId === teams[1].id ? (

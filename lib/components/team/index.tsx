@@ -94,6 +94,85 @@ function getGridColumns(count: number) {
   return Math.max(1, Math.ceil(Math.sqrt(count)));
 }
 
+const GRID_GAP_PX = 16;
+const MEMBER_LABEL_BLOCK_PX = 28;
+
+type TeamLayout = {
+  rows: number;
+  columns: number;
+  tileWidth: number;
+  trackWidth: number;
+};
+
+function layoutsMatch(a: TeamLayout | null, b: TeamLayout | null) {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+
+  return (
+    a.rows === b.rows &&
+    a.columns === b.columns &&
+    a.tileWidth === b.tileWidth &&
+    a.trackWidth === b.trackWidth
+  );
+}
+
+function buildLayout(count: number, rows: number, tileWidth: number): TeamLayout {
+  const columns = Math.max(1, Math.ceil(count / rows));
+  return {
+    rows,
+    columns,
+    tileWidth,
+    trackWidth: columns * tileWidth + GRID_GAP_PX * Math.max(0, columns - 1),
+  };
+}
+
+function pickBestLayout({
+  count,
+  availableWidth,
+  availableHeight,
+}: {
+  count: number;
+  availableWidth: number;
+  availableHeight: number;
+}): TeamLayout | null {
+  if (!count || !availableWidth || !availableHeight) return null;
+
+  const candidateRows = Array.from({ length: count }, (_, index) => index + 1);
+  let bestLayout: TeamLayout | null = null;
+
+  for (const rows of candidateRows) {
+    const columns = Math.max(1, Math.ceil(count / rows));
+    const widthPerTile =
+      (availableWidth - GRID_GAP_PX * Math.max(0, columns - 1)) / columns;
+    const videoHeightPerTile =
+      (
+        availableHeight -
+        GRID_GAP_PX * Math.max(0, rows - 1) -
+        MEMBER_LABEL_BLOCK_PX * rows
+      ) / rows;
+    const widthFromHeight = videoHeightPerTile * (16 / 9);
+    const tileWidth = Math.floor(Math.min(widthPerTile, widthFromHeight));
+
+    if (tileWidth <= 0) continue;
+
+    const nextLayout = buildLayout(count, rows, tileWidth);
+
+    if (!bestLayout || nextLayout.tileWidth > bestLayout.tileWidth) {
+      bestLayout = nextLayout;
+      continue;
+    }
+
+    if (
+      nextLayout.tileWidth === bestLayout.tileWidth &&
+      nextLayout.rows < bestLayout.rows
+    ) {
+      bestLayout = nextLayout;
+    }
+  }
+
+  return bestLayout;
+}
+
 export default function Team({
   name,
   color,
@@ -108,62 +187,61 @@ export default function Team({
 }: TeamProps) {
   const memberCount = members.length;
   const isBare = appearance === "bare";
-  const columns = getGridColumns(memberCount);
-  const gridTemplateColumns = memberCount
-    ? `repeat(${columns}, minmax(0, 1fr))`
-    : undefined;
-  const sectionRef = useRef<HTMLElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(1);
+  const memberAreaRef = useRef<HTMLDivElement>(null);
+  const [calculatedLayout, setCalculatedLayout] = useState<TeamLayout | null>(null);
 
   useLayoutEffect(() => {
-    if (typeof ResizeObserver === "undefined") return;
-    if (!sectionRef.current || !contentRef.current) return;
+    if (memberSize || !memberCount) return;
 
-    const sectionEl = sectionRef.current;
-    const contentEl = contentRef.current;
+    if (typeof ResizeObserver === "undefined" || !memberAreaRef.current) return;
 
-    const computeScale = () => {
-      const availableHeight = sectionEl.clientHeight;
-      const contentHeight = contentEl.scrollHeight;
+    const memberAreaElement = memberAreaRef.current;
 
-      if (!availableHeight || !contentHeight) {
-        setScale(1);
-        return;
-      }
+    const computeLayout = () => {
+      const nextLayout = pickBestLayout({
+        count: memberCount,
+        availableWidth: memberAreaElement.clientWidth,
+        availableHeight: memberAreaElement.clientHeight,
+      });
 
-      const nextScale = Math.min(1, availableHeight / contentHeight);
-      setScale((prev) => (Math.abs(prev - nextScale) > 0.01 ? nextScale : prev));
+      setCalculatedLayout((previousLayout) =>
+        layoutsMatch(previousLayout, nextLayout) ? previousLayout : nextLayout
+      );
     };
 
-    const observer = new ResizeObserver(computeScale);
-    observer.observe(sectionEl);
-    observer.observe(contentEl);
-    computeScale();
+    const observer = new ResizeObserver(() => {
+      computeLayout();
+    });
+    observer.observe(memberAreaElement);
 
-    return () => observer.disconnect();
-  }, []);
+    const frameId = window.requestAnimationFrame(computeLayout);
 
-  const contentStyle =
-    scale < 1
-      ? {
-          transform: `scale(${scale})`,
-          transformOrigin: "top center",
-        }
-      : undefined;
+    return () => {
+      observer.disconnect();
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [memberCount, memberSize]);
+
+  const manualColumns = getGridColumns(memberCount);
+  const manualLayout =
+    memberSize && memberCount
+      ? buildLayout(memberCount, Math.ceil(memberCount / manualColumns), memberSize)
+      : null;
+  const effectiveLayout = manualLayout ?? calculatedLayout;
+  const fallbackGridTemplateColumns = memberCount
+    ? `repeat(${manualColumns}, minmax(0, 1fr))`
+    : undefined;
 
   const alignEnd = (className ?? "").includes("text-right");
 
   return (
     <section
-      ref={sectionRef}
       className={["flex h-full min-h-0 w-full flex-col overflow-hidden", className ?? ""]
         .filter(Boolean)
         .join(" ")}
       aria-label={name}
     >
       <div
-        ref={contentRef}
         className={[
           "flex w-full flex-1 flex-col",
           isBare
@@ -173,7 +251,6 @@ export default function Team({
         ]
           .filter(Boolean)
           .join(" ")}
-        style={contentStyle}
       >
         <p
           className={`text-xs font-semibold uppercase tracking-[0.3em] ${
@@ -230,39 +307,66 @@ export default function Team({
         <div className={`flex flex-1 min-h-0 flex-col ${isBare ? "gap-3" : "gap-4"}`}>
           {memberCount ? (
             <div
-              className="grid flex-1 content-center justify-items-center gap-4 md:gap-5"
-              style={{ gridTemplateColumns }}
+              ref={memberAreaRef}
+              className="flex flex-1 min-h-0 items-center justify-center"
             >
-              {members.map((member, index) => {
-                const key = member?.id ?? member?.name ?? `slot-${index}`;
-                return (
-                  <div
-                    key={key}
-                    className="flex flex-col"
-                    style={
-                      memberSize
-                        ? {
-                            width: `${memberSize}px`,
-                            maxWidth: `${memberSize}px`,
-                            flex: `0 0 ${memberSize}px`,
-                          }
-                        : undefined
-                    }
-                  >
-                    <Member
-                      name={member.name}
-                      stream={member.stream}
-                      audioTrack={member.audioTrack}
-                      videoTrack={member.videoTrack}
-                      handRaised={member.handRaised}
-                      onHandClick={member.onHandClick}
-                      controlsDisabled={member.controlsDisabled}
-                      forceMuted={member.forceMuted}
-                      muted={member.muted}
-                    />
-                  </div>
-                );
-              })}
+              {effectiveLayout ? (
+                <div
+                  className="flex flex-wrap content-center justify-center gap-4"
+                  style={{ width: `${effectiveLayout.trackWidth}px`, maxWidth: "100%" }}
+                >
+                  {members.map((member, index) => {
+                    const key = member?.id ?? member?.name ?? `slot-${index}`;
+                    return (
+                      <div
+                        key={key}
+                        className="flex flex-col"
+                        style={{
+                          width: `${effectiveLayout.tileWidth}px`,
+                          maxWidth: `${effectiveLayout.tileWidth}px`,
+                          flex: `0 0 ${effectiveLayout.tileWidth}px`,
+                        }}
+                      >
+                        <Member
+                          name={member.name}
+                          stream={member.stream}
+                          audioTrack={member.audioTrack}
+                          videoTrack={member.videoTrack}
+                          handRaised={member.handRaised}
+                          onHandClick={member.onHandClick}
+                          controlsDisabled={member.controlsDisabled}
+                          forceMuted={member.forceMuted}
+                          muted={member.muted}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div
+                  className="grid w-full flex-1 content-center justify-items-center gap-4"
+                  style={{ gridTemplateColumns: fallbackGridTemplateColumns }}
+                >
+                  {members.map((member, index) => {
+                    const key = member?.id ?? member?.name ?? `slot-${index}`;
+                    return (
+                      <div key={key} className="flex w-full flex-col">
+                        <Member
+                          name={member.name}
+                          stream={member.stream}
+                          audioTrack={member.audioTrack}
+                          videoTrack={member.videoTrack}
+                          handRaised={member.handRaised}
+                          onHandClick={member.onHandClick}
+                          controlsDisabled={member.controlsDisabled}
+                          forceMuted={member.forceMuted}
+                          muted={member.muted}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           ) : (
             <div className="flex flex-1 items-center justify-center rounded-2xl border border-dashed border-zinc-200 px-4 py-8 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
