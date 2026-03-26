@@ -134,7 +134,7 @@ export default function Member({
   }, [muted]);
 
   useEffect(() => {
-    if (!resolvedAudioTrack || effectiveMuted || volume === 0) {
+    if (!resolvedAudioTrack || !resolvedAudioTrack.enabled || resolvedAudioTrack.readyState !== "live") {
       setIsSpeaking(false);
       return;
     }
@@ -201,7 +201,7 @@ export default function Member({
         // Ignore teardown errors from already-closed contexts.
       });
     };
-  }, [resolvedAudioTrack, effectiveMuted, volume]);
+  }, [resolvedAudioTrack]);
 
   return (
     <figure className="group flex w-full flex-col items-center gap-2 text-center">
