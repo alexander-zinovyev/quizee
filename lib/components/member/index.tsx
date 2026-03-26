@@ -40,22 +40,6 @@ type MemberProps = {
    * Mute the underlying video element. Useful for the local participant.
    */
   muted?: boolean;
-  /**
-   * Optional color swatch shown before the member name.
-   */
-  badgeColor?: string;
-  /**
-   * Optional label shown on hover over the badge (team name).
-   */
-  badgeTitle?: string;
-  /**
-   * Optional click handler for the badge (e.g., host assigning teams).
-   */
-  onBadgeClick?: () => void;
-  /**
-   * Disable badge interactions (e.g., while saving).
-   */
-  badgeDisabled?: boolean;
 };
 
 export default function Member({
@@ -68,10 +52,6 @@ export default function Member({
   controlsDisabled = false,
   forceMuted = false,
   muted = true,
-  badgeColor,
-  badgeTitle,
-  onBadgeClick,
-  badgeDisabled = false,
 }: MemberProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -261,27 +241,7 @@ export default function Member({
         </div>
       </div>
 
-      <figcaption className="flex items-center justify-center gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-700 dark:text-zinc-200">
-        {badgeColor ? (
-          onBadgeClick ? (
-            <button
-              type="button"
-              onClick={onBadgeClick}
-              title={badgeTitle ?? name}
-              disabled={badgeDisabled}
-              className="inline-flex h-3 w-3 items-center justify-center rounded-sm transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-emerald-400 disabled:opacity-60"
-              style={{ backgroundColor: badgeColor }}
-              aria-label={badgeTitle ?? name}
-            />
-          ) : (
-            <span
-              className="inline-block h-3 w-3 rounded-sm"
-              style={{ backgroundColor: badgeColor }}
-              title={badgeTitle ?? name}
-              aria-hidden
-            />
-          )
-        ) : null}
+      <figcaption className="flex items-center justify-center text-xs font-semibold uppercase tracking-wide text-zinc-700 dark:text-zinc-200">
         <span className="truncate">{name}</span>
       </figcaption>
     </figure>

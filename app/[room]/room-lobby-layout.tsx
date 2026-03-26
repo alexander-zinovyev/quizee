@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 import {
   addDoc,
   collection,
@@ -24,7 +24,6 @@ type RosterCard = {
   id: string;
   memberId?: string | null;
   name: string;
-  badge: string;
   teamName?: string;
   teamId?: string | null;
   audioTrack?: MediaStreamTrack;
@@ -120,6 +119,11 @@ function toColor(hex: string): IColor {
   };
 }
 
+function withAlpha(hex: string, alpha: number) {
+  const { r, g, b } = hexToRgb(hex);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 export default function RoomLobbyLayout({
   roomTitle,
   headerKicker,
@@ -141,10 +145,6 @@ export default function RoomLobbyLayout({
   renderTeamScoreAction,
   allowScoreActionForAllTeams = false,
 }: RoomLobbyLayoutProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(1);
-
   const teamColorMap = useMemo(() => {
     const map = new Map<string, string>();
     teams.forEach((team, index) => {
@@ -187,6 +187,11 @@ export default function RoomLobbyLayout({
   const [assignError, setAssignError] = useState<string | null>(null);
   const [isReshuffling, setIsReshuffling] = useState(false);
   const [reshuffleError, setReshuffleError] = useState<string | null>(null);
+  const hasTeams = teams.length > 0;
+  const unassignedRosterCards = useMemo(
+    () => rosterCards.filter((card) => !card.teamId),
+    [rosterCards]
+  );
 
   useEffect(() => {
     setNewTeamColor(toColor(suggestedColor));
@@ -329,32 +334,6 @@ export default function RoomLobbyLayout({
     }
   }
 
-  useLayoutEffect(() => {
-    if (typeof ResizeObserver === "undefined") return;
-    if (!containerRef.current || !contentRef.current) return;
-
-    const containerEl = containerRef.current;
-    const contentEl = contentRef.current;
-
-    const computeScale = () => {
-      const availableHeight = containerEl.clientHeight;
-      const contentHeight = contentEl.scrollHeight;
-      if (!availableHeight || !contentHeight) {
-        setScale(1);
-        return;
-      }
-      const nextScale = Math.min(1, availableHeight / contentHeight);
-      setScale((prev) => (Math.abs(prev - nextScale) > 0.01 ? nextScale : prev));
-    };
-
-    const observer = new ResizeObserver(computeScale);
-    observer.observe(containerEl);
-    observer.observe(contentEl);
-    computeScale();
-
-    return () => observer.disconnect();
-  }, [rosterCards.length, teams.length, host?.id]);
-
   return (
     <div className="flex min-h-screen w-full flex-col overflow-hidden bg-gradient-to-b from-white via-zinc-50 to-zinc-100 p-6 dark:from-black dark:via-zinc-950 dark:to-zinc-900">
       <header className="flex flex-col gap-2 text-center sm:text-left">
@@ -366,61 +345,188 @@ export default function RoomLobbyLayout({
       </header>
 
       <main className="mt-5 grid flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <section className="flex min-h-0 flex-col rounded-3xl border border-zinc-200 bg-white/80 p-4 shadow-lg backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/80">
-          <div className="flex items-center justify-between gap-3 border-b border-zinc-200 pb-3 dark:border-zinc-800">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-500">
-                Everyone in the lobby
-              </p>
+        <div
+          className={[
+            "grid min-h-0 gap-6",
+            hasTeams ? "grid-rows-[minmax(0,1fr)_auto]" : "grid-rows-[minmax(0,1fr)]",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
+          <section className="flex min-h-0 flex-col">
+            <div className="flex items-center justify-between gap-3 pb-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-500">
+                  Everyone in the lobby
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                {isHost && allowTeamEditing ? (
+                  <button
+                    type="button"
+                    onClick={openCreateModal}
+                    className="rounded-lg bg-emerald-500 px-3 py-1 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+                  >
+                    + Create team
+                  </button>
+                ) : null}
+                <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200">
+                  {unassignedRosterCards.length}
+                </span>
+              </div>
             </div>
-            <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200">
-              {rosterCards.length}
-            </span>
-          </div>
 
-          <div ref={containerRef} className="relative mt-3 flex-1 overflow-hidden">
-            {rosterCards.length ? (
-              <div
-                ref={contentRef}
-                className="grid h-full w-full gap-3"
-                style={{
-                  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-                  transform: scale < 1 ? `scale(${scale})` : undefined,
-                  transformOrigin: "top center",
-                }}
-              >
-                {rosterCards.map((card) => {
-                  const color = getColorForTeam(card.teamId);
-                  return (
-                    <Member
-                      key={card.id}
-                      name={card.name}
-                      muted={card.muted ?? false}
-                      audioTrack={card.audioTrack}
-                      videoTrack={card.videoTrack}
-                      badgeColor={color}
-                      badgeTitle={card.teamName ?? "Unassigned"}
-                      onBadgeClick={
-                        isHost
-                          ? () =>
-                              setAssignTarget({
-                                id: card.id,
-                                name: card.name,
-                                currentTeamId: card.teamId ?? null,
-                              })
-                          : undefined
-                      }
-                    />
-                  );
-                })}
+            <div className="min-h-0 flex-1">
+              {unassignedRosterCards.length ? (
+                <div className="flex h-full flex-wrap content-start justify-center gap-3 overflow-auto p-1">
+                  {unassignedRosterCards.map((card) => {
+                    return (
+                      <div
+                        key={card.id}
+                        className="relative w-full min-w-[240px] max-w-[320px] sm:w-[calc(50%-0.375rem)] lg:w-[calc(33.333%-0.5rem)] xl:w-[calc(25%-0.5625rem)]"
+                      >
+                        <Member
+                          name={card.name}
+                          muted={card.muted ?? false}
+                          audioTrack={card.audioTrack}
+                          videoTrack={card.videoTrack}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="flex h-full min-h-[180px] w-full items-center justify-center rounded-2xl border border-dashed border-zinc-200 bg-white/70 px-6 py-10 text-center text-sm text-zinc-600 shadow-inner dark:border-zinc-800 dark:bg-zinc-900/70 dark:text-zinc-400">
+                  Everyone has been assigned to a team.
+                </div>
+              )}
+            </div>
+          </section>
+
+          {hasTeams ? (
+            <section className="flex flex-col">
+              <div className="min-h-0 flex-1 pr-1">
+                <div className="grid gap-4 xl:grid-cols-2">
+                  {teams.map((team) => {
+                    const teamColor = getColorForTeam(team.id);
+                    return (
+                      <section
+                        key={team.id}
+                        className="relative rounded-[28px] border p-4 pt-8 shadow-md"
+                        style={{
+                          borderColor: withAlpha(teamColor, 0.4),
+                          background: `linear-gradient(180deg, ${withAlpha(teamColor, 0.18)} 0%, ${withAlpha(teamColor, 0.06)} 100%)`,
+                        }}
+                      >
+                        <div className="absolute left-4 top-0 -translate-y-1/2">
+                          <div
+                            className="flex items-center gap-2 rounded-lg border px-4 py-1 shadow-sm"
+                            style={{
+                              borderColor: withAlpha(teamColor, 0.45),
+                              backgroundColor: teamColor,
+                              color: "#ffffff",
+                            }}
+                          >
+                            <span className="text-sm font-semibold tracking-[0.24em]">
+                              {team.name}
+                            </span>
+                            {showScores ? (
+                              <span className="rounded-full bg-white/15 px-2 py-0.5 text-xs font-semibold tracking-normal">
+                                {team.scoreTotal ?? 0}
+                              </span>
+                            ) : null}
+                            {renderTeamScoreAction &&
+                            (allowScoreActionForAllTeams || isHost || viewerTeamId === team.id)
+                              ? renderTeamScoreAction(team)
+                              : null}
+                          </div>
+                        </div>
+
+                        {isHost && allowTeamEditing ? (
+                          <div className="absolute right-4 top-0 -translate-y-1/2">
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => openEditModal(team)}
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-full border bg-white text-zinc-700 transition cursor-pointer hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-600"
+                                style={{ borderColor: withAlpha(teamColor, 0.35) }}
+                                aria-label={`Edit ${team.name}`}
+                              >
+                                <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  className="h-4 w-4"
+                                >
+                                  <path
+                                    d="m 4.5,15.767107 v 3.75 h 3.75 l 11.06,-11.0600002 -3.75,-3.75 z"
+                                    id="path1" />
+                                </svg>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void handleDeleteTeam(team)}
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-full border bg-white text-red-600 transition cursor-pointer hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 dark:bg-zinc-900 dark:text-red-300 dark:hover:bg-zinc-600"
+                                style={{ borderColor: withAlpha(teamColor, 0.35) }}
+                                aria-label={`Delete ${team.name}`}
+                                disabled={deletingTeamId === team.id}
+                              >
+                                <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  className="h-4 w-4"
+                                >
+                                  <line x1="18" y1="6" x2="6" y2="18" />
+                                  <line x1="6" y1="6" x2="18" y2="18" />
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {team.members.length ? (
+                          <div className="flex flex-wrap gap-3 justify-center">
+                            {team.members.map((member, index) => {
+                              const key = member.id?.toString() ?? `${team.id}-${member.name}-${index}`;
+                              return (
+                                <div
+                                  key={key}
+                                  className="w-full max-w-[220px] sm:w-[calc(50%-0.375rem)]"
+                                >
+                                  <Member
+                                    name={member.name}
+                                    muted={member.muted ?? false}
+                                    audioTrack={member.audioTrack}
+                                    videoTrack={member.videoTrack}
+                                  />
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div
+                            className="flex h-full min-h-[160px] items-center justify-center rounded-2xl border border-dashed px-4 py-8 text-center text-sm text-zinc-600 dark:text-zinc-200/80"
+                            style={{
+                              borderColor: withAlpha(teamColor, 0.35),
+                              backgroundColor: withAlpha(teamColor, 0.08),
+                            }}
+                          >
+                            No members in this team yet.
+                          </div>
+                        )}
+                      </section>
+                    );
+                  })}
+                </div>
               </div>
-            ) : (
-              <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-zinc-200 bg-white/70 px-6 py-10 text-center text-sm text-zinc-600 shadow-inner dark:border-zinc-800 dark:bg-zinc-900/70 dark:text-zinc-400">
-                No one is in the lobby yet.
-              </div>
-            )}
-          </div>
-        </section>
+            </section>
+          ) : null}
+        </div>
 
         <aside className="flex h-full min-h-0 flex-col gap-4 rounded-3xl border border-zinc-200 bg-white/80 p-6 shadow-xl backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/80">
           <div className="text-center">
@@ -475,102 +581,6 @@ export default function RoomLobbyLayout({
             ) : null}
           </div>
 
-          <div className="rounded-2xl border border-zinc-200 bg-white/80 px-4 py-3 text-left text-sm text-zinc-700 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/70 dark:text-zinc-200">
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-500">
-                Teams
-              </p>
-              {isHost && allowTeamEditing ? (
-                <button
-                  type="button"
-                  onClick={openCreateModal}
-                  className="rounded-lg bg-emerald-500 px-3 py-1 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
-                >
-                  + Create
-                </button>
-              ) : null}
-            </div>
-            {teams.length ? (
-              <ul className="mt-2 space-y-2 text-sm text-zinc-700 dark:text-zinc-200">
-                {teams.map((team) => (
-                  <li
-                    key={team.id}
-                    className="space-y-1 rounded-xl bg-white/70 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] dark:bg-zinc-900/70"
-                  >
-                    <div className="flex min-w-0 items-start gap-2">
-                      <span
-                        className="mt-[2px] inline-block h-3 w-3 flex-shrink-0 rounded-sm"
-                        style={{ backgroundColor: getColorForTeam(team.id) }}
-                        aria-hidden
-                      />
-                      <span className="break-words leading-snug">{team.name}</span>
-                      {showScores ? (
-                        <span className="inline-flex items-center gap-1">
-                          <span className="text-[0.75rem] font-semibold text-emerald-500 dark:text-emerald-300">
-                            {team.scoreTotal ?? 0}
-                          </span>
-                          {renderTeamScoreAction &&
-                          (allowScoreActionForAllTeams || isHost || viewerTeamId === team.id)
-                            ? renderTeamScoreAction(team)
-                            : null}
-                        </span>
-                      ) : null}
-                    </div>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[0.7rem] text-zinc-500">
-                        {team.members.length} player{team.members.length === 1 ? "" : "s"}
-                      </span>
-                      {isHost && allowTeamEditing ? (
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => openEditModal(team)}
-                            className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-zinc-200 text-zinc-600 transition hover:bg-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
-                            aria-label={`Edit ${team.name}`}
-                          >
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              className="h-3 w-3"
-                            >
-                              <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25z" />
-                              <path d="M14.06 6.19l3.75 3.75" />
-                            </svg>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleDeleteTeam(team)}
-                            className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-red-100 text-red-600 transition hover:bg-red-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 dark:bg-red-900/40 dark:text-red-300 dark:hover:bg-red-800/60"
-                            aria-label={`Delete ${team.name}`}
-                            disabled={deletingTeamId === team.id}
-                          >
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              className="h-3 w-3"
-                            >
-                              <line x1="18" y1="6" x2="6" y2="18" />
-                              <line x1="6" y1="6" x2="18" y2="18" />
-                            </svg>
-                          </button>
-                        </div>
-                      ) : null}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
-                No teams have been created yet.
-              </p>
-            )}
-          </div>
         </aside>
       </main>
 
