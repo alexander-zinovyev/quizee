@@ -71,7 +71,6 @@ export default function RoomEnded({
   const rosterCards: Array<{
     id: string;
     name: string;
-    badge: string;
     teamName?: string;
     teamId?: string | null;
     audioTrack?: MediaStreamTrack;
@@ -84,7 +83,6 @@ export default function RoomEnded({
       rosterCards.push({
         id: member.id?.toString() ?? `${team.id}-${member.name}`,
         name: member.name,
-        badge: team.name,
         teamName: team.name,
         teamId: team.id,
         audioTrack: member.audioTrack,
@@ -98,7 +96,6 @@ export default function RoomEnded({
       rosterCards.push({
         id: member.id?.toString() ?? `unassigned-${index}`,
         name: member.name,
-        badge: "Unassigned",
         teamName: "Unassigned",
         teamId: null,
         audioTrack: member.audioTrack,
