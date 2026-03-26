@@ -55,8 +55,10 @@ export default function Member({
 }: MemberProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const speakingFrameRef = useRef<number | null>(null);
   const [isMuted, setIsMuted] = useState(muted);
   const [volume, setVolume] = useState(1);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const resolvedVideoTrack =
     videoTrack ?? stream?.getVideoTracks?.()[0] ?? undefined;
   const resolvedAudioTrack =
@@ -131,9 +133,85 @@ export default function Member({
     setIsMuted(muted);
   }, [muted]);
 
+  useEffect(() => {
+    if (!resolvedAudioTrack || effectiveMuted || volume === 0) {
+      setIsSpeaking(false);
+      return;
+    }
+
+    const AudioContextCtor =
+      window.AudioContext ||
+      (window as typeof window & {
+        webkitAudioContext?: typeof AudioContext;
+      }).webkitAudioContext;
+
+    if (!AudioContextCtor) {
+      return;
+    }
+
+    const audioContext = new AudioContextCtor();
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = 0.85;
+
+    const sourceStream = new MediaStream([resolvedAudioTrack]);
+    const source = audioContext.createMediaStreamSource(sourceStream);
+    source.connect(analyser);
+
+    const samples = new Uint8Array(analyser.fftSize);
+    let activeFrames = 0;
+
+    const updateSpeakingState = () => {
+      analyser.getByteTimeDomainData(samples);
+
+      let sumSquares = 0;
+
+      for (const sample of samples) {
+        const centered = (sample - 128) / 128;
+        sumSquares += centered * centered;
+      }
+
+      const rms = Math.sqrt(sumSquares / samples.length);
+      activeFrames = rms > 0.02 ? Math.min(activeFrames + 1, 3) : 0;
+      setIsSpeaking((prev) => {
+        const next = activeFrames >= 2;
+        return prev === next ? prev : next;
+      });
+      speakingFrameRef.current = window.requestAnimationFrame(updateSpeakingState);
+    };
+
+    if (audioContext.state === "suspended") {
+      void audioContext.resume().catch(() => {
+        // Resume can fail until user interaction; detection will stay inactive.
+      });
+    }
+
+    speakingFrameRef.current = window.requestAnimationFrame(updateSpeakingState);
+
+    return () => {
+      if (speakingFrameRef.current !== null) {
+        window.cancelAnimationFrame(speakingFrameRef.current);
+        speakingFrameRef.current = null;
+      }
+
+      setIsSpeaking(false);
+      source.disconnect();
+      analyser.disconnect();
+      void audioContext.close().catch(() => {
+        // Ignore teardown errors from already-closed contexts.
+      });
+    };
+  }, [resolvedAudioTrack, effectiveMuted, volume]);
+
   return (
     <figure className="group flex w-full flex-col items-center gap-2 text-center">
-      <div className="relative aspect-video w-full overflow-hidden rounded-2xl border border-white/10 bg-zinc-900/80 shadow-xl ring-2 ring-emerald-200/60 dark:border-zinc-800 dark:bg-zinc-950/80 dark:ring-emerald-400/40">
+      <div
+        className={`relative aspect-video w-full overflow-hidden rounded-2xl border border-black/40 bg-zinc-900/80 shadow-xl transition-shadow ${
+          isSpeaking
+            ? "ring-2 ring-emerald-200/60 dark:ring-emerald-400/40"
+            : "ring-0 ring-transparent"
+        } dark:border-black/60 dark:bg-zinc-950/80`}
+      >
         <video
           ref={videoRef}
           muted={muted}
