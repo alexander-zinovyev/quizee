@@ -29,8 +29,6 @@ type PresentingState =
     }
   | null;
 
-const MEDIA_DISABLED = process.env.NEXT_PUBLIC_MEDIA_DISABLED === "true";
-
 export default function RoomGate({ roomSlug }: RoomGateProps) {
   const { user, loading: authLoading, getToken } = useFirebaseAuth();
   const [checkingMembership, setCheckingMembership] = useState(true);
@@ -69,9 +67,6 @@ export default function RoomGate({ roomSlug }: RoomGateProps) {
   }, [mediaError]);
 
   useEffect(() => {
-    if (MEDIA_DISABLED) {
-      return;
-    }
     const transport = createMediaTransport();
     mediaTransportRef.current = transport;
     const offUpdate = transport.onParticipantUpdate(setMediaParticipants);
@@ -414,12 +409,6 @@ export default function RoomGate({ roomSlug }: RoomGateProps) {
   );
 
   useEffect(() => {
-    if (MEDIA_DISABLED) {
-      if (mediaSessionRef.current) {
-        mediaSessionRef.current = null;
-      }
-      return;
-    }
     const transport = mediaTransportRef.current;
     if (!transport) return;
 
@@ -463,6 +452,30 @@ export default function RoomGate({ roomSlug }: RoomGateProps) {
     () => mediaParticipants.find((participant) => participant.isLocal),
     [mediaParticipants]
   );
+  const localAudioEnabled = localMedia?.isAudioEnabled ?? true;
+  const localVideoEnabled = localMedia?.isVideoEnabled ?? true;
+
+  const toggleLocalAudioEnabled = useCallback(async () => {
+    const transport = mediaTransportRef.current;
+    if (!transport) return;
+    try {
+      await transport.setLocalAudioEnabled(!localAudioEnabled);
+    } catch (error) {
+      console.error("[room-gate] local audio toggle failed", error);
+      setMediaError("Unable to update microphone state.");
+    }
+  }, [localAudioEnabled]);
+
+  const toggleLocalVideoEnabled = useCallback(async () => {
+    const transport = mediaTransportRef.current;
+    if (!transport) return;
+    try {
+      await transport.setLocalVideoEnabled(!localVideoEnabled);
+    } catch (error) {
+      console.error("[room-gate] local video toggle failed", error);
+      setMediaError("Unable to update camera state.");
+    }
+  }, [localVideoEnabled]);
 
   const attachMedia = useCallback(
     (member: TeamMember): TeamMember => {
@@ -475,10 +488,18 @@ export default function RoomGate({ roomSlug }: RoomGateProps) {
         ...member,
         audioTrack: media.audioTrack,
         videoTrack: media.videoTrack,
-        muted: media.isLocal ?? member.muted,
+        playbackMuted: media.isLocal ?? member.playbackMuted,
+        localAudioEnabled: media.isLocal ? localAudioEnabled : member.localAudioEnabled,
+        localVideoEnabled: media.isLocal ? localVideoEnabled : member.localVideoEnabled,
+        onToggleLocalAudioEnabled: media.isLocal
+          ? toggleLocalAudioEnabled
+          : member.onToggleLocalAudioEnabled,
+        onToggleLocalVideoEnabled: media.isLocal
+          ? toggleLocalVideoEnabled
+          : member.onToggleLocalVideoEnabled,
       };
     },
-    [localMedia, mediaById, user?.uid]
+    [localAudioEnabled, localMedia, localVideoEnabled, mediaById, toggleLocalAudioEnabled, toggleLocalVideoEnabled, user?.uid]
   );
 
   const teamsWithMedia = useMemo(() => {

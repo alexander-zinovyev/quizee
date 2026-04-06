@@ -35,7 +35,11 @@ type RosterCard = {
   teamId?: string | null;
   audioTrack?: MediaStreamTrack;
   videoTrack?: MediaStreamTrack;
-  muted?: boolean;
+  playbackMuted?: boolean;
+  localAudioEnabled?: boolean;
+  localVideoEnabled?: boolean;
+  onToggleLocalAudioEnabled?: () => void;
+  onToggleLocalVideoEnabled?: () => void;
 };
 
 const UNASSIGNED_DROP_ZONE = "__unassigned__";
@@ -499,9 +503,13 @@ export default function RoomLobbyLayout({
                       >
                         <Member
                           name={card.name}
-                          muted={card.muted ?? false}
+                          playbackMuted={card.playbackMuted ?? false}
                           audioTrack={card.audioTrack}
                           videoTrack={card.videoTrack}
+                          localAudioEnabled={card.localAudioEnabled}
+                          localVideoEnabled={card.localVideoEnabled}
+                          onToggleLocalAudioEnabled={card.onToggleLocalAudioEnabled}
+                          onToggleLocalVideoEnabled={card.onToggleLocalVideoEnabled}
                         />
                       </div>
                     );
@@ -648,9 +656,13 @@ export default function RoomLobbyLayout({
                                 >
                                   <Member
                                     name={member.name}
-                                    muted={member.muted ?? false}
+                                    playbackMuted={member.playbackMuted ?? false}
                                     audioTrack={member.audioTrack}
                                     videoTrack={member.videoTrack}
+                                    localAudioEnabled={member.localAudioEnabled}
+                                    localVideoEnabled={member.localVideoEnabled}
+                                    onToggleLocalAudioEnabled={member.onToggleLocalAudioEnabled}
+                                    onToggleLocalVideoEnabled={member.onToggleLocalVideoEnabled}
                                   />
                                 </div>
                               );
@@ -685,9 +697,13 @@ export default function RoomLobbyLayout({
               {host ? (
                 <Member
                   name={host.name}
-                  muted={host.muted ?? false}
+                  playbackMuted={host.playbackMuted ?? false}
                   audioTrack={host.audioTrack}
                   videoTrack={host.videoTrack}
+                  localAudioEnabled={host.localAudioEnabled}
+                  localVideoEnabled={host.localVideoEnabled}
+                  onToggleLocalAudioEnabled={host.onToggleLocalAudioEnabled}
+                  onToggleLocalVideoEnabled={host.onToggleLocalVideoEnabled}
                 />
               ) : (
                 <div className="flex min-h-[180px] flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-zinc-200 px-4 py-8 text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">

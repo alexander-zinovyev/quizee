@@ -978,19 +978,19 @@ export default function RoomContent({
       const members = team.members.map((member) => {
         const memberId = member.id?.toString() ?? "";
         const isHostMember = hostId && memberId === hostId;
-        let controlsDisabled = false;
-        let forceMuted = false;
+        let playbackControlsDisabled = false;
+        let forcePlaybackMuted = false;
         let onHandClick: (() => void) | undefined;
 
         if (isActiveTextRound) {
           if (isHost) {
             const allowAudio = isEavesdropTeam;
-            controlsDisabled = !allowAudio;
-            forceMuted = !allowAudio;
+            playbackControlsDisabled = !allowAudio;
+            forcePlaybackMuted = !allowAudio;
           } else if (!isHostMember) {
             const isViewerTeam = viewerTeamId && team.id === viewerTeamId;
-            controlsDisabled = !isViewerTeam;
-            forceMuted = !isViewerTeam;
+            playbackControlsDisabled = !isViewerTeam;
+            forcePlaybackMuted = !isViewerTeam;
           }
         }
 
@@ -1003,8 +1003,8 @@ export default function RoomContent({
 
         return {
           ...member,
-          controlsDisabled,
-          forceMuted,
+          playbackControlsDisabled,
+          forcePlaybackMuted,
           onHandClick,
         };
       });
@@ -1566,9 +1566,13 @@ export default function RoomContent({
               {hostMember ? (
                 <Member
                   name={hostMember.name}
-                  muted={hostMember.muted ?? false}
+                  playbackMuted={hostMember.playbackMuted ?? false}
                   audioTrack={hostMember.audioTrack}
                   videoTrack={hostMember.videoTrack}
+                  localAudioEnabled={hostMember.localAudioEnabled}
+                  localVideoEnabled={hostMember.localVideoEnabled}
+                  onToggleLocalAudioEnabled={hostMember.onToggleLocalAudioEnabled}
+                  onToggleLocalVideoEnabled={hostMember.onToggleLocalVideoEnabled}
                 />
               ) : null}
             </div>

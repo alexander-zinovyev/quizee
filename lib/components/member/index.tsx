@@ -31,15 +31,31 @@ type MemberProps = {
   /**
    * Disable audio controls for this member.
    */
-  controlsDisabled?: boolean;
+  playbackControlsDisabled?: boolean;
   /**
    * Force local mute regardless of controls.
    */
-  forceMuted?: boolean;
+  forcePlaybackMuted?: boolean;
   /**
    * Mute the underlying video element. Useful for the local participant.
    */
-  muted?: boolean;
+  playbackMuted?: boolean;
+  /**
+   * Whether the local participant is currently publishing audio.
+   */
+  localAudioEnabled?: boolean;
+  /**
+   * Whether the local participant is currently publishing video.
+   */
+  localVideoEnabled?: boolean;
+  /**
+   * Optional callback to toggle local audio publishing.
+   */
+  onToggleLocalAudioEnabled?: () => void;
+  /**
+   * Optional callback to toggle local video publishing.
+   */
+  onToggleLocalVideoEnabled?: () => void;
 };
 
 export default function Member({
@@ -49,15 +65,19 @@ export default function Member({
   videoTrack,
   handRaised = false,
   onHandClick,
-  controlsDisabled = false,
-  forceMuted = false,
-  muted = true,
+  playbackControlsDisabled = false,
+  forcePlaybackMuted = false,
+  playbackMuted = true,
+  localAudioEnabled,
+  localVideoEnabled,
+  onToggleLocalAudioEnabled,
+  onToggleLocalVideoEnabled,
 }: MemberProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const speakingFrameRef = useRef<number | null>(null);
   const speakingReleaseTimeoutRef = useRef<number | null>(null);
-  const [isMuted, setIsMuted] = useState(muted);
+  const [isPlaybackMuted, setIsPlaybackMuted] = useState(playbackMuted);
   const [volume, setVolume] = useState(1);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const resolvedVideoTrack =
@@ -66,8 +86,11 @@ export default function Member({
     audioTrack ?? stream?.getAudioTracks?.()[0] ?? undefined;
   const hasVideo = Boolean(resolvedVideoTrack);
   const hasAudio = Boolean(resolvedAudioTrack);
-  const effectiveMuted = forceMuted ? true : isMuted;
-  const showAudioControls = hasAudio && !muted && !controlsDisabled;
+  const effectivePlaybackMuted = forcePlaybackMuted ? true : isPlaybackMuted;
+  const showPlaybackControls = hasAudio && !playbackMuted && !playbackControlsDisabled;
+  const showLocalMediaControls =
+    typeof onToggleLocalAudioEnabled === "function" ||
+    typeof onToggleLocalVideoEnabled === "function";
   const showHand = handRaised;
   const canLowerHand = Boolean(onHandClick);
   const initials = name
@@ -109,7 +132,7 @@ export default function Member({
 
     if (resolvedAudioTrack) {
       audio.srcObject = new MediaStream([resolvedAudioTrack]);
-      audio.muted = effectiveMuted;
+      audio.muted = effectivePlaybackMuted;
       audio.volume = volume;
       const playPromise = audio.play();
       if (playPromise) {
@@ -128,11 +151,11 @@ export default function Member({
         audio.srcObject = null;
       }
     };
-  }, [resolvedAudioTrack, effectiveMuted, volume]);
+  }, [resolvedAudioTrack, effectivePlaybackMuted, volume]);
 
   useEffect(() => {
-    setIsMuted(muted);
-  }, [muted]);
+    setIsPlaybackMuted(playbackMuted);
+  }, [playbackMuted]);
 
   useEffect(() => {
     if (!resolvedAudioTrack || !resolvedAudioTrack.enabled || resolvedAudioTrack.readyState !== "live") {
@@ -237,14 +260,14 @@ export default function Member({
       >
         <video
           ref={videoRef}
-          muted={muted}
+          muted={playbackMuted}
           playsInline
           autoPlay
           className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ${
             hasVideo ? "opacity-100" : "opacity-0"
           }`}
         />
-        <audio ref={audioRef} muted={effectiveMuted} />
+        <audio ref={audioRef} muted={effectivePlaybackMuted} />
 
         {showHand ? (
           <div className="absolute left-3 top-3 z-20">
@@ -284,20 +307,20 @@ export default function Member({
 
         <div
           className={`pointer-events-none absolute inset-x-3 bottom-3 flex items-center gap-3 rounded-xl border border-white/10 bg-black/60 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white/90 opacity-0 transition duration-200 group-hover:opacity-100 ${
-            showAudioControls ? "" : "hidden"
+            showPlaybackControls ? "" : "hidden"
           }`}
         >
           <button
             type="button"
             onClick={(event) => {
               event.stopPropagation();
-              setIsMuted((prev) => !prev);
+              setIsPlaybackMuted((prev) => !prev);
             }}
             className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center text-white/90 hover:text-white"
-            title={isMuted ? "Unmute" : "Mute"}
-            aria-label={isMuted ? "Unmute" : "Mute"}
+            title={isPlaybackMuted ? "Unmute playback" : "Mute playback"}
+            aria-label={isPlaybackMuted ? "Unmute playback" : "Mute playback"}
           >
-            {isMuted ? (
+            {isPlaybackMuted ? (
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 viewBox="0 0 24 24"
@@ -340,6 +363,113 @@ export default function Member({
             aria-label="Volume"
           />
         </div>
+
+        {showLocalMediaControls ? (
+          <div className="pointer-events-none absolute right-3 top-3 z-20 flex items-center gap-2 opacity-0 transition duration-200 group-hover:opacity-100">
+            {typeof onToggleLocalAudioEnabled === "function" ? (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onToggleLocalAudioEnabled();
+                }}
+                className={[
+                  "pointer-events-auto inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border bg-black/50 transition hover:bg-black/70",
+                  localAudioEnabled
+                    ? "border-white/20 text-white"
+                    : "border-red-400/60 text-red-400",
+                ].join(" ")}
+                title={localAudioEnabled ? "Turn microphone off" : "Turn microphone on"}
+                aria-label={localAudioEnabled ? "Turn microphone off" : "Turn microphone on"}
+              >
+                {localAudioEnabled ? (
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="h-4 w-4"
+                  >
+                    <path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z" />
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                    <path d="M12 19v3" />
+                  </svg>
+                ) : (
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="h-4 w-4"
+                  >
+                    <path d="M9 9v3a3 3 0 0 0 5.12 2.12" />
+                    <path d="M15 9V6a3 3 0 0 0-5.77-1.2" />
+                    <path d="M17 17a7 7 0 0 1-10-5v-2" />
+                    <path d="M19 10v2a7 7 0 0 1-.65 2.95" />
+                    <path d="M12 19v3" />
+                    <path d="M4 4l16 16" />
+                  </svg>
+                )}
+              </button>
+            ) : null}
+            {typeof onToggleLocalVideoEnabled === "function" ? (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onToggleLocalVideoEnabled();
+                }}
+                className={[
+                  "pointer-events-auto inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border bg-black/50 transition hover:bg-black/70",
+                  localVideoEnabled
+                    ? "border-white/20 text-white"
+                    : "border-red-400/60 text-red-400",
+                ].join(" ")}
+                title={localVideoEnabled ? "Turn camera off" : "Turn camera on"}
+                aria-label={localVideoEnabled ? "Turn camera off" : "Turn camera on"}
+              >
+                {localVideoEnabled ? (
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="h-4 w-4"
+                  >
+                    <path d="M15 10l4.55-2.28A1 1 0 0 1 21 8.62v6.76a1 1 0 0 1-1.45.9L15 14" />
+                    <rect x="3" y="6" width="12" height="12" rx="2" ry="2" />
+                  </svg>
+                ) : (
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="h-4 w-4"
+                  >
+                    <path d="M10.66 6H13a2 2 0 0 1 2 2v2.34" />
+                    <path d="M15 14l4.55 2.28A1 1 0 0 0 21 15.38V10" />
+                    <path d="M3 3l18 18" />
+                    <path d="M3 8a2 2 0 0 1 2-2h5" />
+                    <path d="M3 8v8a2 2 0 0 0 2 2h10" />
+                  </svg>
+                )}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       <figcaption className="flex items-center justify-center text-xs font-semibold uppercase tracking-wide text-zinc-700 dark:text-zinc-200">

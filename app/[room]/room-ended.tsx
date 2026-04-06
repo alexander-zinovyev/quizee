@@ -75,7 +75,11 @@ export default function RoomEnded({
     teamId?: string | null;
     audioTrack?: MediaStreamTrack;
     videoTrack?: MediaStreamTrack;
-    muted?: boolean;
+    playbackMuted?: boolean;
+    localAudioEnabled?: boolean;
+    localVideoEnabled?: boolean;
+    onToggleLocalAudioEnabled?: () => void;
+    onToggleLocalVideoEnabled?: () => void;
   }> = [];
 
   teams.forEach((team) => {
@@ -87,7 +91,11 @@ export default function RoomEnded({
         teamId: team.id,
         audioTrack: member.audioTrack,
         videoTrack: member.videoTrack,
-        muted: member.muted,
+        playbackMuted: member.playbackMuted,
+        localAudioEnabled: member.localAudioEnabled,
+        localVideoEnabled: member.localVideoEnabled,
+        onToggleLocalAudioEnabled: member.onToggleLocalAudioEnabled,
+        onToggleLocalVideoEnabled: member.onToggleLocalVideoEnabled,
       });
     });
   });
@@ -100,7 +108,11 @@ export default function RoomEnded({
         teamId: null,
         audioTrack: member.audioTrack,
         videoTrack: member.videoTrack,
-        muted: member.muted,
+        playbackMuted: member.playbackMuted,
+        localAudioEnabled: member.localAudioEnabled,
+        localVideoEnabled: member.localVideoEnabled,
+        onToggleLocalAudioEnabled: member.onToggleLocalAudioEnabled,
+        onToggleLocalVideoEnabled: member.onToggleLocalVideoEnabled,
       });
     });
 

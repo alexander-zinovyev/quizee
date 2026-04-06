@@ -35,15 +35,31 @@ export type TeamMember = {
   /**
    * Disable audio controls for this member.
    */
-  controlsDisabled?: boolean;
+  playbackControlsDisabled?: boolean;
   /**
    * Force local mute regardless of controls.
    */
-  forceMuted?: boolean;
+  forcePlaybackMuted?: boolean;
   /**
    * Whether the Member video should be muted.
    */
-  muted?: boolean;
+  playbackMuted?: boolean;
+  /**
+   * Whether the local member is currently publishing audio.
+   */
+  localAudioEnabled?: boolean;
+  /**
+   * Whether the local member is currently publishing video.
+   */
+  localVideoEnabled?: boolean;
+  /**
+   * Optional callback to toggle local audio publishing.
+   */
+  onToggleLocalAudioEnabled?: () => void;
+  /**
+   * Optional callback to toggle local video publishing.
+   */
+  onToggleLocalVideoEnabled?: () => void;
 };
 
 export type TeamProps = {
@@ -334,9 +350,13 @@ export default function Team({
                           videoTrack={member.videoTrack}
                           handRaised={member.handRaised}
                           onHandClick={member.onHandClick}
-                          controlsDisabled={member.controlsDisabled}
-                          forceMuted={member.forceMuted}
-                          muted={member.muted}
+                          playbackControlsDisabled={member.playbackControlsDisabled}
+                          forcePlaybackMuted={member.forcePlaybackMuted}
+                          playbackMuted={member.playbackMuted}
+                          localAudioEnabled={member.localAudioEnabled}
+                          localVideoEnabled={member.localVideoEnabled}
+                          onToggleLocalAudioEnabled={member.onToggleLocalAudioEnabled}
+                          onToggleLocalVideoEnabled={member.onToggleLocalVideoEnabled}
                         />
                       </div>
                     );
@@ -358,9 +378,13 @@ export default function Team({
                           videoTrack={member.videoTrack}
                           handRaised={member.handRaised}
                           onHandClick={member.onHandClick}
-                          controlsDisabled={member.controlsDisabled}
-                          forceMuted={member.forceMuted}
-                          muted={member.muted}
+                          playbackControlsDisabled={member.playbackControlsDisabled}
+                          forcePlaybackMuted={member.forcePlaybackMuted}
+                          playbackMuted={member.playbackMuted}
+                          localAudioEnabled={member.localAudioEnabled}
+                          localVideoEnabled={member.localVideoEnabled}
+                          onToggleLocalAudioEnabled={member.onToggleLocalAudioEnabled}
+                          onToggleLocalVideoEnabled={member.onToggleLocalVideoEnabled}
                         />
                       </div>
                     );

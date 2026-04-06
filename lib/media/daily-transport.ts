@@ -109,6 +109,18 @@ export class DailyTransport implements MediaTransport {
     }
   }
 
+  async setLocalAudioEnabled(enabled: boolean): Promise<void> {
+    if (!this.call) return;
+    await this.call.setLocalAudio(enabled);
+    this.handleParticipants();
+  }
+
+  async setLocalVideoEnabled(enabled: boolean): Promise<void> {
+    if (!this.call) return;
+    await this.call.setLocalVideo(enabled);
+    this.handleParticipants();
+  }
+
   async setSubscriptionPolicy(
     policy: SubscriptionPolicy,
     options?: {
@@ -166,6 +178,8 @@ export class DailyTransport implements MediaTransport {
       audioTrack: audioTrack ?? undefined,
       videoTrack: videoTrack ?? undefined,
       isLocal: Boolean(participant.local),
+      isAudioEnabled: audioTrack?.enabled ?? false,
+      isVideoEnabled: videoTrack?.enabled ?? false,
     };
   }
 
