@@ -4,6 +4,8 @@ export type MediaParticipant = {
   audioTrack?: MediaStreamTrack;
   videoTrack?: MediaStreamTrack;
   isLocal?: boolean;
+  isAudioEnabled?: boolean;
+  isVideoEnabled?: boolean;
 };
 
 export type SubscriptionPolicy = {
@@ -14,6 +16,8 @@ export type SubscriptionPolicy = {
 export interface MediaTransport {
   join(roomId: string, userId: string, displayName: string, authToken: string): Promise<void>;
   leave(): Promise<void>;
+  setLocalAudioEnabled(enabled: boolean): Promise<void>;
+  setLocalVideoEnabled(enabled: boolean): Promise<void>;
 
   setSubscriptionPolicy(
     policy: SubscriptionPolicy,

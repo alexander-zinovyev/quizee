@@ -81,7 +81,7 @@ export default function RoomPending({
       const fakeMember: TeamMember = {
         id: `fake-team-member-${index + 1}`,
         name: FAKE_MEMBER_NAMES[index % FAKE_MEMBER_NAMES.length] + ` ${index + 1}`,
-        muted: true,
+        playbackMuted: true,
       };
       if (teamsClone.length) {
         teamsClone[index % teamsClone.length].members.push(fakeMember);
@@ -92,7 +92,7 @@ export default function RoomPending({
       unassignedClone.push({
         id: `fake-member-${index + 1}`,
         name: FAKE_MEMBER_NAMES[index % FAKE_MEMBER_NAMES.length] + ` ${index + 1}`,
-        muted: true,
+        playbackMuted: true,
       });
     }
 
@@ -110,7 +110,11 @@ export default function RoomPending({
     teamId?: string | null;
     audioTrack?: MediaStreamTrack;
     videoTrack?: MediaStreamTrack;
-    muted?: boolean;
+    playbackMuted?: boolean;
+    localAudioEnabled?: boolean;
+    localVideoEnabled?: boolean;
+    onToggleLocalAudioEnabled?: () => void;
+    onToggleLocalVideoEnabled?: () => void;
   }> = [];
 
   displayTeams.forEach((team) => {
@@ -124,7 +128,11 @@ export default function RoomPending({
         teamId: team.id,
         audioTrack: member.audioTrack,
         videoTrack: member.videoTrack,
-        muted: member.muted,
+        playbackMuted: member.playbackMuted,
+        localAudioEnabled: member.localAudioEnabled,
+        localVideoEnabled: member.localVideoEnabled,
+        onToggleLocalAudioEnabled: member.onToggleLocalAudioEnabled,
+        onToggleLocalVideoEnabled: member.onToggleLocalVideoEnabled,
       });
     });
   });
@@ -139,7 +147,11 @@ export default function RoomPending({
       teamId: null,
       audioTrack: member.audioTrack,
       videoTrack: member.videoTrack,
-      muted: member.muted,
+      playbackMuted: member.playbackMuted,
+      localAudioEnabled: member.localAudioEnabled,
+      localVideoEnabled: member.localVideoEnabled,
+      onToggleLocalAudioEnabled: member.onToggleLocalAudioEnabled,
+      onToggleLocalVideoEnabled: member.onToggleLocalVideoEnabled,
     });
   });
 
