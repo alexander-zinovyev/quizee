@@ -1,6 +1,24 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import type { CSSProperties, ReactNode } from "react";
+import {
+  closestCenter,
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import type { DragEndEvent } from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { RoundStage } from "@/lib/components/room/round-stage";
 import type { MediaTreeFile } from "@/lib/components/build/media-tree-shared";
 import MediaSelector from "@/lib/components/build/media-selector";
@@ -93,6 +111,96 @@ function createRound(): BuildRound {
     textQuestions: [createTextQuestion()],
     imageItems: [],
   };
+}
+
+function reorderItems<T extends { id: string }>(items: T[], activeId: string, overId: string): T[] {
+  if (activeId === overId) return items;
+  const oldIndex = items.findIndex((item) => item.id === activeId);
+  const newIndex = items.findIndex((item) => item.id === overId);
+  if (oldIndex < 0 || newIndex < 0) return items;
+  return arrayMove(items, oldIndex, newIndex);
+}
+
+function SortableRoundCard({
+  id,
+  children,
+}: {
+  id: string;
+  children: (dragHandle: ReactNode) => ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.65 : undefined,
+    position: "relative",
+    zIndex: isDragging ? 10 : undefined,
+  };
+
+  const dragHandle = (
+    <button
+      type="button"
+      {...attributes}
+      {...listeners}
+      className="inline-flex h-7 w-7 cursor-grab items-center justify-center rounded-md bg-zinc-100 text-sm font-semibold text-zinc-500 hover:bg-zinc-200 active:cursor-grabbing dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+      aria-label="Reorder round"
+      title="Reorder round"
+    >
+      ↕
+    </button>
+  );
+
+  return (
+    <article
+      ref={setNodeRef}
+      style={style}
+      className="space-y-3 rounded-lg border border-zinc-200 p-3 dark:border-zinc-700"
+    >
+      {children(dragHandle)}
+    </article>
+  );
+}
+
+function SortableQuestionCard({
+  id,
+  dragLabel,
+  children,
+}: {
+  id: string;
+  dragLabel: string;
+  children: (dragHandle: ReactNode) => ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.65 : undefined,
+    position: "relative",
+    zIndex: isDragging ? 10 : undefined,
+  };
+
+  const dragHandle = (
+    <button
+      type="button"
+      {...attributes}
+      {...listeners}
+      className="inline-flex h-6 w-6 cursor-grab items-center justify-center rounded bg-zinc-100 text-xs font-semibold text-zinc-500 hover:bg-zinc-200 active:cursor-grabbing dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+      aria-label={dragLabel}
+      title={dragLabel}
+    >
+      ↕
+    </button>
+  );
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="space-y-3 rounded-md border border-zinc-200 p-3 dark:border-zinc-700"
+    >
+      {children(dragHandle)}
+    </div>
+  );
 }
 
 function EyeIcon({ className = "h-4 w-4" }: { className?: string }) {
@@ -242,6 +350,16 @@ export default function RoundBuilderPanel({
   const [previewGradingTeamIndex, setPreviewGradingTeamIndex] = useState(0);
 
   const roundCountLabel = useMemo(() => `${rounds.length} round${rounds.length === 1 ? "" : "s"}`, [rounds.length]);
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 6,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   useEffect(() => {
     onRoundsChange?.(rounds);
@@ -274,6 +392,36 @@ export default function RoundBuilderPanel({
 
   function removeRound(roundId: string) {
     setRounds((prev) => prev.filter((round) => round.id !== roundId));
+  }
+
+  function handleRoundDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over) return;
+    setRounds((prev) => reorderItems(prev, String(active.id), String(over.id)));
+  }
+
+  function handleTextQuestionDragEnd(roundId: string, event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    updateRound(roundId, (prev) => ({
+      ...prev,
+      textQuestions: reorderItems(prev.textQuestions, String(active.id), String(over.id)),
+    }));
+    if (previewTarget?.roundId === roundId) {
+      closePreview();
+    }
+  }
+
+  function handleImageItemDragEnd(roundId: string, event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    updateRound(roundId, (prev) => ({
+      ...prev,
+      imageItems: reorderItems(prev.imageItems, String(active.id), String(over.id)),
+    }));
+    if (previewTarget?.roundId === roundId) {
+      closePreview();
+    }
   }
 
   function resetRoundByType(round: BuildRound, type: RoundType): BuildRound {
@@ -581,12 +729,14 @@ export default function RoundBuilderPanel({
           </div>
         ) : null}
 
-        {rounds.map((round) => (
-          <article
-            key={round.id}
-            className="space-y-3 rounded-lg border border-zinc-200 p-3 dark:border-zinc-700"
-          >
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleRoundDragEnd}>
+          <SortableContext items={rounds.map((round) => round.id)} strategy={verticalListSortingStrategy}>
+            {rounds.map((round) => (
+              <SortableRoundCard key={round.id} id={round.id}>
+                {(roundDragHandle) => (
+                  <>
             <div className="flex items-center gap-2">
+              {roundDragHandle}
               <button
                 type="button"
                 onClick={() => updateRound(round.id, (prev) => ({ ...prev, collapsed: !prev.collapsed }))}
@@ -684,12 +834,25 @@ export default function RoundBuilderPanel({
                       </button>
                     </div>
 
-                    {round.textQuestions.map((question, questionIndex) => (
-                      <div
-                        key={question.id}
-                        className="space-y-3 rounded-md border border-zinc-200 p-3 dark:border-zinc-700"
+                    <DndContext
+                      sensors={sensors}
+                      collisionDetection={closestCenter}
+                      onDragEnd={(event) => handleTextQuestionDragEnd(round.id, event)}
+                    >
+                      <SortableContext
+                        items={round.textQuestions.map((question) => question.id)}
+                        strategy={verticalListSortingStrategy}
                       >
+                        {round.textQuestions.map((question, questionIndex) => (
+                          <SortableQuestionCard
+                            key={question.id}
+                            id={question.id}
+                            dragLabel={`Reorder question ${questionIndex + 1}`}
+                          >
+                            {(questionDragHandle) => (
+                              <>
                         <div className="flex items-center gap-2">
+                          {questionDragHandle}
                           <button
                             type="button"
                             onClick={() =>
@@ -914,8 +1077,12 @@ export default function RoundBuilderPanel({
                             </div>
                           </div>
                         ) : null}
-                      </div>
-                    ))}
+                              </>
+                            )}
+                          </SortableQuestionCard>
+                        ))}
+                      </SortableContext>
+                    </DndContext>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -937,12 +1104,25 @@ export default function RoundBuilderPanel({
                       </button>
                     </div>
 
-                    {round.imageItems.map((item, itemIndex) => (
-                      <div
-                        key={item.id}
-                        className="space-y-3 rounded-md border border-zinc-200 p-3 dark:border-zinc-700"
+                    <DndContext
+                      sensors={sensors}
+                      collisionDetection={closestCenter}
+                      onDragEnd={(event) => handleImageItemDragEnd(round.id, event)}
+                    >
+                      <SortableContext
+                        items={round.imageItems.map((item) => item.id)}
+                        strategy={verticalListSortingStrategy}
                       >
+                        {round.imageItems.map((item, itemIndex) => (
+                          <SortableQuestionCard
+                            key={item.id}
+                            id={item.id}
+                            dragLabel={`Reorder image ${itemIndex + 1}`}
+                          >
+                            {(imageDragHandle) => (
+                              <>
                         <div className="flex items-center gap-2">
+                          {imageDragHandle}
                           <button
                             type="button"
                             onClick={() =>
@@ -1061,14 +1241,22 @@ export default function RoundBuilderPanel({
                             </div>
                           </div>
                         ) : null}
-                      </div>
-                    ))}
+                              </>
+                            )}
+                          </SortableQuestionCard>
+                        ))}
+                      </SortableContext>
+                    </DndContext>
                   </div>
                 )}
               </div>
             ) : null}
-          </article>
-        ))}
+                  </>
+                )}
+              </SortableRoundCard>
+            ))}
+          </SortableContext>
+        </DndContext>
       </div>
       </section>
       {previewRoundMeta ? (
