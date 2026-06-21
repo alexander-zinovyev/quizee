@@ -7,8 +7,8 @@ import { validateRoomId } from "@/server/rooms/validation";
 
 const SESSION_COOKIE_NAME = "__session";
 const MAX_UPLOAD_FILES = 250;
-const MAX_UPLOAD_TOTAL_BYTES = 200 * 1024 * 1024;
-const MAX_UPLOAD_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_UPLOAD_TOTAL_BYTES = 500 * 1024 * 1024;
+const MAX_UPLOAD_FILE_BYTES = 50 * 1024 * 1024;
 const UPLOAD_SESSION_TTL_MS = 1000 * 60 * 60 * 6;
 
 function parseBearerToken(headerValue: string | null): string | undefined {

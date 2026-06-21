@@ -11,7 +11,7 @@ import { useFirebaseAuth } from "@/app/providers/firebase-auth-provider";
 
 type SlugStatus = "idle" | "checking" | "available" | "unavailable" | "error";
 const ROOM_ID_REGEX = /^[a-z0-9-]{3,50}$/;
-const MAX_TAR_SIZE_BYTES = 100 * 1024 * 1024;
+const MAX_TAR_SIZE_BYTES = 250 * 1024 * 1024;
 const ALLOWED_MEDIA_EXTENSIONS = new Set([
   ".png",
   ".jpg",
