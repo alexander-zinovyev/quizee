@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useRef } from "react";
+
 import ZoomableImage from "@/lib/components/zoomable-image";
 
 type MediaKind = {
@@ -32,6 +34,7 @@ export default function StageMedia({
   audioClassName,
   videoClassName,
   fitImageToParent = false,
+  playbackActive = true,
 }: {
   url: string;
   kind?: MediaKind;
@@ -46,11 +49,24 @@ export default function StageMedia({
   audioClassName?: string;
   videoClassName?: string;
   fitImageToParent?: boolean;
+  playbackActive?: boolean;
 }) {
+  const mediaElementRef = useRef<HTMLMediaElement | null>(null);
   const resolvedKind =
     kind && (kind.isAudio || kind.isImage || kind.isVideo)
       ? kind
       : inferMediaKindFromName(fallbackName ?? url);
+
+  useEffect(() => {
+    const mediaElement = mediaElementRef.current;
+    if (!mediaElement || playbackActive) return;
+    mediaElement.pause();
+    try {
+      mediaElement.currentTime = 0;
+    } catch {
+      // Some streams do not allow seeking before metadata is available.
+    }
+  }, [playbackActive, url]);
 
   if (resolvedKind.isImage) {
     return (
@@ -69,13 +85,20 @@ export default function StageMedia({
   if (resolvedKind.isVideo) {
     return (
       <video
+        ref={(element) => {
+          mediaElementRef.current = element;
+        }}
         src={url}
         className={videoClassName ?? mediaClassName}
         controls
         playsInline
-        autoPlay
+        autoPlay={playbackActive}
         onLoadedMetadata={(event) => {
           event.currentTarget.volume = mediaVolume;
+          if (!playbackActive) {
+            event.currentTarget.pause();
+            event.currentTarget.currentTime = 0;
+          }
         }}
       />
     );
@@ -84,12 +107,19 @@ export default function StageMedia({
   if (resolvedKind.isAudio) {
     return (
       <audio
+        ref={(element) => {
+          mediaElementRef.current = element;
+        }}
         src={url}
         className={audioClassName ?? "w-full"}
         controls
-        autoPlay
+        autoPlay={playbackActive}
         onLoadedMetadata={(event) => {
           event.currentTarget.volume = mediaVolume;
+          if (!playbackActive) {
+            event.currentTarget.pause();
+            event.currentTarget.currentTime = 0;
+          }
         }}
       />
     );

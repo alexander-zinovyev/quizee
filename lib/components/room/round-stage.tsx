@@ -83,6 +83,11 @@ export function RoundStage({
       presentingMedia &&
       !presentingQuestion.prompt
   );
+  const questionMediaPlaybackActive = !(
+    presenting?.withAnswer &&
+    presentingMedia &&
+    presentingAnswerMedia
+  );
 
   return (
     <div className="relative flex-1 overflow-hidden bg-black">
@@ -264,6 +269,7 @@ export function RoundStage({
                             alt={presentingMedia.filename ?? "Question media"}
                             label={presentingQuestion.prompt ?? undefined}
                             mediaVolume={mediaVolume}
+                            playbackActive={questionMediaPlaybackActive}
                             imageWrapperClassName="w-full"
                             imageClassName="max-h-[55vh] w-full rounded-2xl object-contain"
                             zoomLabel="Zoom question image"
@@ -327,6 +333,7 @@ export function RoundStage({
                               alt={presentingMedia.filename ?? "Question media"}
                               label={presentingQuestion.prompt ?? undefined}
                               mediaVolume={mediaVolume}
+                              playbackActive={questionMediaPlaybackActive}
                               imageWrapperClassName="mb-4 w-full md:float-right md:mb-3 md:ml-6 md:w-1/3 md:max-w-[33%]"
                               imageClassName="max-h-[55vh] w-full rounded-2xl object-contain"
                               zoomLabel="Zoom question image"
@@ -344,6 +351,7 @@ export function RoundStage({
                               fallbackName={presentingMedia.filename}
                               alt={presentingMedia.filename ?? "Question media"}
                               mediaVolume={mediaVolume}
+                              playbackActive={questionMediaPlaybackActive}
                               imageWrapperClassName="h-full max-h-full max-w-full"
                               imageClassName="h-auto max-h-full w-auto max-w-full rounded-2xl object-contain"
                               zoomLabel="Zoom question image"
@@ -373,6 +381,7 @@ export function RoundStage({
                               fallbackName={presentingMedia.filename}
                               alt={presentingMedia.filename ?? "Question media"}
                               mediaVolume={mediaVolume}
+                              playbackActive={questionMediaPlaybackActive}
                               mediaClassName={
                                 isMediaOnlyStage
                                   ? "h-full w-full rounded-2xl bg-black object-contain"
