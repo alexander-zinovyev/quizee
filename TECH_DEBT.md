@@ -8,10 +8,9 @@ Scope: repository scan for temporary workarounds that need proper fixes and tech
 
 ### Plaintext room passwords are still written on room creation
 
-The join endpoint can verify `passwordHash` and `passwordSalt`, but both room creation paths still write the room password as plaintext.
+The join endpoint can verify `passwordHash` and `passwordSalt`, but the active room creation path still writes the room password as plaintext.
 
 References:
-- `app/api/rooms/route.ts:314`
 - `app/api/rooms/from-manifest/route.ts:361`
 - `app/api/rooms/[room]/join/route.ts:117`
 
@@ -82,19 +81,6 @@ Proper fix:
 - Keep optional session-cookie creation for join behavior.
 - Return a consistent authenticated-user shape.
 
-### Room creation has two divergent implementations
-
-The tar-upload and manifest-upload flows both provision media rooms, validate quiz data, map rounds, write Firestore documents, and resolve media. The duplication increases the chance that new room behavior lands in only one path.
-
-References:
-- `app/api/rooms/route.ts:331`
-- `app/api/rooms/from-manifest/route.ts:378`
-
-Proper fix:
-- Extract a shared `createRoomFromValidatedPack` service.
-- Keep upload-source handling separate from room creation.
-- Reuse the same Firestore room/round/question writer for both flows.
-
 ### Media rules and content-type guessing are duplicated
 
 Allowed extensions, path checks, media limits, and content-type mapping exist in multiple places. Some behavior is slightly different between client and server.
@@ -151,21 +137,6 @@ Proper fix:
 - Add real MoQ presence/session discovery, if supported by the transport stack.
 - Otherwise rename or model these entries as available roster media sources, not connected participants.
 - Keep the `MediaTransport` interface honest about connection state.
-
-### Legacy tar-upload room creation route appears unused by the current UI
-
-The current host flow posts to `/api/rooms/upload-session`, uploads media from the browser, then finalizes with `/api/rooms/from-manifest`. No in-repo caller was found for plain `POST /api/rooms`, which still contains the older multipart `.tar.gz` ingestion flow and a backwards-compatible `quizFile` field.
-
-References:
-- `app/host/page.tsx:160`
-- `app/host/page.tsx:307`
-- `app/api/rooms/route.ts:77`
-- `app/api/rooms/route.ts:94`
-
-Proper fix:
-- Confirm whether any external clients or scripts still call `POST /api/rooms`.
-- If not, remove the route and the `tar` dependency.
-- If the route must stay public, move its shared room-creation logic behind the same service as the manifest flow and document it as supported API surface.
 
 ### Several installed dependencies appear unused in source imports
 
@@ -234,18 +205,6 @@ References:
 Proper fix:
 - Remove it if the old locked-room flow is gone.
 - Otherwise reuse it inside `RoomJoinPage` so there is one password form implementation.
-
-### `/team-demo` appears to be an unlinked development route
-
-The `team-demo` route renders an isolated `Team` component preview and links back home, but the home page does not link to it and no in-app references were found.
-
-References:
-- `app/team-demo/page.tsx:29`
-- `app/page.tsx:17`
-
-Proper fix:
-- Remove it if it is no longer used for development.
-- If it remains useful, move it behind a clearly named dev-only route or document it as a visual test page.
 
 ### Default starter assets appear unused
 
