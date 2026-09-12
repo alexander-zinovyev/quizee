@@ -2,6 +2,7 @@
 
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import Member from "../member";
+import type { MediaRenderSource } from "@/lib/media/transport";
 
 export type TeamMember = {
   /**
@@ -24,6 +25,10 @@ export type TeamMember = {
    * Optional video track for an active participant.
    */
   videoTrack?: MediaStreamTrack;
+  /**
+   * Optional render source for transports that do not expose MediaStreamTracks.
+   */
+  mediaSource?: MediaRenderSource;
   /**
    * Whether this member has raised their hand.
    */
@@ -348,6 +353,7 @@ export default function Team({
                           stream={member.stream}
                           audioTrack={member.audioTrack}
                           videoTrack={member.videoTrack}
+                          mediaSource={member.mediaSource}
                           handRaised={member.handRaised}
                           onHandClick={member.onHandClick}
                           playbackControlsDisabled={member.playbackControlsDisabled}
@@ -376,6 +382,7 @@ export default function Team({
                           stream={member.stream}
                           audioTrack={member.audioTrack}
                           videoTrack={member.videoTrack}
+                          mediaSource={member.mediaSource}
                           handRaised={member.handRaised}
                           onHandClick={member.onHandClick}
                           playbackControlsDisabled={member.playbackControlsDisabled}

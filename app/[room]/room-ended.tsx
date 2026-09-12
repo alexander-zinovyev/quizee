@@ -3,6 +3,7 @@
 import { collection, doc, getDocs, writeBatch } from "firebase/firestore";
 
 import type { TeamMember } from "@/lib/components/team";
+import type { MediaRenderSource } from "@/lib/media/transport";
 import { useRoomRounds } from "@/lib/hooks/use-room-rounds";
 import { getClientFirestore } from "@/lib/firebase/client";
 import RoomLobbyLayout from "./room-lobby-layout";
@@ -75,6 +76,7 @@ export default function RoomEnded({
     teamId?: string | null;
     audioTrack?: MediaStreamTrack;
     videoTrack?: MediaStreamTrack;
+    mediaSource?: MediaRenderSource;
     playbackMuted?: boolean;
     localAudioEnabled?: boolean;
     localVideoEnabled?: boolean;
@@ -91,6 +93,7 @@ export default function RoomEnded({
         teamId: team.id,
         audioTrack: member.audioTrack,
         videoTrack: member.videoTrack,
+        mediaSource: member.mediaSource,
         playbackMuted: member.playbackMuted,
         localAudioEnabled: member.localAudioEnabled,
         localVideoEnabled: member.localVideoEnabled,
@@ -108,6 +111,7 @@ export default function RoomEnded({
         teamId: null,
         audioTrack: member.audioTrack,
         videoTrack: member.videoTrack,
+        mediaSource: member.mediaSource,
         playbackMuted: member.playbackMuted,
         localAudioEnabled: member.localAudioEnabled,
         localVideoEnabled: member.localVideoEnabled,

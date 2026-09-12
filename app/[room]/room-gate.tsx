@@ -488,6 +488,7 @@ export default function RoomGate({ roomSlug }: RoomGateProps) {
         ...member,
         audioTrack: media.audioTrack,
         videoTrack: media.videoTrack,
+        mediaSource: media.mediaSource,
         playbackMuted: media.isLocal ?? member.playbackMuted,
         localAudioEnabled: media.isLocal ? localAudioEnabled : member.localAudioEnabled,
         localVideoEnabled: media.isLocal ? localVideoEnabled : member.localVideoEnabled,

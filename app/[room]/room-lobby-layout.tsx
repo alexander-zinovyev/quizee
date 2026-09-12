@@ -25,6 +25,7 @@ import "react-color-palette/css";
 import Member from "@/lib/components/member";
 import type { TeamMember } from "@/lib/components/team";
 import { getClientFirestore } from "@/lib/firebase/client";
+import type { MediaRenderSource } from "@/lib/media/transport";
 import type { RoomRosterTeam } from "./room-layout-types";
 
 type RosterCard = {
@@ -35,6 +36,7 @@ type RosterCard = {
   teamId?: string | null;
   audioTrack?: MediaStreamTrack;
   videoTrack?: MediaStreamTrack;
+  mediaSource?: MediaRenderSource;
   playbackMuted?: boolean;
   localAudioEnabled?: boolean;
   localVideoEnabled?: boolean;
@@ -506,6 +508,7 @@ export default function RoomLobbyLayout({
                           playbackMuted={card.playbackMuted ?? false}
                           audioTrack={card.audioTrack}
                           videoTrack={card.videoTrack}
+                          mediaSource={card.mediaSource}
                           localAudioEnabled={card.localAudioEnabled}
                           localVideoEnabled={card.localVideoEnabled}
                           onToggleLocalAudioEnabled={card.onToggleLocalAudioEnabled}
@@ -659,6 +662,7 @@ export default function RoomLobbyLayout({
                                     playbackMuted={member.playbackMuted ?? false}
                                     audioTrack={member.audioTrack}
                                     videoTrack={member.videoTrack}
+                                    mediaSource={member.mediaSource}
                                     localAudioEnabled={member.localAudioEnabled}
                                     localVideoEnabled={member.localVideoEnabled}
                                     onToggleLocalAudioEnabled={member.onToggleLocalAudioEnabled}
@@ -700,6 +704,7 @@ export default function RoomLobbyLayout({
                   playbackMuted={host.playbackMuted ?? false}
                   audioTrack={host.audioTrack}
                   videoTrack={host.videoTrack}
+                  mediaSource={host.mediaSource}
                   localAudioEnabled={host.localAudioEnabled}
                   localVideoEnabled={host.localVideoEnabled}
                   onToggleLocalAudioEnabled={host.onToggleLocalAudioEnabled}

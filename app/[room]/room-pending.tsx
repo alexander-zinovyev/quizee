@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 
 import type { TeamMember } from "@/lib/components/team";
+import type { MediaRenderSource } from "@/lib/media/transport";
 import RoomLobbyLayout from "./room-lobby-layout";
 import type { RoomRosterTeam } from "./room-layout-types";
 
@@ -110,6 +111,7 @@ export default function RoomPending({
     teamId?: string | null;
     audioTrack?: MediaStreamTrack;
     videoTrack?: MediaStreamTrack;
+    mediaSource?: MediaRenderSource;
     playbackMuted?: boolean;
     localAudioEnabled?: boolean;
     localVideoEnabled?: boolean;
@@ -128,6 +130,7 @@ export default function RoomPending({
         teamId: team.id,
         audioTrack: member.audioTrack,
         videoTrack: member.videoTrack,
+        mediaSource: member.mediaSource,
         playbackMuted: member.playbackMuted,
         localAudioEnabled: member.localAudioEnabled,
         localVideoEnabled: member.localVideoEnabled,
@@ -147,6 +150,7 @@ export default function RoomPending({
       teamId: null,
       audioTrack: member.audioTrack,
       videoTrack: member.videoTrack,
+      mediaSource: member.mediaSource,
       playbackMuted: member.playbackMuted,
       localAudioEnabled: member.localAudioEnabled,
       localVideoEnabled: member.localVideoEnabled,

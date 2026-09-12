@@ -13,8 +13,17 @@ const INITIAL_ROOM_STATE = "pending";
 const SESSION_COOKIE_NAME = "__session";
 const QUIZ_PACK_FIELD = "quizPack";
 const DAILY_ROOM_API = "https://api.daily.co/v1/rooms";
+
+function configuredMediaTransport(): string {
+  return (process.env.MEDIA_TRANSPORT ?? process.env.NEXT_PUBLIC_MEDIA_TRANSPORT ?? "daily").toLowerCase();
+}
+
 async function ensureDailyRoom(roomId: string) {
-  if (process.env.MEDIA_DISABLED === "true") {
+  if (
+    process.env.MEDIA_DISABLED === "true" ||
+    process.env.NEXT_PUBLIC_MEDIA_DISABLED === "true" ||
+    configuredMediaTransport() !== "daily"
+  ) {
     return;
   }
   const apiKey = process.env.DAILY_API_KEY;
