@@ -73,15 +73,11 @@ function normalizeMediaPath(path: string): string | null {
 }
 
 function configuredMediaTransport(): string {
-  return (process.env.MEDIA_TRANSPORT ?? process.env.NEXT_PUBLIC_MEDIA_TRANSPORT ?? "daily").toLowerCase();
+  return (process.env.NEXT_PUBLIC_MEDIA_TRANSPORT ?? "daily").toLowerCase();
 }
 
 async function ensureDailyRoom(roomId: string) {
-  if (
-    process.env.MEDIA_DISABLED === "true" ||
-    process.env.NEXT_PUBLIC_MEDIA_DISABLED === "true" ||
-    configuredMediaTransport() !== "daily"
-  ) {
+  if (configuredMediaTransport() !== "daily") {
     return;
   }
   const apiKey = process.env.DAILY_API_KEY;
