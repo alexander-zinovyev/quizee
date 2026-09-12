@@ -1,7 +1,5 @@
 import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
 import { load, sign, type Claims } from "@moq/token";
 
 import { getServerAuth, getServerFirestore } from "@/server/database";
@@ -56,9 +54,11 @@ async function authenticate(request: NextRequest): Promise<string | NextResponse
   return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
 }
 
-async function loadSigningKey() {
-  const keyPath = process.env.MOQ_JWK_PATH ?? "quizee-default.jwk";
-  const jwk = await readFile(resolve(process.cwd(), keyPath), "utf8");
+function loadSigningKey() {
+  const jwk = process.env.MOQ_JWK_JSON;
+  if (!jwk) {
+    throw new Error("MOQ_JWK_JSON is not configured.");
+  }
   return load(jwk);
 }
 
@@ -124,7 +124,7 @@ export async function POST(
       iat: now,
       exp: now + tokenTtlSeconds(),
     };
-    const token = await sign(await loadSigningKey(), claims);
+    const token = await sign(loadSigningKey(), claims);
 
     return NextResponse.json(
       {
