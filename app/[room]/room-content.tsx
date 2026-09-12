@@ -1569,6 +1569,7 @@ export default function RoomContent({
                   playbackMuted={hostMember.playbackMuted ?? false}
                   audioTrack={hostMember.audioTrack}
                   videoTrack={hostMember.videoTrack}
+                  mediaSource={hostMember.mediaSource}
                   localAudioEnabled={hostMember.localAudioEnabled}
                   localVideoEnabled={hostMember.localVideoEnabled}
                   onToggleLocalAudioEnabled={hostMember.onToggleLocalAudioEnabled}

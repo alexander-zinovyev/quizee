@@ -3,6 +3,24 @@
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 
+import type { MediaRenderSource } from "@/lib/media/transport";
+
+const MOQ_ELEMENT_LOADER_ID = "quizee-moq-elements";
+
+function ensureMoqElementsLoaded() {
+  if (typeof document === "undefined") return;
+  if (document.getElementById(MOQ_ELEMENT_LOADER_ID)) return;
+
+  const script = document.createElement("script");
+  script.id = MOQ_ELEMENT_LOADER_ID;
+  script.type = "module";
+  script.textContent = `
+    import "https://esm.sh/@moq/publish@0.4.7/element";
+    import "https://esm.sh/@moq/watch@0.5.4/element";
+  `;
+  document.head.appendChild(script);
+}
+
 type MemberProps = {
   /**
    * Display name rendered underneath the placeholder/video.
@@ -20,6 +38,10 @@ type MemberProps = {
    * Optional video track to render in the member tile.
    */
   videoTrack?: MediaStreamTrack;
+  /**
+   * Optional render source for transports that do not expose MediaStreamTracks.
+   */
+  mediaSource?: MediaRenderSource;
   /**
    * Whether this member has raised their hand.
    */
@@ -63,6 +85,7 @@ export default function Member({
   stream,
   audioTrack,
   videoTrack,
+  mediaSource,
   handRaised = false,
   onHandClick,
   playbackControlsDisabled = false,
@@ -84,8 +107,9 @@ export default function Member({
     videoTrack ?? stream?.getVideoTracks?.()[0] ?? undefined;
   const resolvedAudioTrack =
     audioTrack ?? stream?.getAudioTracks?.()[0] ?? undefined;
-  const hasVideo = Boolean(resolvedVideoTrack);
-  const hasAudio = Boolean(resolvedAudioTrack);
+  const hasMoqMedia = mediaSource?.type === "moq";
+  const hasVideo = Boolean(resolvedVideoTrack) || Boolean(hasMoqMedia && mediaSource.videoEnabled);
+  const hasAudio = Boolean(resolvedAudioTrack) || Boolean(hasMoqMedia && mediaSource.audioEnabled);
   const effectivePlaybackMuted = forcePlaybackMuted ? true : isPlaybackMuted;
   const showPlaybackControls = hasAudio && !playbackMuted && !playbackControlsDisabled;
   const showLocalMediaControls =
@@ -100,6 +124,11 @@ export default function Member({
     .slice(0, 2)
     .join("")
     .toUpperCase();
+
+  useEffect(() => {
+    if (mediaSource?.type !== "moq") return;
+    ensureMoqElementsLoaded();
+  }, [mediaSource?.type]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -264,10 +293,37 @@ export default function Member({
           playsInline
           autoPlay
           className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ${
-            hasVideo ? "opacity-100" : "opacity-0"
+            resolvedVideoTrack ? "opacity-100" : "opacity-0"
           }`}
         />
         <audio ref={audioRef} muted={effectivePlaybackMuted} />
+        {mediaSource?.type === "moq" ? (
+          mediaSource.mode === "publish" ? (
+            <moq-publish
+              url={mediaSource.url}
+              name={mediaSource.name}
+              source="camera"
+              muted={!mediaSource.audioEnabled}
+              invisible={!mediaSource.videoEnabled}
+              preview="source"
+              announce="source"
+              className="absolute inset-0 block h-full w-full"
+            >
+              <canvas className="h-full w-full object-cover" />
+            </moq-publish>
+          ) : (
+            <moq-watch
+              url={mediaSource.url}
+              name={mediaSource.name}
+              muted={effectivePlaybackMuted || !mediaSource.audioEnabled}
+              volume={volume}
+              visible={mediaSource.videoEnabled ? "always" : "never"}
+              className="absolute inset-0 block h-full w-full"
+            >
+              <canvas className="h-full w-full object-cover" />
+            </moq-watch>
+          )
+        ) : null}
 
         {showHand ? (
           <div className="absolute left-3 top-3 z-20">

@@ -3,9 +3,19 @@ export type MediaParticipant = {
   displayName?: string;
   audioTrack?: MediaStreamTrack;
   videoTrack?: MediaStreamTrack;
+  mediaSource?: MediaRenderSource;
   isLocal?: boolean;
   isAudioEnabled?: boolean;
   isVideoEnabled?: boolean;
+};
+
+export type MediaRenderSource = {
+  type: "moq";
+  mode: "publish" | "watch";
+  url: string;
+  name: string;
+  audioEnabled: boolean;
+  videoEnabled: boolean;
 };
 
 export type SubscriptionPolicy = {

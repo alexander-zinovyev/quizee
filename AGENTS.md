@@ -81,6 +81,21 @@ This repository contains a multiplayer quiz platform.
 
 ## Rules for Making Changes
 
+### Required
+- Pull the latest origin changes before working.
+- Dig into the root cause and fix it at the source. Never work around a fixable bug with timeouts, sleep or retry.
+- Fail loud and early. Error on unsupported or malformed input rather than warn and continue: supported or refused.
+- Reproduce bugs before fixing them. Land each fix with a regression test that fails without it, when one is easy.
+- Keep the PR focused. No unrelated refactors, formatting churn, or drive-by changes; split when in doubt.
+- Refactor aggressively for long-term maintainability, but re-evaluate the direction as you learn.
+- Propose a course change, even suggest abandoning a PR, rather than finish a half-solution.
+- When a decision is the maintainer's (API shape, naming, scope), ask with 2-3 options and a recommendation.
+- All tests need to be wired into CI, at least a nightly.
+- Never edit an AGENTS.md, CLAUDE.md, CONTRIBUTING.md, or skill without being prompted
+- No em dashes.
+- Match the existing conventions, patterns, and naming when possible.
+- Fix any outdated docs and comments inline; don't add a separate PR for it.
+
 ### Architecture & quality
 - Prefer clean, simple architecture over hotfix patches.
 - If existing code is asymmetrical/legacy-driven, propose and apply focused refactor.
