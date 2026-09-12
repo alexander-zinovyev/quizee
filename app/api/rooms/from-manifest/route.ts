@@ -10,9 +10,9 @@ import {
   validateRoomId,
   type ValidatedRound,
 } from "@/server/rooms/validation";
+import { createServerMediaProvider } from "@/lib/media/provisioning";
 
 const SESSION_COOKIE_NAME = "__session";
-const DAILY_ROOM_API = "https://api.daily.co/v1/rooms";
 
 type ManifestPayload = {
   id?: string;
@@ -70,46 +70,6 @@ function normalizeMediaPath(path: string): string | null {
   const normalized = posix.normalize(trimmed);
   if (normalized.startsWith("../") || normalized === "..") return null;
   return normalized;
-}
-
-function configuredMediaTransport(): string {
-  return (process.env.NEXT_PUBLIC_MEDIA_TRANSPORT ?? "daily").toLowerCase();
-}
-
-async function ensureDailyRoom(roomId: string) {
-  if (configuredMediaTransport() !== "daily") {
-    return;
-  }
-  const apiKey = process.env.DAILY_API_KEY;
-  if (!apiKey) {
-    throw new Error("Daily API key is not configured.");
-  }
-
-  const response = await fetch(DAILY_ROOM_API, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      name: roomId,
-      privacy: "private",
-      properties: {
-        exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24,
-      },
-    }),
-  });
-
-  if (response.ok || response.status === 409) {
-    return;
-  }
-
-  const payload = await response.json().catch(() => ({}));
-  const message =
-    typeof payload?.info === "string" && payload.info.length
-      ? payload.info
-      : "Unable to create Daily room.";
-  throw new Error(message);
 }
 
 export async function POST(request: NextRequest) {
@@ -228,11 +188,11 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    await ensureDailyRoom(roomId);
+    await createServerMediaProvider().provisionRoom(roomId);
   } catch (error) {
-    console.error("[rooms-manifest] Daily room creation failed", error);
+    console.error("[rooms-manifest] Media room provisioning failed", error);
     return NextResponse.json(
-      { message: "Unable to provision Daily room right now." },
+      { message: "Unable to provision media room right now." },
       { status: 502 }
     );
   }
