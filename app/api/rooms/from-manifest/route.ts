@@ -136,9 +136,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: validationResult }, { status: 400 });
   }
   const rounds: ValidatedRound[] = validationResult;
+  const supportedRounds = rounds.filter((round) => round.type !== "multi-step");
+  if (supportedRounds.length !== rounds.length) {
+    return NextResponse.json(
+      { message: "Multi-step rounds cannot be used to create rooms yet." },
+      { status: 400 }
+    );
+  }
 
   const referencedMedia = new Set<string>();
-  rounds.forEach((round) => {
+  supportedRounds.forEach((round) => {
     if (round.type === "text") {
       round.questions.forEach((q) => {
         q.promptStages.forEach((stage) => {
@@ -331,7 +338,7 @@ export async function POST(request: NextRequest) {
     { merge: true }
   );
 
-  for (const round of rounds) {
+  for (const round of supportedRounds) {
     const roundId = `round-${round.order + 1}`;
     const roundRef = roomRef.collection("rounds").doc(roundId);
 

@@ -24,6 +24,13 @@ export type ValidatedImageQuestion = {
   imagePath: string;
 };
 
+export type ValidatedMultiStepQuestion = {
+  order: number;
+  steps: ValidatedStage[];
+  answerHint: string;
+  answerStages: ValidatedStage[];
+};
+
 export type ValidatedTextRound = {
   order: number;
   type: "text";
@@ -38,7 +45,16 @@ export type ValidatedImageRound = {
   questions: ValidatedImageQuestion[];
 };
 
-export type ValidatedRound = ValidatedTextRound | ValidatedImageRound;
+export type ValidatedMultiStepRound = {
+  order: number;
+  type: "multi-step";
+  title: string;
+  pointsPerStep: number[];
+  allowAnswerChanges: boolean;
+  questions: ValidatedMultiStepQuestion[];
+};
+
+export type ValidatedRound = ValidatedTextRound | ValidatedImageRound | ValidatedMultiStepRound;
 
 export const ROOM_ID_REGEX = /^[a-z0-9-]{3,50}$/;
 
@@ -159,6 +175,40 @@ function validateStages(stagesRaw: unknown, context: string): ValidatedStage[] |
   return stages;
 }
 
+function validateAnswer(answerRaw: unknown, context: string): { hint: string; stages: ValidatedStage[] } | string {
+  if (!answerRaw || typeof answerRaw !== "object") {
+    return `${context}: answer object is required.`;
+  }
+
+  const answer = answerRaw as Record<string, unknown>;
+  const stages = validateStages(answer.stages, `${context} answer`);
+  if (typeof stages === "string") return stages;
+
+  const hint = ensureString(answer.hint);
+  if (!hint) {
+    return `${context}: answer.hint is required.`;
+  }
+
+  return { hint, stages };
+}
+
+function validatePointsPerStep(pointsRaw: unknown, context: string): number[] | string {
+  if (!Array.isArray(pointsRaw) || pointsRaw.length === 0) {
+    return `${context}: pointsPerStep array is required and cannot be empty.`;
+  }
+
+  const points: number[] = [];
+  for (let idx = 0; idx < pointsRaw.length; idx += 1) {
+    const pointValue = pointsRaw[idx];
+    if (typeof pointValue !== "number" || !Number.isFinite(pointValue)) {
+      return `${context}: pointsPerStep ${idx + 1} must be a finite number.`;
+    }
+    points.push(pointValue);
+  }
+
+  return points;
+}
+
 export function validateRoomId(id: string | undefined): string | null {
   if (!id) return "Room id is required.";
   if (!ROOM_ID_REGEX.test(id)) {
@@ -191,8 +241,8 @@ export function validateQuizFile(content: string): ValidatedRound[] | string {
     const title = ensureString(round?.title);
     const questions = round?.questions;
 
-    if (type !== "text" && type !== "image") {
-      return `Round ${roundIndex + 1}: only "text" or "image" rounds are supported right now.`;
+    if (type !== "text" && type !== "image" && type !== "multi-step") {
+      return `Round ${roundIndex + 1}: only "text", "image", or "multi-step" rounds are supported right now.`;
     }
 
     if (!title) {
@@ -209,12 +259,8 @@ export function validateQuizFile(content: string): ValidatedRound[] | string {
       for (let qIndex = 0; qIndex < questions.length; qIndex++) {
         const question = questions[qIndex] as Record<string, unknown>;
         const promptRaw = question?.prompt as Record<string, unknown> | undefined;
-        const answerRaw = question?.answer as Record<string, unknown> | undefined;
         if (!promptRaw || typeof promptRaw !== "object") {
           return `Round ${roundIndex + 1}, question ${qIndex + 1}: prompt object is required.`;
-        }
-        if (!answerRaw || typeof answerRaw !== "object") {
-          return `Round ${roundIndex + 1}, question ${qIndex + 1}: answer object is required.`;
         }
 
         const promptStages = validateStages(
@@ -223,22 +269,17 @@ export function validateQuizFile(content: string): ValidatedRound[] | string {
         );
         if (typeof promptStages === "string") return promptStages;
 
-        const answerStages = validateStages(
-          answerRaw.stages,
-          `Round ${roundIndex + 1}, question ${qIndex + 1} answer`
+        const answer = validateAnswer(
+          question?.answer,
+          `Round ${roundIndex + 1}, question ${qIndex + 1}`
         );
-        if (typeof answerStages === "string") return answerStages;
-
-        const hint = ensureString(answerRaw.hint);
-        if (!hint) {
-          return `Round ${roundIndex + 1}, question ${qIndex + 1}: answer.hint is required.`;
-        }
+        if (typeof answer === "string") return answer;
 
         validatedQuestions.push({
           order: qIndex,
           promptStages,
-          answerHint: hint,
-          answerStages,
+          answerHint: answer.hint,
+          answerStages: answer.stages,
         });
       }
 
@@ -246,6 +287,54 @@ export function validateQuizFile(content: string): ValidatedRound[] | string {
         order: roundIndex,
         type,
         title,
+        questions: validatedQuestions,
+      });
+      continue;
+    }
+
+    if (type === "multi-step") {
+      const pointsPerStep = validatePointsPerStep(
+        round.pointsPerStep,
+        `Round ${roundIndex + 1}`
+      );
+      if (typeof pointsPerStep === "string") return pointsPerStep;
+
+      if (typeof round.allowAnswerChanges !== "boolean") {
+        return `Round ${roundIndex + 1}: allowAnswerChanges boolean is required.`;
+      }
+
+      const validatedQuestions: ValidatedMultiStepQuestion[] = [];
+      for (let qIndex = 0; qIndex < questions.length; qIndex++) {
+        const question = questions[qIndex] as Record<string, unknown>;
+        const steps = validateStages(
+          question?.steps,
+          `Round ${roundIndex + 1}, question ${qIndex + 1} steps`
+        );
+        if (typeof steps === "string") return steps;
+        if (steps.length !== pointsPerStep.length) {
+          return `Round ${roundIndex + 1}, question ${qIndex + 1}: steps length must match pointsPerStep length.`;
+        }
+
+        const answer = validateAnswer(
+          question?.answer,
+          `Round ${roundIndex + 1}, question ${qIndex + 1}`
+        );
+        if (typeof answer === "string") return answer;
+
+        validatedQuestions.push({
+          order: qIndex,
+          steps,
+          answerHint: answer.hint,
+          answerStages: answer.stages,
+        });
+      }
+
+      validatedRounds.push({
+        order: roundIndex,
+        type,
+        title,
+        pointsPerStep,
+        allowAnswerChanges: round.allowAnswerChanges,
         questions: validatedQuestions,
       });
       continue;
