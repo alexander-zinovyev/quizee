@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://quizee.local/schemas/quiz.schema.json",
   "title": "Quizee Quiz Schema",
-  "description": "Schema for quiz packs containing text and image rounds.",
+  "description": "Schema for quiz packs containing text, image, and multi-step rounds.",
   "type": "array",
   "minItems": 1,
   "items": {
@@ -110,6 +110,26 @@
         }
       }
     },
+    "multiStepQuestion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "steps",
+        "answer"
+      ],
+      "properties": {
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/stage"
+          }
+        },
+        "answer": {
+          "$ref": "#/$defs/answer"
+        }
+      }
+    },
     "textRound": {
       "type": "object",
       "additionalProperties": false,
@@ -158,6 +178,42 @@
         }
       }
     },
+    "multiStepRound": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "title",
+        "pointsPerStep",
+        "allowAnswerChanges",
+        "questions"
+      ],
+      "properties": {
+        "type": {
+          "const": "multi-step"
+        },
+        "title": {
+          "$ref": "#/$defs/nonEmptyText"
+        },
+        "pointsPerStep": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "number"
+          }
+        },
+        "allowAnswerChanges": {
+          "type": "boolean"
+        },
+        "questions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/multiStepQuestion"
+          }
+        }
+      }
+    },
     "round": {
       "oneOf": [
         {
@@ -165,6 +221,9 @@
         },
         {
           "$ref": "#/$defs/imageRound"
+        },
+        {
+          "$ref": "#/$defs/multiStepRound"
         }
       ]
     }

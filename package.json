@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:validation": "tsx server/rooms/validation.test.ts"
   },
   "dependencies": {
     "@daily-co/daily-js": "^0.86.0",
