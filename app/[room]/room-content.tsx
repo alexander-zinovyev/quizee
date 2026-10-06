@@ -19,6 +19,8 @@ import Member from "@/lib/components/member";
 import Team from "@/lib/components/team";
 import { RoundStage } from "@/lib/components/room/round-stage";
 import { PromptNavigation } from "@/lib/components/room/prompt-navigation";
+import { getAwardedPoints } from "@/lib/components/room/grading";
+import { recordedAnswer } from "@/lib/answers";
 import { usePresentingMedia } from "@/lib/hooks/use-presenting-media";
 import {
   type RoundQuestion,
@@ -116,7 +118,16 @@ export default function RoomContent({
 }: RoomContentProps) {
   const { user, getToken } = useFirebaseAuth();
   const [teamAnswers, setTeamAnswers] = useState<
-    Record<string, Record<string, Record<string, { answer: string; awardedPoints?: number }>>>
+    Record<
+      string,
+      Record<
+        string,
+        Record<
+          string,
+          { answer: string; awardedPoints?: number; step?: number | null }
+        >
+      >
+    >
   >({});
   const [isActivatingNext, setIsActivatingNext] = useState(false);
   const [isPresentingUpdatePending, setIsPresentingUpdatePending] = useState(false);
@@ -400,6 +411,7 @@ export default function RoomContent({
             answer: teamAnswer?.answer ?? "",
             hint,
             awardedPoints: teamAnswer?.awardedPoints,
+            step: teamAnswer?.step,
           };
         });
         return {
@@ -886,7 +898,7 @@ export default function RoomContent({
 
   async function gradeAnswer(teamId: string, questionId: string, awardedPoints: number) {
     if (!isHost || !presentingRoundMeta || presentingRoundMeta.state !== "closed") return;
-    const clampedPoints = Math.max(0, awardedPoints);
+    const normalizedPoints = getAwardedPoints(awardedPoints, presentingRoundMeta.type);
     setTeamAnswers((prev) => {
       const roundId = presentingRoundMeta.id;
       const roundEntry = prev[roundId] ?? {};
@@ -900,7 +912,7 @@ export default function RoomContent({
             ...teamEntry,
             [questionId]: {
               ...existingAnswer,
-              awardedPoints: clampedPoints,
+              awardedPoints: normalizedPoints,
             },
           },
         },
@@ -921,7 +933,7 @@ export default function RoomContent({
     await setDoc(
       answerRef,
       {
-        awardedPoints: clampedPoints,
+        awardedPoints: normalizedPoints,
         gradedAt: serverTimestamp(),
         gradedBy: user?.uid ?? null,
       },
@@ -933,20 +945,20 @@ export default function RoomContent({
     if (!teamId) return;
     const db = getClientFirestore();
     const batch = writeBatch(db);
-    const sortedRoundIds = roundsMeta
+    const sortedRounds = roundsMeta
       .slice()
-      .sort((a, b) => a.order - b.order)
-      .map((round) => round.id);
+      .sort((a, b) => a.order - b.order);
 
     const roundScores = await Promise.all(
-      sortedRoundIds.map(async (roundId) => {
+      sortedRounds.map(async (round) => {
+        const roundId = round.id;
         const answersSnap = await getDocs(
           collection(db, "rooms", roomSlug, "rounds", roundId, "teamAnswers", teamId, "answers")
         );
         const roundScore = answersSnap.docs.reduce((sum, answerDoc) => {
           const data = answerDoc.data();
           const rawPoints = typeof data.awardedPoints === "number" ? data.awardedPoints : 0;
-          return sum + Math.max(0, rawPoints);
+          return sum + getAwardedPoints(rawPoints, round.type);
         }, 0);
         return { roundId, roundScore };
       })
@@ -976,7 +988,7 @@ export default function RoomContent({
       Object.entries(answersForRound).map(async ([teamId, answers]) => {
         const awardedScore = Object.values(answers).reduce((sum, ans) => {
           const points = typeof ans.awardedPoints === "number" ? ans.awardedPoints : 0;
-          return sum + Math.max(0, points);
+          return sum + getAwardedPoints(points, presentingRoundMeta.type);
         }, 0);
         const scoreRef = doc(db, "rooms", roomSlug, "teams", teamId, "scores", roundId);
         const teamRef = doc(db, "rooms", roomSlug, "teams", teamId);
@@ -992,7 +1004,7 @@ export default function RoomContent({
           teamSnap.exists() && typeof teamSnap.data().scoreTotal === "number"
             ? (teamSnap.data().scoreTotal as number)
             : 0;
-        const nextTotal = Math.max(0, currentTotal - previousScore + awardedScore);
+        const nextTotal = currentTotal - previousScore + awardedScore;
 
         return { teamId, awardedScore, scoreRef, teamRef, nextTotal };
       })
@@ -1208,11 +1220,14 @@ export default function RoomContent({
 
         const answersRef = collection(teamDoc.ref, "answers");
         const unsubAnswers = onSnapshot(answersRef, (answersSnap) => {
-          const answerMap: Record<string, { answer: string; awardedPoints?: number }> = {};
+          const answerMap: Record<
+            string,
+            { answer: string; awardedPoints?: number; step?: number | null }
+          > = {};
           answersSnap.forEach((ansDoc) => {
             const data = ansDoc.data();
             answerMap[ansDoc.id] = {
-              answer: (data.answer as string) ?? "",
+              ...recordedAnswer(data, presentingRoundMeta.type),
               awardedPoints:
                 typeof data.awardedPoints === "number"
                   ? (data.awardedPoints as number)
@@ -1260,7 +1275,7 @@ export default function RoomContent({
       teamAnswerUnsubs.forEach((unsub) => unsub());
       teamAnswerUnsubs.clear();
     };
-  }, [isHost, presentingRoundMeta?.id, presentingRoundMeta?.state, roomSlug]);
+  }, [isHost, presentingRoundMeta?.id, presentingRoundMeta?.state, presentingRoundMeta?.type, roomSlug]);
 
   const roundsPanel = isHost ? (
     <RoomHostRoundsPanel
