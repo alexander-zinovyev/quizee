@@ -20,6 +20,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { RoundStage } from "@/lib/components/room/round-stage";
+import { PromptNavigation } from "@/lib/components/room/prompt-navigation";
 import type { MediaTreeFile } from "@/lib/components/build/media-tree-shared";
 import MediaSelector from "@/lib/components/build/media-selector";
 import type {
@@ -29,7 +30,7 @@ import type {
   RoundQuestionStage,
 } from "@/lib/hooks/use-room-rounds";
 
-type RoundType = "text" | "image";
+type RoundType = "text" | "image" | "multi-step";
 
 type Stage = {
   id: string;
@@ -53,6 +54,14 @@ type ImageItem = {
   answerStage: Stage;
 };
 
+type MultiStepQuestion = {
+  id: string;
+  collapsed: boolean;
+  steps: Stage[];
+  answerHint: string;
+  answerStages: Stage[];
+};
+
 export type BuildRound = {
   id: string;
   collapsed: boolean;
@@ -60,6 +69,9 @@ export type BuildRound = {
   type: RoundType;
   textQuestions: TextQuestion[];
   imageItems: ImageItem[];
+  multiStepQuestions: MultiStepQuestion[];
+  pointsPerStep: number[];
+  allowAnswerChanges: boolean;
 };
 
 type PreviewTarget = {
@@ -102,6 +114,36 @@ function createImageItem(): ImageItem {
   };
 }
 
+function createMultiStepQuestion(stepCount = 1): MultiStepQuestion {
+  return {
+    id: makeId(),
+    collapsed: false,
+    steps: Array.from({ length: Math.max(1, stepCount) }, () => createStage()),
+    answerHint: "",
+    answerStages: [createStage()],
+  };
+}
+
+function normalizeStepCount(questions: MultiStepQuestion[], stepCount: number): MultiStepQuestion[] {
+  return questions.map((question) => {
+    if (question.steps.length === stepCount) return question;
+    if (question.steps.length > stepCount) {
+      return { ...question, steps: question.steps.slice(0, stepCount) };
+    }
+    return {
+      ...question,
+      steps: [
+        ...question.steps,
+        ...Array.from({ length: stepCount - question.steps.length }, () => createStage()),
+      ],
+    };
+  });
+}
+
+function hasStageContent(stage: Stage): boolean {
+  return Boolean(stage.text.trim() || stage.mediaPath);
+}
+
 function createRound(): BuildRound {
   return {
     id: makeId(),
@@ -110,6 +152,9 @@ function createRound(): BuildRound {
     type: "text",
     textQuestions: [createTextQuestion()],
     imageItems: [],
+    multiStepQuestions: [],
+    pointsPerStep: [1],
+    allowAnswerChanges: false,
   };
 }
 
@@ -329,6 +374,29 @@ function StageEditor({
   );
 }
 
+function StepPointsInput({ value, onChange }: { value: number; onChange: (points: number) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+
+  return (
+    <input
+      type="number"
+      step="any"
+      value={draft ?? value}
+      onChange={(event) => {
+        const nextDraft = event.target.value;
+        setDraft(nextDraft);
+        if (!nextDraft.trim()) return;
+        const next = Number(nextDraft);
+        if (Number.isFinite(next)) onChange(next);
+      }}
+      onBlur={() => setDraft(null)}
+      className="h-8 w-16 border-x border-zinc-300 bg-transparent px-2 text-sm text-zinc-900 outline-none dark:border-zinc-700 dark:text-zinc-100"
+      aria-label="Points"
+      title="Points"
+    />
+  );
+}
+
 export default function RoundBuilderPanel({
   mediaFiles,
   initialRounds,
@@ -424,6 +492,18 @@ export default function RoundBuilderPanel({
     }
   }
 
+  function handleMultiStepQuestionDragEnd(roundId: string, event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    updateRound(roundId, (prev) => ({
+      ...prev,
+      multiStepQuestions: reorderItems(prev.multiStepQuestions, String(active.id), String(over.id)),
+    }));
+    if (previewTarget?.roundId === roundId) {
+      closePreview();
+    }
+  }
+
   function resetRoundByType(round: BuildRound, type: RoundType): BuildRound {
     if (type === "text") {
       return {
@@ -431,6 +511,19 @@ export default function RoundBuilderPanel({
         type,
         textQuestions: [createTextQuestion()],
         imageItems: [],
+        multiStepQuestions: [],
+      };
+    }
+    if (type === "multi-step") {
+      const pointsPerStep = round.pointsPerStep?.length ? round.pointsPerStep : [1];
+      return {
+        ...round,
+        type,
+        textQuestions: [],
+        imageItems: [],
+        pointsPerStep,
+        allowAnswerChanges: round.allowAnswerChanges,
+        multiStepQuestions: [createMultiStepQuestion(pointsPerStep.length)],
       };
     }
     return {
@@ -438,7 +531,17 @@ export default function RoundBuilderPanel({
       type,
       textQuestions: [],
       imageItems: [createImageItem()],
+      multiStepQuestions: [],
     };
+  }
+
+  function setMultiStepPoints(roundId: string, nextPoints: number[]) {
+    const pointsPerStep = nextPoints.length ? nextPoints : [1];
+    updateRound(roundId, (prev) => ({
+      ...prev,
+      pointsPerStep,
+      multiStepQuestions: normalizeStepCount(prev.multiStepQuestions, pointsPerStep.length),
+    }));
   }
 
   function beginRoundRename(round: BuildRound) {
@@ -482,9 +585,9 @@ export default function RoundBuilderPanel({
 
   const previewQuestionsCount = useMemo(() => {
     if (!previewRound) return 0;
-    return previewRound.type === "text"
-      ? previewRound.textQuestions.length
-      : previewRound.imageItems.length;
+    if (previewRound.type === "text") return previewRound.textQuestions.length;
+    if (previewRound.type === "multi-step") return previewRound.multiStepQuestions.length;
+    return previewRound.imageItems.length;
   }, [previewRound]);
 
   const boundedPreviewQuestionIndex = useMemo(() => {
@@ -502,15 +605,23 @@ export default function RoundBuilderPanel({
     return previewRound.imageItems[boundedPreviewQuestionIndex] ?? null;
   }, [boundedPreviewQuestionIndex, previewRound]);
 
+  const previewCurrentMultiStepQuestion = useMemo(() => {
+    if (!previewRound || previewRound.type !== "multi-step") return null;
+    return previewRound.multiStepQuestions[boundedPreviewQuestionIndex] ?? null;
+  }, [boundedPreviewQuestionIndex, previewRound]);
+
   const previewQuestionStageCount = useMemo(() => {
     if (!previewRound) return 0;
     if (previewRound.type === "text") {
       return previewCurrentTextQuestion?.promptStages.length ?? 0;
     }
+    if (previewRound.type === "multi-step") {
+      return previewCurrentMultiStepQuestion?.steps.length ?? 0;
+    }
     const promptStage = previewCurrentImageItem?.answerStage;
     if (!promptStage) return 0;
     return promptStage.text.trim() || promptStage.mediaPath ? 1 : 0;
-  }, [previewCurrentImageItem, previewCurrentTextQuestion, previewRound]);
+  }, [previewCurrentImageItem, previewCurrentMultiStepQuestion, previewCurrentTextQuestion, previewRound]);
 
   const boundedPreviewPromptPage = useMemo(() => {
     if (!previewQuestionStageCount) return 0;
@@ -522,8 +633,11 @@ export default function RoundBuilderPanel({
     if (previewRound.type === "text") {
       return previewCurrentTextQuestion?.answerStages.length ?? 0;
     }
+    if (previewRound.type === "multi-step") {
+      return previewCurrentMultiStepQuestion?.answerStages.length ?? 0;
+    }
     return previewCurrentImageItem?.imagePath ? 1 : 0;
-  }, [previewCurrentImageItem, previewCurrentTextQuestion, previewRound, previewWithAnswer]);
+  }, [previewCurrentImageItem, previewCurrentMultiStepQuestion, previewCurrentTextQuestion, previewRound, previewWithAnswer]);
 
   const boundedPreviewAnswerPage = useMemo(() => {
     if (!previewAnswerStageCount) return 0;
@@ -533,9 +647,14 @@ export default function RoundBuilderPanel({
   const stagedPreviewQuestion = useMemo<RoundQuestion | null>(() => {
     if (!previewRound || !isPreviewQuestionVisible) return null;
 
-    if (previewRound.type === "text") {
-      if (!previewCurrentTextQuestion) return null;
-      const currentStage = previewCurrentTextQuestion.promptStages[boundedPreviewPromptPage];
+    if (previewRound.type === "text" || previewRound.type === "multi-step") {
+      const question = previewRound.type === "text" ? previewCurrentTextQuestion : previewCurrentMultiStepQuestion;
+      if (!question) return null;
+      const promptSource =
+        previewRound.type === "text"
+          ? previewCurrentTextQuestion?.promptStages ?? []
+          : previewCurrentMultiStepQuestion?.steps ?? [];
+      const currentStage = promptSource[boundedPreviewPromptPage];
       const stageText = currentStage?.text?.trim() ? currentStage.text.trim() : null;
       const stageMediaPath = currentStage?.mediaPath ?? null;
       const stageMedia: RoundQuestionMedia | null = stageMediaPath
@@ -545,7 +664,7 @@ export default function RoundBuilderPanel({
             originalPath: stageMediaPath,
           }
         : null;
-      const promptStages: RoundQuestionStage[] = previewCurrentTextQuestion.promptStages.map((stage) => ({
+      const promptStages: RoundQuestionStage[] = promptSource.map((stage) => ({
         text: stage.text.trim() ? stage.text.trim() : null,
         media: stage.mediaPath
           ? {
@@ -555,7 +674,7 @@ export default function RoundBuilderPanel({
             }
           : null,
       }));
-      const answerStages: RoundQuestionStage[] = previewCurrentTextQuestion.answerStages.map((stage) => ({
+      const answerStages: RoundQuestionStage[] = question.answerStages.map((stage) => ({
         text: stage.text.trim() ? stage.text.trim() : null,
         media: stage.mediaPath
           ? {
@@ -567,14 +686,14 @@ export default function RoundBuilderPanel({
       }));
 
       return {
-        id: previewCurrentTextQuestion.id,
+        id: question.id,
         order: boundedPreviewQuestionIndex,
         displayPrompt: stageText ?? `Question ${boundedPreviewQuestionIndex + 1}`,
         prompt: stageText,
         media: stageMedia,
         promptStages,
         answerStages,
-        answerHint: previewCurrentTextQuestion.answerHint,
+        answerHint: question.answerHint,
         correctAnswer: null,
       };
     }
@@ -607,6 +726,7 @@ export default function RoundBuilderPanel({
     isPreviewQuestionVisible,
     boundedPreviewQuestionIndex,
     previewCurrentImageItem,
+    previewCurrentMultiStepQuestion,
     previewCurrentTextQuestion,
     previewRound,
   ]);
@@ -628,11 +748,12 @@ export default function RoundBuilderPanel({
   const previewPresentingAnswer = useMemo(() => {
     if (!previewWithAnswer || !previewRound) return null;
     if (previewRound.type === "image") return null;
-    if (!previewCurrentTextQuestion) return null;
-    const stage = previewCurrentTextQuestion.answerStages[boundedPreviewAnswerPage];
+    const question = previewRound.type === "text" ? previewCurrentTextQuestion : previewCurrentMultiStepQuestion;
+    if (!question) return null;
+    const stage = question.answerStages[boundedPreviewAnswerPage];
     const text = stage?.text?.trim();
     return text ? text : null;
-  }, [boundedPreviewAnswerPage, previewCurrentTextQuestion, previewRound, previewWithAnswer]);
+  }, [boundedPreviewAnswerPage, previewCurrentMultiStepQuestion, previewCurrentTextQuestion, previewRound, previewWithAnswer]);
 
   const previewPresentingAnswerMedia = useMemo<RoundQuestionMedia | null>(() => {
     if (!previewWithAnswer || !previewRound) return null;
@@ -645,8 +766,9 @@ export default function RoundBuilderPanel({
         originalPath: imagePath,
       };
     }
-    if (!previewCurrentTextQuestion) return null;
-    const stage = previewCurrentTextQuestion.answerStages[boundedPreviewAnswerPage];
+    const question = previewRound.type === "text" ? previewCurrentTextQuestion : previewCurrentMultiStepQuestion;
+    if (!question) return null;
+    const stage = question.answerStages[boundedPreviewAnswerPage];
     const mediaPath = stage?.mediaPath ?? null;
     if (!mediaPath) return null;
     return {
@@ -657,6 +779,7 @@ export default function RoundBuilderPanel({
   }, [
     boundedPreviewAnswerPage,
     previewCurrentImageItem,
+    previewCurrentMultiStepQuestion,
     previewCurrentTextQuestion,
     previewRound,
     previewWithAnswer,
@@ -790,7 +913,7 @@ export default function RoundBuilderPanel({
                 <div className="space-y-2">
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">Type</p>
                   <div className="inline-flex rounded-lg border border-zinc-300 p-1 dark:border-zinc-700">
-                    {(["text", "image"] as const).map((type) => (
+                    {(["text", "image", "multi-step"] as const).map((type) => (
                       <button
                         key={type}
                         type="button"
@@ -808,7 +931,7 @@ export default function RoundBuilderPanel({
                           .filter(Boolean)
                           .join(" ")}
                       >
-                        {type === "text" ? "Text" : "Image"}
+                        {type === "text" ? "Text" : type === "image" ? "Image" : "Multi-step"}
                       </button>
                     ))}
                   </div>
@@ -1077,6 +1200,305 @@ export default function RoundBuilderPanel({
                             </div>
                           </div>
                         ) : null}
+                              </>
+                            )}
+                          </SortableQuestionCard>
+                        ))}
+                      </SortableContext>
+                    </DndContext>
+                  </div>
+                ) : round.type === "multi-step" ? (
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex items-center gap-1 text-sm font-semibold text-zinc-700 dark:text-zinc-200">
+                          <span>Steps</span>
+                          <span
+                            className="cursor-help text-xs font-semibold text-emerald-600 underline decoration-dotted underline-offset-2 dark:text-emerald-300"
+                            title="Configure points per step"
+                          >
+                            ?
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {round.pointsPerStep.map((points, pointIndex) => (
+                            <div key={pointIndex} className="flex w-fit items-center rounded-md border border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-900">
+                              <span className="px-2 text-xs font-semibold text-zinc-500" title="Step">
+                                {pointIndex + 1}
+                              </span>
+                              <StepPointsInput
+                                value={points}
+                                onChange={(next) => {
+                                  setMultiStepPoints(
+                                    round.id,
+                                    round.pointsPerStep.map((entry, index) =>
+                                      index === pointIndex ? next : entry
+                                    )
+                                  );
+                                }}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (round.pointsPerStep.length <= 1) return;
+                                  const hasContent = round.multiStepQuestions.some((question) =>
+                                    hasStageContent(question.steps[pointIndex])
+                                  );
+                                  if (hasContent && !window.confirm("Remove this step?")) return;
+                                  setMultiStepPoints(
+                                    round.id,
+                                    round.pointsPerStep.filter((_entry, index) => index !== pointIndex)
+                                  );
+                                }}
+                                disabled={round.pointsPerStep.length <= 1}
+                                className="inline-flex h-8 w-8 items-center justify-center text-sm font-semibold text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
+                                title="Remove step"
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => setMultiStepPoints(round.id, [...round.pointsPerStep, 1])}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-zinc-900 text-sm font-semibold text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+                            aria-label="Add step"
+                            title="Add step"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+                      <label className="inline-flex items-center gap-2 text-sm font-semibold text-zinc-700 dark:text-zinc-200">
+                        <input
+                          type="checkbox"
+                          checked={round.allowAnswerChanges}
+                          onChange={(event) =>
+                            updateRound(round.id, (prev) => ({
+                              ...prev,
+                              allowAnswerChanges: event.target.checked,
+                            }))
+                          }
+                          className="h-4 w-4 accent-emerald-500"
+                        />
+                        Allow changing answers
+                      </label>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">Questions</p>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateRound(round.id, (prev) => ({
+                            ...prev,
+                            multiStepQuestions: [
+                              ...prev.multiStepQuestions,
+                              createMultiStepQuestion(prev.pointsPerStep.length),
+                            ],
+                          }))
+                        }
+                        className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-zinc-900 text-sm font-semibold text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+                        aria-label="Add question"
+                        title="Add question"
+                      >
+                        +
+                      </button>
+                    </div>
+
+                    <DndContext
+                      sensors={sensors}
+                      collisionDetection={closestCenter}
+                      onDragEnd={(event) => handleMultiStepQuestionDragEnd(round.id, event)}
+                    >
+                      <SortableContext
+                        items={round.multiStepQuestions.map((question) => question.id)}
+                        strategy={verticalListSortingStrategy}
+                      >
+                        {round.multiStepQuestions.map((question, questionIndex) => (
+                          <SortableQuestionCard
+                            key={question.id}
+                            id={question.id}
+                            dragLabel={`Reorder question ${questionIndex + 1}`}
+                          >
+                            {(questionDragHandle) => (
+                              <>
+                                <div className="flex items-center gap-2">
+                                  {questionDragHandle}
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      updateRound(round.id, (prev) => ({
+                                        ...prev,
+                                        multiStepQuestions: prev.multiStepQuestions.map((item) =>
+                                          item.id === question.id ? { ...item, collapsed: !item.collapsed } : item
+                                        ),
+                                      }))
+                                    }
+                                    className="inline-flex h-6 w-6 items-center justify-center rounded bg-zinc-200 text-zinc-700 hover:bg-zinc-300 dark:bg-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-600"
+                                  >
+                                    {question.collapsed ? "▸" : "▾"}
+                                  </button>
+                                  <p className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">
+                                    Question {questionIndex + 1}
+                                  </p>
+                                  <button
+                                    type="button"
+                                    onClick={() => openPreview(round.id, questionIndex)}
+                                    className="ml-auto inline-flex h-6 w-6 items-center justify-center rounded bg-zinc-200 text-zinc-700 hover:bg-zinc-300 dark:bg-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-600"
+                                    aria-label="Preview question"
+                                    title="Preview"
+                                  >
+                                    <EyeIcon className="h-4 w-4" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      updateRound(round.id, (prev) => ({
+                                        ...prev,
+                                        multiStepQuestions: prev.multiStepQuestions.filter(
+                                          (item) => item.id !== question.id
+                                        ),
+                                      }))
+                                    }
+                                    className="inline-flex h-6 w-6 items-center justify-center rounded bg-red-100 text-sm font-semibold text-red-600 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-200 dark:hover:bg-red-900/60"
+                                    aria-label="Remove question"
+                                    title="Remove question"
+                                  >
+                                    ×
+                                  </button>
+                                </div>
+
+                                {!question.collapsed ? (
+                                  <div className="grid lg:grid-cols-2 lg:divide-x lg:divide-zinc-200 dark:lg:divide-zinc-700">
+                                    <div className="space-y-2 lg:pr-4">
+                                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                                        Steps
+                                      </p>
+                                      <div className="space-y-2">
+                                        {question.steps.map((stage, stageIndex) => (
+                                          <StageEditor
+                                            key={stage.id}
+                                            stage={stage}
+                                            title={`${stageIndex + 1}`}
+                                            mediaFiles={mediaFiles}
+                                            onChange={(nextStage) =>
+                                              updateRound(round.id, (prev) => ({
+                                                ...prev,
+                                                multiStepQuestions: prev.multiStepQuestions.map((item) =>
+                                                  item.id === question.id
+                                                    ? {
+                                                        ...item,
+                                                        steps: item.steps.map((entry) =>
+                                                          entry.id === stage.id ? nextStage : entry
+                                                        ),
+                                                      }
+                                                    : item
+                                                ),
+                                              }))
+                                            }
+                                          />
+                                        ))}
+                                      </div>
+                                    </div>
+
+                                    <div className="space-y-2 lg:pl-4">
+                                      <div className="flex items-center justify-between">
+                                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
+                                          Answer
+                                        </p>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            updateRound(round.id, (prev) => ({
+                                              ...prev,
+                                              multiStepQuestions: prev.multiStepQuestions.map((item) =>
+                                                item.id === question.id
+                                                  ? { ...item, answerStages: [...item.answerStages, createStage()] }
+                                                  : item
+                                              ),
+                                            }))
+                                          }
+                                          className="rounded bg-zinc-900 px-2 py-1 text-xs font-semibold text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+                                          aria-label="Add answer stage"
+                                          title="Add answer stage"
+                                        >
+                                          Add stage
+                                        </button>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <p className="px-1 text-sm font-semibold text-zinc-700 dark:text-white">
+                                          Hint
+                                        </p>
+                                        <input
+                                          value={question.answerHint}
+                                          onChange={(event) =>
+                                            updateRound(round.id, (prev) => ({
+                                              ...prev,
+                                              multiStepQuestions: prev.multiStepQuestions.map((item) =>
+                                                item.id === question.id
+                                                  ? { ...item, answerHint: event.target.value }
+                                                  : item
+                                              ),
+                                            }))
+                                          }
+                                          placeholder="Host grading hint"
+                                          className={[
+                                            "min-w-0 flex-1 rounded-md border bg-white px-2 py-1.5 text-sm text-zinc-900 focus:outline-none focus:ring-2 dark:bg-zinc-900 dark:text-zinc-100",
+                                            question.answerHint.trim().length
+                                              ? "border-zinc-300 focus:border-emerald-400 focus:ring-emerald-200 dark:border-zinc-700"
+                                              : "border-red-300 focus:border-red-400 focus:ring-red-200 dark:border-red-800",
+                                          ]
+                                            .filter(Boolean)
+                                            .join(" ")}
+                                        />
+                                      </div>
+                                      <div className="space-y-2">
+                                        {question.answerStages.map((stage) => (
+                                          <StageEditor
+                                            key={stage.id}
+                                            stage={stage}
+                                            title="Stage"
+                                            mediaFiles={mediaFiles}
+                                            onChange={(nextStage) =>
+                                              updateRound(round.id, (prev) => ({
+                                                ...prev,
+                                                multiStepQuestions: prev.multiStepQuestions.map((item) =>
+                                                  item.id === question.id
+                                                    ? {
+                                                        ...item,
+                                                        answerStages: item.answerStages.map((entry) =>
+                                                          entry.id === stage.id ? nextStage : entry
+                                                        ),
+                                                      }
+                                                    : item
+                                                ),
+                                              }))
+                                            }
+                                            onRemove={
+                                              question.answerStages.length > 1
+                                                ? () =>
+                                                    updateRound(round.id, (prev) => ({
+                                                      ...prev,
+                                                      multiStepQuestions: prev.multiStepQuestions.map((item) =>
+                                                        item.id === question.id
+                                                          ? {
+                                                              ...item,
+                                                              answerStages: item.answerStages.filter(
+                                                                (entry) => entry.id !== stage.id
+                                                              ),
+                                                            }
+                                                          : item
+                                                      ),
+                                                    }))
+                                                : undefined
+                                            }
+                                          />
+                                        ))}
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : null}
                               </>
                             )}
                           </SortableQuestionCard>
@@ -1369,32 +1791,18 @@ export default function RoundBuilderPanel({
                         {boundedPreviewQuestionIndex < previewQuestionsCount - 1 ? ">" : "↺"}
                       </button>
 
-                      {previewQuestionStageCount > 1 ? (
-                        <>
-                          <span className="text-zinc-400">Page</span>
-                          <button
-                            type="button"
-                            onClick={() => setPreviewPromptPage((prev) => Math.max(0, prev - 1))}
-                            disabled={boundedPreviewPromptPage <= 0}
-                            className="rounded-lg bg-zinc-700 px-2 py-2 text-white transition hover:bg-zinc-600 disabled:cursor-not-allowed disabled:opacity-70"
-                          >
-                            {"<"}
-                          </button>
-                          <span className="min-w-3 text-center text-zinc-100">
-                            {boundedPreviewPromptPage + 1}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const isLast = boundedPreviewPromptPage >= previewQuestionStageCount - 1;
-                              setPreviewPromptPage(isLast ? 0 : boundedPreviewPromptPage + 1);
-                            }}
-                            className="rounded-lg bg-zinc-700 px-2 py-2 text-white transition hover:bg-zinc-600"
-                          >
-                            {boundedPreviewPromptPage < previewQuestionStageCount - 1 ? ">" : "↺"}
-                          </button>
-                        </>
-                      ) : null}
+                      <PromptNavigation
+                        type={previewRoundMeta.type}
+                        page={boundedPreviewPromptPage}
+                        count={previewQuestionStageCount}
+                        onPrevious={() => setPreviewPromptPage((prev) => Math.max(0, prev - 1))}
+                        onNext={() => {
+                          const next = boundedPreviewPromptPage + 1;
+                          if (previewRoundMeta.type === "multi-step") {
+                            if (next < previewQuestionStageCount) setPreviewPromptPage(next);
+                          } else setPreviewPromptPage(next < previewQuestionStageCount ? next : 0);
+                        }}
+                      />
                     </>
                   ) : null}
 

@@ -47,6 +47,19 @@ type QuizImageRound = {
   }>;
 };
 
+type QuizMultiStepRound = {
+  type: "multi-step";
+  title: string;
+  pointsPerStep: number[];
+  allowAnswerChanges: boolean;
+  questions: Array<{
+    steps: QuizStage[];
+    answer: { hint: string; stages: QuizStage[] };
+  }>;
+};
+
+type QuizRound = QuizTextRound | QuizImageRound | QuizMultiStepRound;
+
 function makeId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
@@ -80,8 +93,8 @@ function normalizeBuilderStage(stage: { text: string; mediaPath: string | null }
   return next;
 }
 
-function buildQuizFromBuilderState(rounds: BuildRound[], mediaFiles: MediaTreeFile[]): {
-  quizRounds: Array<QuizTextRound | QuizImageRound>;
+export function buildQuizFromBuilderState(rounds: BuildRound[], mediaFiles: MediaTreeFile[]): {
+  quizRounds: QuizRound[];
   errors: string[];
 } {
   const errors: string[] = [];
@@ -100,7 +113,7 @@ function buildQuizFromBuilderState(rounds: BuildRound[], mediaFiles: MediaTreeFi
     errors.push("Add at least one round.");
   }
 
-  const quizRounds: Array<QuizTextRound | QuizImageRound> = [];
+  const quizRounds: QuizRound[] = [];
 
   rounds.forEach((round, roundIndex) => {
     const roundNo = roundIndex + 1;
@@ -174,6 +187,78 @@ function buildQuizFromBuilderState(rounds: BuildRound[], mediaFiles: MediaTreeFi
       return;
     }
 
+    if (round.type === "multi-step") {
+      if (!round.multiStepQuestions.length) {
+        errors.push(`Round ${roundNo}: add at least one question.`);
+        return;
+      }
+
+      const pointsPerStep = round.pointsPerStep.filter((points) => Number.isFinite(points));
+      if (pointsPerStep.length !== round.pointsPerStep.length || !pointsPerStep.length) {
+        errors.push(`Round ${roundNo}: points per step must be finite numbers.`);
+      }
+
+      const questions: QuizMultiStepRound["questions"] = [];
+      round.multiStepQuestions.forEach((question, questionIndex) => {
+        const qNo = questionIndex + 1;
+        if (question.steps.length !== round.pointsPerStep.length) {
+          errors.push(`Round ${roundNo}, question ${qNo}: step count must match points.`);
+        }
+
+        const steps: QuizStage[] = [];
+        question.steps.forEach((stage, stageIndex) => {
+          const normalized = normalizeBuilderStage(stage);
+          if (!normalized) {
+            errors.push(`Round ${roundNo}, question ${qNo}, step ${stageIndex + 1}: text or media is required.`);
+            return;
+          }
+          if (normalized.media && !mediaByPath.has(normalized.media)) {
+            errors.push(`Round ${roundNo}, question ${qNo}, step ${stageIndex + 1}: media file not found (${normalized.media}).`);
+          } else if (normalized.media) {
+            usedMediaPaths.add(normalized.media);
+          }
+          steps.push(normalized);
+        });
+
+        const answerHint = question.answerHint.trim();
+        if (!answerHint) {
+          errors.push(`Round ${roundNo}, question ${qNo}: hint is required.`);
+        }
+
+        const answerStages: QuizStage[] = [];
+        question.answerStages.forEach((stage, stageIndex) => {
+          const normalized = normalizeBuilderStage(stage);
+          if (!normalized) {
+            errors.push(`Round ${roundNo}, question ${qNo}, answer stage ${stageIndex + 1}: text or media is required.`);
+            return;
+          }
+          if (normalized.media && !mediaByPath.has(normalized.media)) {
+            errors.push(`Round ${roundNo}, question ${qNo}, answer stage ${stageIndex + 1}: media file not found (${normalized.media}).`);
+          } else if (normalized.media) {
+            usedMediaPaths.add(normalized.media);
+          }
+          answerStages.push(normalized);
+        });
+
+        questions.push({
+          steps,
+          answer: {
+            hint: answerHint,
+            stages: answerStages,
+          },
+        });
+      });
+
+      quizRounds.push({
+        type: "multi-step",
+        title: title || `Round ${roundNo}`,
+        pointsPerStep: round.pointsPerStep,
+        allowAnswerChanges: round.allowAnswerChanges,
+        questions,
+      });
+      return;
+    }
+
     if (!round.imageItems.length) {
       errors.push(`Round ${roundNo}: add at least one image.`);
       return;
@@ -219,13 +304,25 @@ function buildQuizFromBuilderState(rounds: BuildRound[], mediaFiles: MediaTreeFi
   return { quizRounds, errors };
 }
 
-function collectReferencedMediaPaths(rounds: Array<QuizTextRound | QuizImageRound>): Set<string> {
+function collectReferencedMediaPaths(rounds: QuizRound[]): Set<string> {
   const refs = new Set<string>();
 
   rounds.forEach((round) => {
     if (round.type === "text") {
       round.questions.forEach((question) => {
         question.prompt.stages.forEach((stage) => {
+          if (stage.media) refs.add(stage.media);
+        });
+        question.answer.stages.forEach((stage) => {
+          if (stage.media) refs.add(stage.media);
+        });
+      });
+      return;
+    }
+
+    if (round.type === "multi-step") {
+      round.questions.forEach((question) => {
+        question.steps.forEach((stage) => {
           if (stage.media) refs.add(stage.media);
         });
         question.answer.stages.forEach((stage) => {
@@ -244,7 +341,7 @@ function collectReferencedMediaPaths(rounds: Array<QuizTextRound | QuizImageRoun
   return refs;
 }
 
-function mapQuizRoundsToBuildRounds(rounds: Array<QuizTextRound | QuizImageRound>): BuildRound[] {
+function mapQuizRoundsToBuildRounds(rounds: QuizRound[]): BuildRound[] {
   return rounds.map((round) => {
     if (round.type === "text") {
       return {
@@ -260,6 +357,29 @@ function mapQuizRoundsToBuildRounds(rounds: Array<QuizTextRound | QuizImageRound
           answerStages: question.answer.stages.map((stage) => toStage(stage)),
         })),
         imageItems: [],
+        multiStepQuestions: [],
+        pointsPerStep: [1],
+        allowAnswerChanges: false,
+      } satisfies BuildRound;
+    }
+
+    if (round.type === "multi-step") {
+      return {
+        id: makeId(),
+        collapsed: false,
+        name: round.title,
+        type: "multi-step",
+        textQuestions: [],
+        imageItems: [],
+        multiStepQuestions: round.questions.map((question) => ({
+          id: makeId(),
+          collapsed: false,
+          steps: question.steps.map((stage) => toStage(stage)),
+          answerHint: question.answer.hint,
+          answerStages: question.answer.stages.map((stage) => toStage(stage)),
+        })),
+        pointsPerStep: round.pointsPerStep,
+        allowAnswerChanges: round.allowAnswerChanges,
       } satisfies BuildRound;
     }
 
@@ -275,6 +395,9 @@ function mapQuizRoundsToBuildRounds(rounds: Array<QuizTextRound | QuizImageRound
         imagePath: question.image,
         answerStage: toStage(question.prompt),
       })),
+      multiStepQuestions: [],
+      pointsPerStep: [1],
+      allowAnswerChanges: false,
     } satisfies BuildRound;
   });
 }
@@ -481,7 +604,7 @@ export default function BuildPage() {
         return;
       }
 
-      const quizRounds = parsedQuiz as Array<QuizTextRound | QuizImageRound>;
+      const quizRounds = parsedQuiz as QuizRound[];
       const referencedMedia = collectReferencedMediaPaths(quizRounds);
 
       const mediaEntryMap = new Map<string, { path: string; bytes: Uint8Array }>();
