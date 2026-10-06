@@ -1,0 +1,165 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { collection, doc, getDocFromServer, onSnapshot } from "firebase/firestore";
+import type { Question, QuizRoundData } from "@/types/quiz";
+import { isAnswerCommitted, latestAttempt, parseTeamAnswer, type AnswerMutation, type TeamAnswer } from "@/lib/answers";
+import { AnswerWriteQueue, type PendingAnswer } from "@/lib/answer-write-queue";
+import { getClientFirestore } from "@/lib/firebase/client";
+import { useFirebaseAuth } from "@/app/providers/firebase-auth-provider";
+
+type AnswerRoundProps = {
+  type: "text" | "multi-step";
+  questions: Question[];
+  roomSlug?: string;
+  roundId: string;
+  teamId?: string;
+  presenting?: QuizRoundData["presenting"];
+  allowAnswerChanges?: boolean;
+  onAnswer?: (question: Question, answer: string) => void;
+};
+
+export function AnswerInputs({
+  questions, type, presenting, roundId, allowAnswerChanges, answers, pending, enabled, error, onChange,
+}: AnswerRoundProps & {
+  answers: Record<string, TeamAnswer>;
+  pending: Record<string, PendingAnswer>;
+  enabled: boolean;
+  error: string | null;
+  onChange: (questionId: string, mutation: AnswerMutation, expectedStep?: number) => void;
+}) {
+  const step = presenting?.promptPage ?? 0;
+  return (
+    <form className="flex h-full w-full flex-col gap-4 overflow-hidden" onSubmit={(event) => event.preventDefault()}>
+      {error ? <p className="text-xs font-semibold text-red-500">{error}</p> : null}
+      <div className="min-h-0 flex-1 space-y-4 overflow-auto pr-2">
+        {questions.map((question, index) => {
+          const key = String(question.id ?? `question-${index}`);
+          const saved = answers[key];
+          const value = { answer: saved?.answer ?? question.answer ?? "", locked: saved?.locked ?? false, ...pending[key] };
+          const attempts = saved?.attempts ?? [];
+          const latest = latestAttempt(attempts);
+          const isMultiStep = type === "multi-step";
+          const canEdit = enabled && (!isMultiStep || (
+            typeof allowAnswerChanges === "boolean" &&
+            presenting?.round === roundId && presenting.question === key && !presenting.withAnswer &&
+            step > (question.finalizedStep ?? -1) && !isAnswerCommitted(allowAnswerChanges, attempts)
+          ));
+          return (
+            <div key={key} className="flex items-center gap-3">
+              <span className="w-6 shrink-0 text-sm font-semibold text-zinc-600 dark:text-zinc-300">{index + 1}.</span>
+              {isMultiStep && latest ? (
+                <span className="inline-flex h-6 min-w-6 shrink-0 items-center justify-center rounded-md bg-emerald-100 px-1.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200" title="Step">
+                  {latest.step + 1}
+                </span>
+              ) : null}
+              <input
+                type="text"
+                aria-label={`Answer ${index + 1}`}
+                maxLength={10000}
+                value={value.answer}
+                disabled={!canEdit || value.locked}
+                onChange={(event) => onChange(key, { answer: event.target.value }, isMultiStep ? step : undefined)}
+                placeholder="Answer goes here"
+                className="min-w-0 flex-1 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-950 dark:text-white dark:placeholder:text-zinc-500 dark:focus:border-blue-400 dark:focus:ring-blue-400/30"
+              />
+              <button
+                type="button"
+                onClick={() => onChange(key, { locked: !value.locked }, isMultiStep ? step : undefined)}
+                disabled={!canEdit || pending[key]?.locked !== undefined}
+                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md border text-white transition disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-300 disabled:opacity-60 dark:disabled:border-zinc-700 dark:disabled:bg-zinc-700 ${value.locked ? "border-zinc-300 bg-zinc-500 hover:bg-zinc-400 dark:border-zinc-700 dark:bg-zinc-700" : "border-emerald-500 bg-emerald-500 hover:bg-emerald-400"}`}
+                title={value.locked ? "Edit answer" : "Lock answer"}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-4 w-4">
+                  <path d={value.locked ? "M4 20h4l10.5-10.5a1.5 1.5 0 00-3-3L5 17v3z" : "M5 13l4 4L19 7"} strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </form>
+  );
+}
+
+export default function AnswerRound(props: AnswerRoundProps) {
+  const { roomSlug, roundId, teamId, onAnswer, questions } = props;
+  const { getToken } = useFirebaseAuth();
+  const [answers, setAnswers] = useState<Record<string, TeamAnswer>>({});
+  const [pending, setPending] = useState<Record<string, PendingAnswer>>({});
+  const [enabled, setEnabled] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const queues = useRef(new Map<string, AnswerWriteQueue>());
+
+  useEffect(() => {
+    if (!roomSlug || !teamId) return;
+    const activeQueues = queues.current;
+    const answersRef = collection(getClientFirestore(), "rooms", roomSlug, "teams", teamId, "rounds", roundId, "answers");
+    let initial = true;
+    const unsubscribe = onSnapshot(answersRef, { includeMetadataChanges: true }, (snapshot) => {
+      try {
+        const changes: Record<string, TeamAnswer> = {};
+        const removed: string[] = [];
+        snapshot.docChanges().forEach(({ doc: answer, type }) => {
+          if (type === "removed") removed.push(answer.id);
+          else changes[answer.id] = parseTeamAnswer(answer.data());
+        });
+        const reset = initial;
+        initial = false;
+        setAnswers((previous) => {
+          const next = reset ? changes : { ...previous, ...changes };
+          removed.forEach((id) => delete next[id]);
+          return next;
+        });
+        setEnabled(!snapshot.metadata.fromCache);
+      } catch {
+        setError("Unable to load team answers.");
+        setEnabled(false);
+      }
+    }, () => { setError("Unable to load team answers."); setEnabled(false); });
+    return () => {
+      unsubscribe();
+      activeQueues.forEach((queue) => queue.dispose());
+      activeQueues.clear();
+    };
+  }, [roomSlug, roundId, teamId]);
+
+  function changeAnswer(questionId: string, mutation: AnswerMutation, expectedStep?: number) {
+    if (!roomSlug || !teamId) return;
+    setError(null);
+    let queue = queues.current.get(questionId);
+    if (!queue) {
+      const answerRef = doc(getClientFirestore(), "rooms", roomSlug, "teams", teamId, "rounds", roundId, "answers", questionId);
+      queue = new AnswerWriteQueue({
+        write: async (change, step) => {
+          const token = await getToken();
+          const response = await fetch(`/api/rooms/${roomSlug}/rounds/${roundId}/answers/${questionId}`, {
+            method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ teamId, ...change, ...(step === undefined ? {} : { expectedStep: step }) }),
+          });
+          if (!response.ok) {
+            const payload = await response.json().catch(() => ({}));
+            throw new Error(payload.message ?? "Answer changes were not saved.");
+          }
+          if (change.locked === true && onAnswer) {
+            const saved = await response.json();
+            const question = questions.find((item, index) => String(item.id ?? `question-${index}`) === questionId);
+            if (question) onAnswer(question, saved.answer.trim());
+          }
+        },
+        synchronize: async () => { await getDocFromServer(answerRef); },
+        pending: (value) => setPending((previous) => {
+          const next = { ...previous };
+          if (value) next[questionId] = value;
+          else delete next[questionId];
+          return next;
+        }),
+        error: (saveError) => setError(saveError instanceof Error ? saveError.message : "Answer changes were not saved."),
+      });
+      queues.current.set(questionId, queue);
+    }
+    queue.enqueue(mutation, expectedStep);
+  }
+
+  return <AnswerInputs {...props} answers={answers} pending={pending} enabled={enabled} error={error} onChange={changeAnswer} />;
+}

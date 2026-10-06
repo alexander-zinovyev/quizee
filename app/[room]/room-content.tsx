@@ -236,6 +236,26 @@ export default function RoomContent({
           };
         }
 
+        if (meta.type === "multi-step") {
+          if (typeof meta.allowAnswerChanges !== "boolean") throw new Error("Invalid answer-change policy.");
+          return {
+            id: meta.id,
+            type: "multi-step",
+            allowAnswerChanges: meta.allowAnswerChanges,
+            title: meta.title,
+            roundNumber: meta.order + 1 || index + 1,
+            questions: questions.map((q) => ({
+              ...q,
+              prompt:
+                q.promptStages?.[0]?.text?.trim() ||
+                q.prompt ||
+                q.displayPrompt,
+              media: null,
+            })),
+            presenting,
+          };
+        }
+
         if (meta.type === "image") {
           const imagesForRound = roundImages[meta.id] ?? [];
           const images = imagesForRound
@@ -280,7 +300,7 @@ export default function RoomContent({
       });
 
     return mapped.filter((round): round is QuizRoundData => Boolean(round));
-  }, [getCachedMediaUrl, mediaCacheVersion, roundImages, roundQuestions, roundsMeta]);
+  }, [getCachedMediaUrl, mediaCacheVersion, presenting, roundImages, roundQuestions, roundsMeta]);
 
   const activeTextRoundMeta = useMemo(() => {
     return roundsMeta.find((meta) => meta.state === "active" && meta.type === "text") ?? null;
@@ -453,6 +473,33 @@ export default function RoomContent({
     return Math.min(index, answerPageCount - 1);
   }, [answerPageCount, presenting?.answerPage]);
 
+  async function persistPresentation(next: {
+    round: string | null;
+    question: string | null;
+    withAnswer: boolean;
+    promptPage?: number;
+    answerPage?: number;
+  }, options: { activateRound?: string; closeRound?: string } = {}) {
+    const token = await getToken();
+    const response = await fetch(`/api/rooms/${roomSlug}/presenting`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        expected: {
+          round: presenting?.round ?? null, question: presenting?.question ?? null,
+          withAnswer: presenting?.withAnswer ?? false, promptPage: presenting?.promptPage ?? 0,
+          answerPage: presenting?.answerPage ?? 0,
+        },
+        next: { ...next, promptPage: next.promptPage ?? 0, answerPage: next.answerPage ?? 0 },
+        ...options,
+      }),
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.message ?? "Unable to update presentation.");
+    }
+  }
+
   async function updatePresenting(next: {
     round: string | null;
     question: string | null;
@@ -463,16 +510,7 @@ export default function RoomContent({
     if (!isHost) return;
     setIsPresentingUpdatePending(true);
     try {
-      const db = getClientFirestore();
-      await updateDoc(doc(db, "rooms", roomSlug), {
-        presenting: {
-          round: next.round,
-          question: next.question,
-          withAnswer: next.withAnswer,
-          promptPage: Math.max(0, next.promptPage ?? 0),
-          answerPage: Math.max(0, next.answerPage ?? 0),
-        },
-      });
+      await persistPresentation(next);
     } catch (error) {
       console.error("[room-content] update presenting failed", error);
       setRoundsError("Unable to update current question right now.");
@@ -529,23 +567,7 @@ export default function RoomContent({
     if (!isHost) return;
     setRoundsError(null);
     try {
-      const db = getClientFirestore();
-      await Promise.all([
-        updateDoc(doc(db, "rooms", roomSlug, "rounds", roundId), {
-          state: "active",
-          activeWindow: { startedAt: serverTimestamp(), endedAt: null },
-          gradingRequired: true,
-        }),
-        updateDoc(doc(db, "rooms", roomSlug), {
-          presenting: {
-            round: roundId,
-            question: null,
-            withAnswer: false,
-            promptPage: 0,
-            answerPage: 0,
-          },
-        }),
-      ]);
+      await persistPresentation({ round: roundId, question: null, withAnswer: false }, { activateRound: roundId });
     } catch (error) {
       console.error("[room-content] activate round failed", error);
       setRoundsError("Unable to activate that round right now.");
@@ -556,6 +578,16 @@ export default function RoomContent({
     if (!isHost) return;
     setRoundsError(null);
     try {
+      const meta = roundsMeta.find((round) => round.id === roundId);
+      if (meta?.type === "text" || meta?.type === "multi-step") {
+        const next = presenting?.round === roundId
+          ? { round: roundId, question: null, withAnswer: false }
+          : { round: presenting?.round ?? null, question: presenting?.question ?? null,
+              withAnswer: presenting?.withAnswer ?? false, promptPage: presenting?.promptPage ?? 0,
+              answerPage: presenting?.answerPage ?? 0 };
+        await persistPresentation(next, { closeRound: roundId });
+        return;
+      }
       const db = getClientFirestore();
       const roundRef = doc(db, "rooms", roomSlug, "rounds", roundId);
       await copyTeamAnswersToRound(roundId);
@@ -564,7 +596,6 @@ export default function RoomContent({
         activeWindow: { endedAt: serverTimestamp() },
         gradingRequired: true,
       });
-      const meta = roundsMeta.find((round) => round.id === roundId);
       if (meta?.type === "image") {
         await autoGradeImageRound(roundId);
       }
@@ -803,6 +834,11 @@ export default function RoomContent({
     if (!isHost || !activeRoundForControls || activeRoundForControls.state !== "active") return;
     setIsEndingRound(true);
     try {
+      if (activeRoundForControls.type === "text" || activeRoundForControls.type === "multi-step") {
+        await persistPresentation({ round: activeRoundForControls.id, question: null, withAnswer: false },
+          { closeRound: activeRoundForControls.id });
+        return;
+      }
       const db = getClientFirestore();
       const roundRef = doc(db, "rooms", roomSlug, "rounds", activeRoundForControls.id);
       await copyTeamAnswersToRound(activeRoundForControls.id);
@@ -1256,25 +1292,8 @@ export default function RoomContent({
     setRoundsError(null);
 
     try {
-      const db = getClientFirestore();
-      const roundRef = doc(db, "rooms", roomSlug, "rounds", nextScheduledRound.id);
-      const roomRef = doc(db, "rooms", roomSlug);
-      await Promise.all([
-        updateDoc(roundRef, {
-          state: "active",
-          activeWindow: { startedAt: serverTimestamp(), endedAt: null },
-          gradingRequired: true,
-        }),
-        updateDoc(roomRef, {
-          presenting: {
-            round: nextScheduledRound.id,
-            question: null,
-            withAnswer: false,
-            promptPage: 0,
-            answerPage: 0,
-          },
-        }),
-      ]);
+      await persistPresentation({ round: nextScheduledRound.id, question: null, withAnswer: false },
+        { activateRound: nextScheduledRound.id });
     } catch (error) {
       console.error("[room-content] activate next round failed", error);
       setRoundsError("Unable to start the next round right now.");

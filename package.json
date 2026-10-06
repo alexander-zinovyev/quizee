@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:validation": "tsx server/rooms/validation.test.ts && tsx server/rooms/manifest.test.ts && tsx lib/hooks/use-room-rounds.test.ts && tsx lib/hooks/use-presenting-media.test.ts && tsx app/build/page.test.ts && tsx lib/components/room/prompt-navigation.test.tsx"
+    "test:rules": "tsx server/rooms/answer-rules.test.ts",
+    "test:validation": "tsx server/rooms/validation.test.ts && tsx server/rooms/manifest.test.ts && tsx lib/answers.test.ts && tsx lib/answer-write-queue.test.ts && tsx server/rooms/answer-input.test.ts && tsx server/rooms/multi-step-submission.test.ts && tsx server/rooms/presentation.test.ts && tsx lib/components/answer-round.test.tsx && tsx lib/hooks/use-room-rounds.test.ts && tsx lib/hooks/use-presenting-media.test.ts && tsx app/build/page.test.ts && tsx lib/components/room/prompt-navigation.test.tsx"
   },
   "dependencies": {
     "@daily-co/daily-js": "^0.86.0",
@@ -29,9 +30,9 @@
     "next": "16.0.10",
     "next-auth": "^4.24.13",
     "pg": "^8.16.3",
-    "react": "19.2.0",
+    "react": "19.2.8",
     "react-color-palette": "^7.3.1",
-    "react-dom": "19.2.0"
+    "react-dom": "19.2.8"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

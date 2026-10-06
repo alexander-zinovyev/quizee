@@ -3,6 +3,7 @@ export type Question = {
    * Stable identifier for associating answers with questions.
    */
   id?: string | number;
+  finalizedStep?: number;
   /**
    * Optional description for the question
    */
@@ -48,6 +49,12 @@ type RoundData = {
    * Optional label to be displayed when there are no questions available.
    */
   emptyLabel?: string;
+  presenting?: {
+    round?: string | null;
+    question?: string | null;
+    promptPage?: number;
+    withAnswer?: boolean;
+  } | null;
 };
 
 export type TextRoundData = RoundData & {
@@ -59,7 +66,7 @@ export type TextRoundData = RoundData & {
   roomSlug?: string;
   teamId?: string;
   /**
-   * Fires whenever an answer is submitted.
+   * Fires when the saved text answer is manually locked.
    */
   onAnswer?: (question: Question, answer: string) => void;
 };
@@ -83,6 +90,14 @@ export type ImageItem = {
     label?: string;
 };
 
+export type MultiStepRoundData = RoundData & {
+  type: "multi-step";
+  allowAnswerChanges: boolean;
+  questions: Question[];
+  roomSlug?: string;
+  teamId?: string;
+};
+
 export type ImageRoundData = RoundData & {
   type: "image";
   /**
@@ -104,4 +119,4 @@ export type ImageRoundData = RoundData & {
   onAnswer?: (question: Question, answer: ImageItem) => void;
 };
 
-export type QuizRoundData = TextRoundData | ImageRoundData;
+export type QuizRoundData = TextRoundData | ImageRoundData | MultiStepRoundData;

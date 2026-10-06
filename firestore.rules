@@ -53,6 +53,12 @@ service cloud.firestore {
       return teamId == null || exists(/databases/$(database)/documents/rooms/$(roomId)/teams/$(teamId));
     }
 
+    function activeAnswerRound(roomId, roundId) {
+      return roundId != null
+        && roundDoc(roomId, roundId).data.type in ["text", "multi-step"]
+        && roundDoc(roomId, roundId).data.state == "active";
+    }
+
     match /rooms/{roomId} {
       // Public metadata only; keep sensitive fields out of this doc.
       allow read: if true;
@@ -60,6 +66,9 @@ service cloud.firestore {
         if isHost(roomId)
         && request.resource != null
         && validRoomState(request.resource.data.state)
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(["presenting"])
+          || (!activeAnswerRound(roomId, resource.data.presenting.round)
+            && !activeAnswerRound(roomId, request.resource.data.presenting.round)))
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           "state",
           "presenting",
@@ -110,9 +119,13 @@ service cloud.firestore {
         allow delete: if isHost(roomId);
 
         match /rounds/{roundId}/answers/{answerId} {
-          allow read, write:
+          allow read:
             if isMember(roomId)
             && memberTeam(roomId) == teamId;
+          allow write:
+            if isMember(roomId)
+            && memberTeam(roomId) == teamId
+            && roundDoc(roomId, roundId).data.type == "image";
         }
 
         match /scores/{roundId} {
@@ -123,7 +136,9 @@ service cloud.firestore {
 
       match /rounds/{roundId} {
         allow read: if isMember(roomId);
-        allow update: if isHost(roomId);
+        allow update: if isHost(roomId)
+          && (!(resource.data.type in ["text", "multi-step"])
+            || !request.resource.data.diff(resource.data).affectedKeys().hasAny(["state", "activeWindow"]));
         allow create, delete: if false;
 
         match /questions/{questionId} {

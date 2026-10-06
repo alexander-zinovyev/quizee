@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { QuizRoundData } from "@/types/quiz";
 import ImageQuizRound from "./image-round";
-import TextQuizRound from "./text-round";
+import AnswerRound from "./answer-round";
 
 export default function QuizRound(props: QuizRoundData) {
   const {
@@ -24,22 +24,25 @@ export default function QuizRound(props: QuizRoundData) {
     body = (
       <p className="text-sm text-zinc-500 dark:text-zinc-400">{emptyLabel}</p>
     );
-  } else if (props.type == "text") {
+  } else if (props.type === "text" || props.type === "multi-step") {
     const hydrationKey = props.questions
       .map((question) => {
         const baseKey = question.id ?? question.prompt;
-        return `text:${baseKey}:${question.answer ?? ""}`;
+        return `${props.type}:${baseKey}:${question.answer ?? ""}`;
       })
       .join("|");
 
     body = (
-      <TextQuizRound
-        key={hydrationKey}
+      <AnswerRound
+        key={`${roomSlug}:${teamId}:${roundId}:${hydrationKey}`}
+        type={props.type}
         questions={props.questions}
         roomSlug={roomSlug}
         teamId={teamId}
         roundId={roundId}
-        onAnswer={(question, answer) => props.onAnswer?.(question, answer)}
+        presenting={props.presenting}
+        allowAnswerChanges={props.type === "multi-step" ? props.allowAnswerChanges : undefined}
+        onAnswer={props.type === "text" ? props.onAnswer : undefined}
       />
     );
   } else {
