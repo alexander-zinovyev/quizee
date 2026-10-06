@@ -1,6 +1,7 @@
 "use client";
 
 import type { RoundMeta, RoundQuestion } from "@/lib/hooks/use-room-rounds";
+import { getAwardedPoints, getAwardShortcut } from "@/lib/components/room/grading";
 import StageMedia from "@/lib/components/room/stage-media";
 
 type GradingAnswer = {
@@ -8,6 +9,7 @@ type GradingAnswer = {
   hint?: string;
   awardedPoints?: number;
   order: number;
+  step?: number | null;
   questionId: string;
 };
 
@@ -140,7 +142,17 @@ export function RoundStage({
                           #{ans.order + 1}
                         </div>
                         <div className="flex-1">
-                          <p className="text-sm text-white">{ans.answer || "—"}</p>
+                          <div className="flex items-center gap-2">
+                            {typeof ans.step === "number" ? (
+                              <span
+                                className="inline-flex h-5 min-w-5 items-center justify-center rounded bg-emerald-300/20 px-1 text-[11px] font-semibold text-emerald-100"
+                                title="Step"
+                              >
+                                {ans.step + 1}
+                              </span>
+                            ) : null}
+                            <p className="text-sm text-white">{ans.answer || "—"}</p>
+                          </div>
                           {ans.hint ? (
                             <p className="mt-1 text-xs text-emerald-100/80">
                               Hint: {ans.hint}
@@ -150,17 +162,17 @@ export function RoundStage({
                         <div className="flex items-center gap-2">
                           <input
                             type="number"
-                            min={0}
+                            min={presentingRoundMeta.type === "multi-step" ? undefined : 0}
                             step="any"
                             value={typeof ans.awardedPoints === "number" ? ans.awardedPoints : ""}
                             onChange={(event) => {
                               if (event.target.value === "") return;
                               const next = Number.parseFloat(event.target.value);
-                              if (Number.isNaN(next)) return;
+                              if (!Number.isFinite(next)) return;
                               void gradeAnswer(
                                 gradingMatrix[gradingTeamIndex].teamId,
                                 ans.questionId,
-                                Math.max(0, next)
+                                getAwardedPoints(next, presentingRoundMeta.type)
                               );
                             }}
                             className="h-8 w-20 rounded-md border border-zinc-300 bg-white/95 px-2 text-xs font-semibold text-zinc-900 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-300/60"
@@ -173,13 +185,13 @@ export function RoundStage({
                               void gradeAnswer(
                                 gradingMatrix[gradingTeamIndex].teamId,
                                 ans.questionId,
-                                1
+                                getAwardShortcut(ans, presentingRoundMeta)
                               )
                             }
                             className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-emerald-400 bg-emerald-400/20 text-emerald-100 hover:bg-emerald-400/40"
-                            title="Set 1 point"
+                            title="Set points"
                           >
-                            1
+                            {getAwardShortcut(ans, presentingRoundMeta)}
                           </button>
                           <button
                             type="button"

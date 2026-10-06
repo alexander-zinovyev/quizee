@@ -5,6 +5,7 @@ import { collection, doc, getDocs, writeBatch } from "firebase/firestore";
 import type { TeamMember } from "@/lib/components/team";
 import type { MediaRenderSource } from "@/lib/media/transport";
 import { useRoomRounds } from "@/lib/hooks/use-room-rounds";
+import { getAwardedPoints } from "@/lib/components/room/grading";
 import { getClientFirestore } from "@/lib/firebase/client";
 import RoomLobbyLayout from "./room-lobby-layout";
 import type { RoomRosterTeam } from "./room-layout-types";
@@ -37,20 +38,20 @@ export default function RoomEnded({
     if (!teamId) return;
     const db = getClientFirestore();
     const batch = writeBatch(db);
-    const sortedRoundIds = roundsMeta
+    const sortedRounds = roundsMeta
       .slice()
-      .sort((a, b) => a.order - b.order)
-      .map((round) => round.id);
+      .sort((a, b) => a.order - b.order);
 
     const roundScores = await Promise.all(
-      sortedRoundIds.map(async (roundId) => {
+      sortedRounds.map(async (round) => {
+        const roundId = round.id;
         const answersSnap = await getDocs(
           collection(db, "rooms", roomSlug, "rounds", roundId, "teamAnswers", teamId, "answers")
         );
         const roundScore = answersSnap.docs.reduce((sum, answerDoc) => {
           const data = answerDoc.data();
           const rawPoints = typeof data.awardedPoints === "number" ? data.awardedPoints : 0;
-          return sum + Math.max(0, rawPoints);
+          return sum + getAwardedPoints(rawPoints, round.type);
         }, 0);
         return { roundId, roundScore };
       })
