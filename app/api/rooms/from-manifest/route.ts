@@ -10,6 +10,7 @@ import {
   validateRoomId,
   type ValidatedRound,
 } from "@/server/rooms/validation";
+import { collectReferencedMedia, createRoundDocumentData } from "@/server/rooms/manifest";
 import { createServerMediaProvider } from "@/lib/media/provisioning";
 
 const SESSION_COOKIE_NAME = "__session";
@@ -136,39 +137,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: validationResult }, { status: 400 });
   }
   const rounds: ValidatedRound[] = validationResult;
-  const supportedRounds = rounds.filter((round) => round.type !== "multi-step");
-  if (supportedRounds.length !== rounds.length) {
-    return NextResponse.json(
-      { message: "Multi-step rounds cannot be used to create rooms yet." },
-      { status: 400 }
-    );
-  }
-
-  const referencedMedia = new Set<string>();
-  supportedRounds.forEach((round) => {
-    if (round.type === "text") {
-      round.questions.forEach((q) => {
-        q.promptStages.forEach((stage) => {
-          if (stage.media?.path) {
-            referencedMedia.add(stage.media.path);
-          }
-        });
-        q.answerStages.forEach((stage) => {
-          if (stage.media?.path) {
-            referencedMedia.add(stage.media.path);
-          }
-        });
-      });
-      return;
-    }
-
-    round.questions.forEach((q) => {
-      if (q.prompt?.media?.path) {
-        referencedMedia.add(q.prompt.media.path);
-      }
-      referencedMedia.add(q.imagePath);
-    });
-  });
+  const referencedMedia = collectReferencedMedia(rounds);
 
   const uploadPrefix = ensureString(sessionData.uploadPrefix);
   const maxFiles = typeof sessionData.maxFiles === "number" ? sessionData.maxFiles : 0;
@@ -312,6 +281,20 @@ export async function POST(request: NextRequest) {
     };
   };
 
+  const resolveStages = async (stages: Array<{ text?: string; media?: { path: string } }>) =>
+    Promise.all(
+      stages.map(async (stage) => {
+        if (!stage.media?.path) {
+          return { text: stage.text ?? null, media: null };
+        }
+        const media = await resolveMedia(stage.media.path);
+        return {
+          text: stage.text ?? null,
+          media,
+        };
+      })
+    );
+
   batch.set(roomRef, {
     title: roomName,
     state: "pending",
@@ -338,36 +321,17 @@ export async function POST(request: NextRequest) {
     { merge: true }
   );
 
-  for (const round of supportedRounds) {
+  for (const round of rounds) {
     const roundId = `round-${round.order + 1}`;
     const roundRef = roomRef.collection("rounds").doc(roundId);
 
-    batch.set(roundRef, {
-      type: round.type,
-      title: round.title,
-      order: round.order,
-      state: "scheduled",
-      activeWindow: { startedAt: null, endedAt: null },
-      questionCount: round.questions.length,
-      gradingRequired: false,
-    });
+    batch.set(roundRef, createRoundDocumentData(round));
 
     if (round.type === "text") {
       for (const question of round.questions) {
         const questionId = `question-${question.order + 1}`;
         const questionRef = roundRef.collection("questions").doc(questionId);
-        const promptStages = await Promise.all(
-          question.promptStages.map(async (stage) => {
-            if (!stage.media?.path) {
-              return { text: stage.text ?? null, media: null };
-            }
-            const media = await resolveMedia(stage.media.path);
-            return {
-              text: stage.text ?? null,
-              media,
-            };
-          })
-        );
+        const promptStages = await resolveStages(question.promptStages);
 
         batch.set(questionRef, {
           order: question.order,
@@ -375,18 +339,24 @@ export async function POST(request: NextRequest) {
         });
 
         const answerRef = roundRef.collection("answers").doc(questionId);
-        const answerStages = await Promise.all(
-          question.answerStages.map(async (stage) => {
-            if (!stage.media?.path) {
-              return { text: stage.text ?? null, media: null };
-            }
-            const media = await resolveMedia(stage.media.path);
-            return {
-              text: stage.text ?? null,
-              media,
-            };
-          })
-        );
+        const answerStages = await resolveStages(question.answerStages);
+        batch.set(answerRef, {
+          hint: question.answerHint,
+          stages: answerStages,
+        });
+      }
+    } else if (round.type === "multi-step") {
+      for (const question of round.questions) {
+        const questionId = `question-${question.order + 1}`;
+        const questionRef = roundRef.collection("questions").doc(questionId);
+        const stepStages = await resolveStages(question.steps);
+        batch.set(questionRef, {
+          order: question.order,
+          stages: stepStages,
+        });
+
+        const answerRef = roundRef.collection("answers").doc(questionId);
+        const answerStages = await resolveStages(question.answerStages);
         batch.set(answerRef, {
           hint: question.answerHint,
           stages: answerStages,
