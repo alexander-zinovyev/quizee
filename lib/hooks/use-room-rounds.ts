@@ -13,9 +13,11 @@ export type RoundMeta = {
   id: string;
   title: string;
   order: number;
-  type: "text" | "image";
+  type: "text" | "image" | "multi-step";
   state: "scheduled" | "active" | "closed";
   gradingRequired?: boolean;
+  pointsPerStep?: number[];
+  allowAnswerChanges?: boolean;
 };
 
 export type RoundQuestionMedia = {
@@ -33,6 +35,7 @@ export type RoundQuestionStage = {
 
 export type RoundQuestion = {
   id: string;
+  finalizedStep?: number;
   prompt: string | null;
   displayPrompt: string;
   order: number;
@@ -55,7 +58,7 @@ export type RoundImages = Record<string, Array<RoundImage>>;
 export type RoundAnswers = Record<string, Record<string, string>>;
 export type RoundAnswerHints = Record<string, Record<string, string>>;
 
-function parseMedia(mediaRaw: unknown): RoundQuestionMedia | null {
+export function parseMedia(mediaRaw: unknown): RoundQuestionMedia | null {
   if (
     !mediaRaw ||
     typeof mediaRaw !== "object" ||
@@ -74,7 +77,7 @@ function parseMedia(mediaRaw: unknown): RoundQuestionMedia | null {
   };
 }
 
-function parseStages(stagesRaw: unknown): RoundQuestionStage[] {
+export function parseStages(stagesRaw: unknown): RoundQuestionStage[] {
   if (!Array.isArray(stagesRaw)) return [];
   const parsed: RoundQuestionStage[] = [];
   stagesRaw.forEach((stageRaw) => {
@@ -92,6 +95,52 @@ function parseStages(stagesRaw: unknown): RoundQuestionStage[] {
     parsed.push(normalized);
   });
   return parsed;
+}
+
+function parsePointsPerStep(pointsRaw: unknown): number[] | undefined {
+  if (!Array.isArray(pointsRaw)) return undefined;
+  const points = pointsRaw.filter(
+    (point): point is number => typeof point === "number" && Number.isFinite(point)
+  );
+  return points.length === pointsRaw.length && points.length > 0 ? points : undefined;
+}
+
+export function parseRoundMeta(id: string, data: Record<string, unknown>, index: number): RoundMeta | null {
+  const type = (data.type as string | undefined)?.toLowerCase();
+  if (type !== "text" && type !== "image" && type !== "multi-step") {
+    return null;
+  }
+
+  const rawState = (data.state as string | undefined)?.toLowerCase() ?? "scheduled";
+  const state =
+    rawState === "active" || rawState === "closed"
+      ? (rawState as RoundMeta["state"])
+      : "scheduled";
+  const title =
+    typeof data.title === "string" && data.title.trim().length
+      ? data.title.trim()
+      : `Round ${index + 1}`;
+  const order =
+    typeof data.order === "number"
+      ? data.order
+      : Number(data.order) || index;
+
+  const meta: RoundMeta = {
+    id,
+    title,
+    order,
+    type,
+    state,
+    gradingRequired: data.gradingRequired as boolean | undefined,
+  };
+
+  if (type === "multi-step") {
+    meta.pointsPerStep = parsePointsPerStep(data.pointsPerStep);
+    meta.allowAnswerChanges =
+      typeof data.allowAnswerChanges === "boolean" ? data.allowAnswerChanges : undefined;
+  }
+
+  return meta;
 }
 
 export function useRoomRounds(roomSlug: string, isHost?: boolean) {
@@ -128,37 +177,8 @@ export function useRoomRounds(roomSlug: string, isHost?: boolean) {
 
         const metaList: RoundMeta[] = roundsSnapshot.docs
           .flatMap((docSnap, index) => {
-            const data = docSnap.data();
-            const type = (data.type as string | undefined)?.toLowerCase();
-            const rawState = (data.state as string | undefined)?.toLowerCase() ?? "scheduled";
-            const state =
-              rawState === "active" || rawState === "closed"
-                ? (rawState as RoundMeta["state"])
-                : "scheduled";
-            const title =
-              typeof data.title === "string" && data.title.trim().length
-                ? data.title.trim()
-                : `Round ${index + 1}`;
-            const order =
-              typeof data.order === "number"
-                ? data.order
-                : Number(data.order) || index;
-
-            if (type !== "text" && type !== "image") {
-              return [];
-            }
-            const roundType: RoundMeta["type"] = type;
-
-            return [
-              {
-                id: docSnap.id,
-                title,
-                order,
-                type: roundType,
-                state,
-                gradingRequired: data.gradingRequired as boolean | undefined,
-              },
-            ];
+            const parsed = parseRoundMeta(docSnap.id, docSnap.data(), index);
+            return parsed ? [parsed] : [];
           })
           .sort((a, b) => a.order - b.order);
 
@@ -262,6 +282,7 @@ export function useRoomRounds(roomSlug: string, isHost?: boolean) {
 
                     return {
                       id: questionSnap.id,
+                      finalizedStep: typeof data.finalizedStep === "number" ? data.finalizedStep : -1,
                       prompt: promptRaw,
                       displayPrompt,
                       order,
