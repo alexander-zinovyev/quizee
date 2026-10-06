@@ -45,6 +45,10 @@ function getMediaKind(media: RoundQuestionMedia | null | undefined): MediaKind {
   return { isImage, isAudio, isVideo };
 }
 
+export function usesStagedAnswerReveal(roundType: RoundMeta["type"] | null | undefined): boolean {
+  return roundType === "text" || roundType === "multi-step";
+}
+
 function cacheMediaUrl(
   cache: Map<string, { isBlob: boolean; url: string }>,
   storagePath: string,
@@ -181,7 +185,7 @@ export function usePresentingMedia({
   useEffect(() => {
     if (
       !presentingRoundMeta?.id ||
-      presentingRoundMeta.type !== "text" ||
+      !usesStagedAnswerReveal(presentingRoundMeta.type) ||
       !presenting?.withAnswer ||
       !presenting?.question
     ) {
