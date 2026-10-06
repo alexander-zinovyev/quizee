@@ -4,6 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { collection, getDocs, setDoc, doc, serverTimestamp } from "firebase/firestore";
 
 import { getClientFirestore } from "@/lib/firebase/client";
+import { getAwardedPoints } from "@/lib/components/room/grading";
+import { recordedAnswer } from "@/lib/answers";
+import { parseBreakdownAttempts, parseDraftPoints, type BreakdownAttempt } from "./team-score-breakdown";
 import type { RoundMeta, RoundQuestion } from "@/lib/hooks/use-room-rounds";
 
 type TeamScoreBreakdownDialogProps = {
@@ -24,10 +27,13 @@ type BreakdownQuestion = {
   prompt: string;
   answer: string;
   awardedPoints: number | null;
+  step: number | null;
+  attempts: BreakdownAttempt[];
 };
 
 type BreakdownRound = {
   roundId: string;
+  type: RoundMeta["type"];
   title: string;
   order: number;
   questions: BreakdownQuestion[];
@@ -80,14 +86,15 @@ export default function TeamScoreBreakdownDialog({
             );
             const answersByQuestion = new Map<
               string,
-              { answer: string; awardedPoints: number | null }
+              { answer: string; awardedPoints: number | null; step: number | null; attempts: BreakdownAttempt[] }
             >();
             answersSnap.forEach((snap) => {
               const data = snap.data();
               answersByQuestion.set(snap.id, {
-                answer: typeof data.answer === "string" ? data.answer : "",
+                ...recordedAnswer(data, round.type),
                 awardedPoints:
-                  typeof data.awardedPoints === "number" ? Math.max(0, data.awardedPoints) : null,
+                  typeof data.awardedPoints === "number" ? getAwardedPoints(data.awardedPoints, round.type) : null,
+                attempts: parseBreakdownAttempts(data.attempts),
               });
             });
 
@@ -102,11 +109,14 @@ export default function TeamScoreBreakdownDialog({
                   prompt: question.displayPrompt || question.prompt || `Question ${idx + 1}`,
                   answer: answer?.answer ?? "",
                   awardedPoints: answer?.awardedPoints ?? null,
+                  step: answer?.step ?? null,
+                  attempts: answer?.attempts ?? [],
                 };
               });
 
             return {
               roundId: round.id,
+              type: round.type,
               title: round.title,
               order: round.order,
               questions,
@@ -158,7 +168,7 @@ export default function TeamScoreBreakdownDialog({
   const totalPoints = useMemo(() => {
     return rows.reduce((sum, round) => {
       const roundPoints = round.questions.reduce((acc, question) => {
-        return acc + (typeof question.awardedPoints === "number" ? Math.max(0, question.awardedPoints) : 0);
+        return acc + (question.awardedPoints ?? 0);
       }, 0);
       return sum + roundPoints;
     }, 0);
@@ -168,7 +178,9 @@ export default function TeamScoreBreakdownDialog({
 
   async function savePoints(roundId: string, questionId: string, points: number) {
     if (!isHost || !teamId) return;
-    const clampedPoints = Math.max(0, points);
+    const round = rows.find((entry) => entry.roundId === roundId);
+    if (!round) return;
+    const normalizedPoints = getAwardedPoints(points, round.type);
     const key = `${roundId}:${questionId}`;
     setSavingKey(key);
     setRows((prev) =>
@@ -180,7 +192,7 @@ export default function TeamScoreBreakdownDialog({
               questions: round.questions.map((question) =>
                 question.questionId !== questionId
                   ? question
-                  : { ...question, awardedPoints: clampedPoints }
+                  : { ...question, awardedPoints: normalizedPoints }
               ),
             }
       )
@@ -201,7 +213,7 @@ export default function TeamScoreBreakdownDialog({
           questionId
         ),
         {
-          awardedPoints: clampedPoints,
+          awardedPoints: normalizedPoints,
           gradedAt: serverTimestamp(),
         },
         { merge: true }
@@ -213,13 +225,6 @@ export default function TeamScoreBreakdownDialog({
     } finally {
       setSavingKey((prev) => (prev === key ? null : prev));
     }
-  }
-
-  function parseDraftPoints(value: string) {
-    if (!value.trim().length) return null;
-    const parsed = Number.parseFloat(value);
-    if (Number.isNaN(parsed)) return null;
-    return Math.max(0, parsed);
   }
 
   return (
@@ -258,12 +263,7 @@ export default function TeamScoreBreakdownDialog({
             <div className="space-y-4">
               {rows.map((round) => {
                 const roundPoints = round.questions.reduce((sum, question) => {
-                  return (
-                    sum +
-                    (typeof question.awardedPoints === "number"
-                      ? Math.max(0, question.awardedPoints)
-                      : 0)
-                  );
+                  return sum + (question.awardedPoints ?? 0);
                 }, 0);
                 return (
                   <section
@@ -288,23 +288,45 @@ export default function TeamScoreBreakdownDialog({
                             </span>
                             <div className="min-w-0">
                               <p className="truncate text-xs text-zinc-400">{question.prompt}</p>
-                              <p className="text-sm text-zinc-100">{question.answer || "—"}</p>
+                              <div className="flex items-center gap-2">
+                                {typeof question.step === "number" ? (
+                                  <span
+                                    className="inline-flex h-5 min-w-5 items-center justify-center rounded bg-emerald-300/20 px-1 text-[11px] font-semibold text-emerald-100"
+                                    title="Step"
+                                  >
+                                    {question.step + 1}
+                                  </span>
+                                ) : null}
+                                <p className="text-sm text-zinc-100">{question.answer || "—"}</p>
+                              </div>
+                              {question.attempts.length > 1 ? (
+                                <div className="mt-1 flex flex-wrap gap-1">
+                                  {question.attempts.map((attempt) => (
+                                    <span
+                                      key={`${question.questionId}:${attempt.step}`}
+                                      className="inline-flex max-w-full items-center gap-1 rounded bg-zinc-800 px-1.5 py-0.5 text-xs text-zinc-200"
+                                    >
+                                      <span className="text-emerald-200" title="Step">
+                                        {attempt.step + 1}
+                                      </span>
+                                      <span className="truncate">{attempt.answer}</span>
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : null}
                             </div>
                             <div className="flex items-center gap-2">
                               {(() => {
                                 const draftValue = draftPoints[saveId] ?? "";
-                                const parsedDraft = parseDraftPoints(draftValue);
-                                const persistedPoints =
-                                  typeof question.awardedPoints === "number"
-                                    ? Math.max(0, question.awardedPoints)
-                                    : null;
+                                const parsedDraft = parseDraftPoints(draftValue, round.type);
+                                const persistedPoints = question.awardedPoints;
                                 const hasChanges =
                                   parsedDraft !== null && parsedDraft !== persistedPoints;
                                 return (
                                   <>
                               <input
                                 type="number"
-                                min={0}
+                                min={round.type === "multi-step" ? undefined : 0}
                                 step="any"
                                 disabled={!isHost}
                                 value={draftValue}
