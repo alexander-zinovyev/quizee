@@ -18,6 +18,7 @@ import {
 import Member from "@/lib/components/member";
 import Team from "@/lib/components/team";
 import { RoundStage } from "@/lib/components/room/round-stage";
+import { PromptNavigation } from "@/lib/components/room/prompt-navigation";
 import { usePresentingMedia } from "@/lib/hooks/use-presenting-media";
 import {
   type RoundQuestion,
@@ -336,7 +337,7 @@ export default function RoomContent({
 
   const presentingAnswer = useMemo(() => {
     if (!presenting?.round || !presenting?.question || !presenting?.withAnswer) return null;
-    if (presentingRoundMeta?.type === "text") {
+    if (presentingRoundMeta?.type === "text" || presentingRoundMeta?.type === "multi-step") {
       return presentingTextAnswer?.trim().length ? presentingTextAnswer : null;
     }
     const answerFromCollection =
@@ -435,7 +436,7 @@ export default function RoomContent({
 
   const answerPageCount = useMemo(() => {
     if (!presenting?.withAnswer || !presentingRoundMeta) return 0;
-    if (presentingRoundMeta.type === "text") {
+    if (presentingRoundMeta.type === "text" || presentingRoundMeta.type === "multi-step") {
       return presentingTextAnswerStageCount;
     }
     return presentingAnswerMediaUrl ? 1 : 0;
@@ -612,7 +613,7 @@ export default function RoomContent({
   }
 
   async function handlePrevPromptPage() {
-    if (!isHost || !presentingQuestion || currentPromptPage <= 0) return;
+    if (!isHost || !presentingQuestion || presentingRoundMeta?.type === "multi-step" || currentPromptPage <= 0) return;
     await updatePresenting({
       round: presentingRoundMeta?.id ?? activeRoundForControls?.id ?? null,
       question: presentingQuestion.id,
@@ -623,13 +624,25 @@ export default function RoomContent({
   }
 
   async function handleNextPromptPage() {
-    if (!isHost || !presentingQuestion || presentingQuestionStageCount <= 0) return;
+    if (!isHost || !presentingQuestion || presentingRoundMeta?.type === "multi-step" || presentingQuestionStageCount <= 0) return;
     const isLast = currentPromptPage >= presentingQuestionStageCount - 1;
     await updatePresenting({
       round: presentingRoundMeta?.id ?? activeRoundForControls?.id ?? null,
       question: presentingQuestion.id,
       withAnswer: Boolean(presenting?.withAnswer),
       promptPage: isLast ? 0 : currentPromptPage + 1,
+      answerPage: currentAnswerPage,
+    });
+  }
+
+  async function handleNextStep() {
+    if (!isHost || !presentingQuestion || presentingRoundMeta?.type !== "multi-step" ||
+      currentPromptPage >= presentingQuestionStageCount - 1) return;
+    await updatePresenting({
+      round: presentingRoundMeta.id,
+      question: presentingQuestion.id,
+      withAnswer: Boolean(presenting?.withAnswer),
+      promptPage: currentPromptPage + 1,
       answerPage: currentAnswerPage,
     });
   }
@@ -1417,30 +1430,14 @@ export default function RoomContent({
                         </button>
                       ) : null}
 
-                      {presentingQuestionStageCount > 1 ? (
-                        <>
-                          <span className="text-zinc-400">Page</span>
-                          <button
-                            type="button"
-                            onClick={handlePrevPromptPage}
-                            disabled={isPresentingUpdatePending || currentPromptPage <= 0}
-                            className="rounded-lg bg-zinc-700 px-2 py-2 text-white transition hover:bg-zinc-600 focus:outline-none focus:ring-2 focus:ring-white/30 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
-                          >
-                            {"<"}
-                          </button>
-                          <span className="min-w-3 text-center text-zinc-100">
-                            {currentPromptPage + 1}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={handleNextPromptPage}
-                            disabled={isPresentingUpdatePending}
-                            className="rounded-lg bg-zinc-700 px-2 py-2 text-white transition hover:bg-zinc-600 focus:outline-none focus:ring-2 focus:ring-white/30 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
-                          >
-                            {currentPromptPage < presentingQuestionStageCount - 1 ? ">" : "↺"}
-                          </button>
-                        </>
-                      ) : null}
+                      <PromptNavigation
+                        type={presentingRoundMeta?.type ?? activeRoundForControls.type}
+                        page={currentPromptPage}
+                        count={presentingQuestionStageCount}
+                        pending={isPresentingUpdatePending}
+                        onPrevious={handlePrevPromptPage}
+                        onNext={presentingRoundMeta?.type === "multi-step" ? handleNextStep : handleNextPromptPage}
+                      />
                     </>
                   ) : null}
 
