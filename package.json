@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test:rules": "tsx server/rooms/answer-rules.test.ts",
-    "test:validation": "tsx server/rooms/validation.test.ts && tsx server/rooms/manifest.test.ts && tsx lib/answers.test.ts && tsx lib/answer-write-queue.test.ts && tsx server/rooms/answer-input.test.ts && tsx server/rooms/multi-step-submission.test.ts && tsx server/rooms/presentation.test.ts && tsx lib/components/answer-round.test.tsx && tsx lib/components/room/grading.test.ts && tsx lib/hooks/use-room-rounds.test.ts && tsx lib/hooks/use-presenting-media.test.ts && tsx app/build/page.test.ts && tsx lib/components/room/prompt-navigation.test.tsx"
+    "test:validation": "tsx server/rooms/validation.test.ts && tsx server/rooms/manifest.test.ts && tsx lib/answers.test.ts && tsx lib/answer-write-queue.test.ts && tsx server/rooms/answer-input.test.ts && tsx server/rooms/multi-step-submission.test.ts && tsx server/rooms/presentation.test.ts && tsx lib/components/answer-round.test.tsx && tsx lib/components/room/grading.test.ts && tsx lib/hooks/use-room-rounds.test.ts && tsx lib/hooks/use-presenting-media.test.ts && tsx app/build/page.test.ts && tsx lib/components/room/prompt-navigation.test.tsx && tsx app/[room]/team-score-breakdown.test.ts"
   },
   "dependencies": {
     "@daily-co/daily-js": "^0.86.0",
