@@ -1,11 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { hexToHsv, hsvToHex, type HSV } from "@/lib/color";
 
-export function ColorControls({ color, disabled, onChange, onCommit }: {
-  color: string; disabled: boolean; onChange: (hex: string) => void; onCommit: () => void;
+const adjustmentKeys = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"]);
+
+export function ColorControls({ color, disabled, onChange, onCommit, onCancel }: {
+  color: string; disabled: boolean; onChange: (hex: string) => void; onCommit: () => void; onCancel: () => void;
 }) {
+  const pointer = useRef<number | null>(null);
+  const dragStart = useRef<{ color: string; hsv: HSV } | null>(null);
   const [state, setState] = useState(() => ({ color, hsv: hexToHsv(color) }));
   if (state.color !== color) setState({ color, hsv: hexToHsv(color) });
   const hsv = state.color === color ? state.hsv : hexToHsv(color);
@@ -14,6 +18,12 @@ export function ColorControls({ color, disabled, onChange, onCommit }: {
     const hex = hsvToHex(next);
     setState({ color: hex, hsv: next });
     onChange(hex);
+  }
+  function cancel() {
+    pointer.current = null;
+    if (dragStart.current) setState(dragStart.current);
+    dragStart.current = null;
+    onCancel();
   }
   const saturated = hsvToHex({ ...hsv, s: 100 });
   const gray = hsvToHex({ ...hsv, s: 0 });
@@ -48,10 +58,23 @@ export function ColorControls({ color, disabled, onChange, onCommit }: {
               step={1}
               value={hsv[channel]}
               onChange={(event) => change(channel, Number(event.target.value))}
-              onPointerUp={onCommit}
-              onPointerCancel={onCommit}
-              onKeyUp={onCommit}
-              onBlur={onCommit}
+              onPointerDown={(event) => {
+                if (!event.isPrimary || event.button !== 0) return;
+                pointer.current = event.pointerId;
+                dragStart.current = { color, hsv };
+                // Keep the release event on this slider even when the drag leaves its bounds.
+                event.currentTarget.setPointerCapture(event.pointerId);
+              }}
+              onPointerUp={(event) => {
+                if (pointer.current !== event.pointerId) return;
+                pointer.current = null;
+                dragStart.current = null;
+                onCommit();
+              }}
+              onPointerCancel={(event) => { if (pointer.current === event.pointerId) cancel(); }}
+              onLostPointerCapture={(event) => { if (pointer.current === event.pointerId) cancel(); }}
+              onKeyUp={(event) => { if (pointer.current === null && adjustmentKeys.has(event.key)) onCommit(); }}
+              onBlur={() => { if (pointer.current === null) onCommit(); }}
             />
           </label>
         ))}
