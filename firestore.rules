@@ -55,7 +55,7 @@ service cloud.firestore {
 
     function activeAnswerRound(roomId, roundId) {
       return roundId != null
-        && roundDoc(roomId, roundId).data.type in ["text", "multi-step"]
+        && roundDoc(roomId, roundId).data.type in ["text", "multi-step", "color"]
         && roundDoc(roomId, roundId).data.state == "active";
     }
 
@@ -121,7 +121,7 @@ service cloud.firestore {
         match /rounds/{roundId}/answers/{answerId} {
           allow read:
             if isMember(roomId)
-            && memberTeam(roomId) == teamId;
+            && (memberTeam(roomId) == teamId || (isHost(roomId) && roundDoc(roomId, roundId).data.type == "color"));
           allow write:
             if isMember(roomId)
             && memberTeam(roomId) == teamId
@@ -137,7 +137,7 @@ service cloud.firestore {
       match /rounds/{roundId} {
         allow read: if isMember(roomId);
         allow update: if isHost(roomId)
-          && (!(resource.data.type in ["text", "multi-step"])
+          && (!(resource.data.type in ["text", "multi-step", "color"])
             || !request.resource.data.diff(resource.data).affectedKeys().hasAny(["state", "activeWindow"]));
         allow create, delete: if false;
 

@@ -96,6 +96,29 @@ async function main() {
         unsubscribe();
       }
     }
+    {
+      const roomId = "rules-color", path = `rooms/${roomId}`;
+      const [a, , outsider, hostClient] = apps;
+      const presentation = { round: "r1", question: "q1", promptPage: 0, answerPage: 0, withAnswer: false };
+      await admin.doc(path).set({ state: "playing", presenting: presentation });
+      for (const { uid } of apps) await admin.doc(`${path}/members/${uid}`).set({ role: uid === "host" ? "host" : "player", team: uid === "outsider" ? "blue" : "red" });
+      await admin.doc(`${path}/teams/red`).set({ name: "Red" });
+      await admin.doc(`${path}/rounds/r1`).set({ type: "color", state: "active" });
+      await admin.doc(`${path}/rounds/r1/questions/q1`).set({ initialColor: "#123456" });
+      await admin.doc(`${path}/rounds/r1/answers/q1`).set({ answer: "#FFFFFF" });
+      await saveTeamAnswer(admin, roomId, "r1", "q1", "a", parseAnswerSave({ teamId: "red", answer: "#AABBCC" }));
+      const answerPath = `${path}/teams/red/rounds/r1/answers/q1`;
+      assert.equal((await getDocFromServer(doc(hostClient.db, answerPath))).data()?.answer, "#AABBCC");
+      await denied(getDocFromServer(doc(outsider.db, answerPath)));
+      await denied(getDocFromServer(doc(a.db, `${path}/rounds/r1/answers/q1`)));
+      await denied(setDoc(doc(a.db, answerPath), { answer: "#FFFFFF" }));
+      await denied(updateDoc(doc(hostClient.db, `${path}/rounds/r1`), { state: "closed" }));
+      await transitionPresentation(admin, roomId, "host", presentation, presentation, { closeRound: "r1" });
+      await assert.rejects(saveTeamAnswer(admin, roomId, "r1", "q1", "a", parseAnswerSave({ teamId: "red", answer: "#FFFFFF" })), /Round/);
+      await denied(getDocFromServer(doc(a.db, `${path}/rounds/r1/answers/q1`)));
+      await transitionPresentation(admin, roomId, "host", presentation, { ...presentation, withAnswer: true });
+      assert.equal((await getDocFromServer(doc(a.db, `${path}/rounds/r1/answers/q1`))).data()?.answer, "#FFFFFF");
+    }
     const roomPath = "rooms/rules-multi-step";
     await admin.doc(`${roomPath}/rounds/r1`).update({ state: "active", allowAnswerChanges: false });
     await admin.doc(roomPath).update({ presenting: { round: "r1", question: "q1", promptPage: 1, answerPage: 0, withAnswer: false } });

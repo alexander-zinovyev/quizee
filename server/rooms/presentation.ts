@@ -60,7 +60,7 @@ export async function transitionPresentation(
     if (options.activateRound && (next.round !== options.activateRound || rounds.get(options.activateRound)?.state !== "scheduled")) {
       throw new Error("Round cannot be activated.");
     }
-    if (options.closeRound && (!["text", "multi-step"].includes(rounds.get(options.closeRound)?.type) || rounds.get(options.closeRound)?.state !== "active")) {
+    if (options.closeRound && (!["text", "multi-step", "color"].includes(rounds.get(options.closeRound)?.type) || rounds.get(options.closeRound)?.state !== "active")) {
       throw new Error("Round cannot be closed.");
     }
     if (next.round && next.round !== options.activateRound && next.round !== options.closeRound &&
@@ -68,6 +68,7 @@ export async function transitionPresentation(
       throw new Error("Round is not active.");
     }
     if (next.question && next.round) {
+      if (rounds.get(next.round)?.type === "color" && next.withAnswer && rounds.get(next.round)?.state !== "closed") throw new Error("End the color round before revealing answers.");
       const question = await tx.get(roomRef.collection("rounds").doc(next.round).collection("questions").doc(next.question));
       if (!question.exists) throw new Error("Question not found.");
       const stages = question.data()?.stages;
@@ -95,6 +96,8 @@ export async function transitionPresentation(
       finalizedStep = question.data()?.finalizedStep ?? -1;
     }
     const now = Timestamp.now();
+    const colorQuestions = options.closeRound && rounds.get(options.closeRound)?.type === "color"
+      ? await tx.get(roomRef.collection("rounds").doc(options.closeRound).collection("questions")) : null;
     if (capture || options.closeRound) {
       const teams = await tx.get(roomRef.collection("teams"));
       for (const team of teams.docs) {
@@ -112,6 +115,15 @@ export async function transitionPresentation(
           const answers = await tx.get(teamRounds.doc(options.closeRound).collection("answers"));
           const target = roomRef.collection("rounds").doc(options.closeRound).collection("teamAnswers").doc(team.id);
           writes.push({ ref: target, data: { graded: false, copiedAt: now }, merge: true });
+          if (colorQuestions) {
+            for (const question of colorQuestions.docs) {
+              const saved = answers.docs.find((answer) => answer.id === question.id);
+              writes.push({ ref: target.collection("answers").doc(question.id), data: {
+                answer: saved?.data().answer ?? question.data().initialColor, user: saved?.data().user ?? null,
+              }, merge: false });
+            }
+            continue;
+          }
           for (const answer of answers.docs) {
             const input = current.round === options.closeRound && answer.id === current.question && captured
               ? captured : parseTeamAnswer(answer.data());
