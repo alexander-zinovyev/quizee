@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 import { posix } from "node:path";
-import sharp from "sharp";
+import { validateColorAssets } from "@/server/rooms/color-assets";
 
 import { getServerAuth, getServerFirestore, getServerStorageBucket } from "@/server/database";
 import {
@@ -250,13 +250,11 @@ export async function POST(request: NextRequest) {
     for (const round of rounds) {
       if (round.type !== "color") continue;
       for (const question of round.questions) {
-        const dimensions = await Promise.all([question.imagePath, question.maskPath].map(async (path) => {
+        const [image, mask] = await Promise.all([question.imagePath, question.maskPath].map(async (path) => {
           const [bytes] = await bucket.file(mediaFiles.get(path)!.uploadPath).download();
-          const metadata = await sharp(bytes, { limitInputPixels: 16777216 }).metadata();
-          if (!["png", "jpeg", "webp"].includes(metadata.format ?? "") || (metadata.pages ?? 1) !== 1 || !metadata.width || !metadata.height) throw new Error("Color assets must be static raster images.");
-          return metadata;
+          return bytes;
         }));
-        if (dimensions[0].width !== dimensions[1].width || dimensions[0].height !== dimensions[1].height) throw new Error("Color image and mask dimensions must match.");
+        await validateColorAssets(image, mask);
       }
     }
   } catch (error) {
