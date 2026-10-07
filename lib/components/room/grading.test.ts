@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { getAwardedPoints, getAwardShortcut } from "./grading";
+import { canRetryAutoGrade, getAwardedPoints, getAwardShortcut } from "./grading";
 
 const round = { type: "multi-step", pointsPerStep: [5, 0, 0.5, -2] };
 assert.equal(getAwardShortcut({ step: 0 }, round), 5);
@@ -17,3 +17,8 @@ assert.equal(getAwardedPoints(-2, "text"), 0);
 assert.equal(getAwardedPoints(-2, "image"), 0);
 assert.throws(() => getAwardedPoints(Infinity, "multi-step"));
 assert.throws(() => getAwardedPoints(NaN, "multi-step"));
+const colorRound = { id: "color-1", type: "color", state: "closed", gradingRequired: true };
+assert.equal(canRetryAutoGrade(colorRound, null), false);
+assert.equal(canRetryAutoGrade(colorRound, "other-round"), false);
+assert.equal(canRetryAutoGrade(colorRound, colorRound.id), true);
+assert.equal(canRetryAutoGrade({ ...colorRound, gradingRequired: false }, colorRound.id), false);

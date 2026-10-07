@@ -2,6 +2,10 @@ export type AwardShortcutSource = {
   step?: number | null;
 };
 
+export function canRetryAutoGrade(round: { id: string; type: string; state: string; gradingRequired?: boolean }, failedRoundId: string | null): boolean {
+  return round.type === "color" && round.state === "closed" && round.gradingRequired === true && failedRoundId === round.id;
+}
+
 export function getAwardShortcut(source: AwardShortcutSource, round: { type: string; pointsPerStep?: number[] }): number {
   if (round.type !== "multi-step") return 1;
   if (source.step === null || source.step === undefined) return 0;
