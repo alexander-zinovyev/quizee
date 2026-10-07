@@ -13,7 +13,7 @@ export type RoundMeta = {
   id: string;
   title: string;
   order: number;
-  type: "text" | "image" | "multi-step";
+  type: "text" | "image" | "multi-step" | "color";
   state: "scheduled" | "active" | "closed";
   gradingRequired?: boolean;
   pointsPerStep?: number[];
@@ -34,6 +34,8 @@ export type RoundQuestionStage = {
 };
 
 export type RoundQuestion = {
+  mask?: RoundQuestionMedia | null;
+  initialColor?: string;
   id: string;
   finalizedStep?: number;
   prompt: string | null;
@@ -107,7 +109,7 @@ function parsePointsPerStep(pointsRaw: unknown): number[] | undefined {
 
 export function parseRoundMeta(id: string, data: Record<string, unknown>, index: number): RoundMeta | null {
   const type = (data.type as string | undefined)?.toLowerCase();
-  if (type !== "text" && type !== "image" && type !== "multi-step") {
+  if (type !== "text" && type !== "image" && type !== "multi-step" && type !== "color") {
     return null;
   }
 
@@ -288,6 +290,8 @@ export function useRoomRounds(roomSlug: string, isHost?: boolean) {
                       order,
                       correctAnswer,
                       media,
+                      mask: parseMedia(data.mask),
+                      initialColor: typeof data.initialColor === "string" ? data.initialColor : undefined,
                       promptStages:
                         promptStages.length > 0
                           ? promptStages
