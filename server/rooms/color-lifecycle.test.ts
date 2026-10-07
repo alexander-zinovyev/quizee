@@ -12,12 +12,25 @@ async function main() {
   await assert.rejects(saveTeamAnswer(db, "demo", "r1", "q1", "outsider", parseAnswerSave({ teamId: "red", answer: "#FFFFFF" })));
   await assert.rejects(saveTeamAnswer(db, "demo", "r1", "q1", "player", parseAnswerSave({ teamId: "red", answer: "red" })));
   await assert.rejects(transitionPresentation(db, "demo", "host", current, { ...current, withAnswer: true }), /End the color/);
+  await saveTeamAnswer(db, "demo", "r1", "q1", "player", parseAnswerSave({ teamId: "red", locked: true }));
+  assert.equal(docs.get(redAnswer)?.answer, "#123456");
+  assert.equal(docs.get(redAnswer)?.locked, true);
+  await assert.rejects(saveTeamAnswer(db, "demo", "r1", "q1", "teammate", parseAnswerSave({ teamId: "red", answer: "#FFFFFF" })), /Unlock/);
+  await assert.rejects(saveTeamAnswer(db, "demo", "r1", "q1", "player", parseAnswerSave({ teamId: "red", answer: "#FFFFFF" })), /Unlock/);
+  await assert.rejects(saveTeamAnswer(db, "demo", "r1", "q1", "outsider", parseAnswerSave({ teamId: "red", locked: false })));
+  await saveTeamAnswer(db, "demo", "r1", "q1", "teammate", parseAnswerSave({ teamId: "red", locked: false }));
+  assert.equal(docs.get(redAnswer)?.answer, "#123456");
+  assert.equal(docs.get(redAnswer)?.locked, false);
   await saveTeamAnswer(db, "demo", "r1", "q1", "player", parseAnswerSave({ teamId: "red", answer: "#aabbcc" }));
+  await saveTeamAnswer(db, "demo", "r1", "q1", "teammate", parseAnswerSave({ teamId: "red", locked: true }));
+  assert.equal(docs.get(redAnswer)?.answer, "#AABBCC");
+  assert.equal(docs.get(redAnswer)?.locked, true);
   await transitionPresentation(db, "demo", "host", current, current, { closeRound: "r1" });
   assert.equal(docs.get("rooms/demo/rounds/r1/teamAnswers/red/answers/q1")?.answer, "#AABBCC");
   assert.equal(docs.get("rooms/demo/rounds/r1/teamAnswers/blue/answers/q1")?.answer, "#123456");
   assert.equal(docs.get("rooms/demo/rounds/r1/teamAnswers/red/answers/q2")?.answer, "#ABCDEF");
   await assert.rejects(saveTeamAnswer(db, "demo", "r1", "q1", "player", parseAnswerSave({ teamId: "red", answer: "#FFFFFF" })), /Round/);
+  await assert.rejects(saveTeamAnswer(db, "demo", "r1", "q1", "teammate", parseAnswerSave({ teamId: "red", locked: false })), /Round/);
   await transitionPresentation(db, "demo", "host", current, { ...current, withAnswer: true });
 }
 void main().catch((error) => { console.error(error); process.exitCode = 1; });

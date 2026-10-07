@@ -46,11 +46,8 @@ export async function saveTeamAnswer(
     if (roundData.type === "color") {
       const current = parsePresentation(room.data()?.presenting);
       if (current.round !== roundId || current.question !== questionId || current.withAnswer) throw new RoomOperationError("Question is not accepting colors.");
-      if (typeof save.mutation.answer !== "string" || !HEX_COLOR.test(save.mutation.answer)) throw new RoomOperationError("Expected a six-digit HEX color.", 400);
+      if ("answer" in save.mutation && (typeof save.mutation.answer !== "string" || !HEX_COLOR.test(save.mutation.answer))) throw new RoomOperationError("Expected a six-digit HEX color.", 400);
       if (save.expectedStep !== undefined) throw new RoomOperationError("Color answers do not have steps.", 400);
-      const color = save.mutation.answer.toUpperCase();
-      tx.set(team.ref.collection("rounds").doc(roundId).collection("answers").doc(questionId), { answer: color, user: uid, locked: false });
-      return { answer: color, user: uid, locked: false };
     }
     if (roundData.type === "multi-step") {
       if (typeof roundData.allowAnswerChanges !== "boolean") throw new Error("Invalid answer-change policy.");
@@ -67,12 +64,15 @@ export async function saveTeamAnswer(
     const answerRef = team.ref.collection("rounds").doc(roundId).collection("answers").doc(questionId);
     const answer = await tx.get(answerRef);
     const input: TeamAnswer = answer.exists ? parseTeamAnswer(answer.data()!)
-      : { answer: "", locked: false, user: null, attempts: [] };
+      : { answer: roundData.type === "color" ? question.data()?.initialColor : "", locked: false, user: null, attempts: [] };
+    if (roundData.type === "color" && (typeof input.answer !== "string" || !HEX_COLOR.test(input.answer))) throw new Error("Invalid stored color answer.");
     if (roundData.type === "multi-step" && isAnswerCommitted(roundData.allowAnswerChanges, input.attempts)) {
       throw new RoomOperationError("Answer is permanently locked.");
     }
     if ("answer" in save.mutation && input.locked) throw new RoomOperationError("Unlock the answer before editing.");
-    const updated = { ...input, ...save.mutation, user: uid };
+    const mutation = roundData.type === "color" && typeof save.mutation.answer === "string"
+      ? { answer: save.mutation.answer.toUpperCase() } : save.mutation;
+    const updated = { ...input, ...mutation, user: uid };
     tx.set(answerRef, { answer: updated.answer, locked: updated.locked, user: uid,
       ...(roundData.type === "multi-step" ? { attempts: input.attempts } : {}) });
     return { answer: updated.answer, locked: updated.locked, user: uid };
