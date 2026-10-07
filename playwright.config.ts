@@ -1,13 +1,16 @@
 import { defineConfig } from "@playwright/test";
 
+const baseURL = process.env.QUIZEE_BROWSER_BASE_URL ?? "http://127.0.0.1:3017";
+const port = new URL(baseURL).port || "3000";
+
 export default defineConfig({
   testDir: "./tests/browser",
   timeout: 60000,
   workers: 1,
-  use: { baseURL: "http://127.0.0.1:3017", screenshot: "only-on-failure" },
+  use: { baseURL, screenshot: "only-on-failure" },
   webServer: {
-    command: "npm run dev -- --port 3017",
-    url: "http://127.0.0.1:3017/build",
+    command: `npm run dev -- --port ${port}`,
+    url: `${baseURL}/build`,
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
     env: {
