@@ -98,7 +98,7 @@ async function main() {
     }
     {
       const roomId = "rules-color", path = `rooms/${roomId}`;
-      const [a, , outsider, hostClient] = apps;
+      const [a, b, outsider, hostClient] = apps;
       const presentation = { round: "r1", question: "q1", promptPage: 0, answerPage: 0, withAnswer: false };
       await admin.doc(path).set({ state: "playing", presenting: presentation });
       for (const { uid } of apps) await admin.doc(`${path}/members/${uid}`).set({ role: uid === "host" ? "host" : "player", team: uid === "outsider" ? "blue" : "red" });
@@ -112,9 +112,22 @@ async function main() {
       await denied(getDocFromServer(doc(outsider.db, answerPath)));
       await denied(getDocFromServer(doc(a.db, `${path}/rounds/r1/answers/q1`)));
       await denied(setDoc(doc(a.db, answerPath), { answer: "#FFFFFF" }));
+      await saveTeamAnswer(admin, roomId, "r1", "q1", "a", parseAnswerSave({ teamId: "red", locked: true }));
+      assert.equal((await getDocFromServer(doc(b.db, answerPath))).data()?.locked, true);
+      await assert.rejects(saveTeamAnswer(admin, roomId, "r1", "q1", "b", parseAnswerSave({ teamId: "red", answer: "#FFFFFF" })), /Unlock/);
+      await denied(updateDoc(doc(b.db, answerPath), { locked: false }));
+      await assert.rejects(saveTeamAnswer(admin, roomId, "r1", "q1", "outsider", parseAnswerSave({ teamId: "red", locked: false })), /Team changed/);
+      await saveTeamAnswer(admin, roomId, "r1", "q1", "b", parseAnswerSave({ teamId: "red", locked: false }));
+      const unlocked = (await getDocFromServer(doc(a.db, answerPath))).data()!;
+      assert.equal(unlocked.locked, false);
+      assert.equal(unlocked.answer, "#AABBCC");
+      await saveTeamAnswer(admin, roomId, "r1", "q1", "b", parseAnswerSave({ teamId: "red", locked: true }));
+      await assert.rejects(saveTeamAnswer(admin, roomId, "r1", "q1", "a", parseAnswerSave({ teamId: "red", answer: "#FFFFFF" })), /Unlock/);
+      assert.equal((await getDocFromServer(doc(a.db, answerPath))).data()?.locked, true);
       await denied(updateDoc(doc(hostClient.db, `${path}/rounds/r1`), { state: "closed" }));
       await transitionPresentation(admin, roomId, "host", presentation, presentation, { closeRound: "r1" });
       await assert.rejects(saveTeamAnswer(admin, roomId, "r1", "q1", "a", parseAnswerSave({ teamId: "red", answer: "#FFFFFF" })), /Round/);
+      await assert.rejects(saveTeamAnswer(admin, roomId, "r1", "q1", "b", parseAnswerSave({ teamId: "red", locked: false })), /Round/);
       await denied(getDocFromServer(doc(a.db, `${path}/rounds/r1/answers/q1`)));
       await transitionPresentation(admin, roomId, "host", presentation, { ...presentation, withAnswer: true });
       assert.equal((await getDocFromServer(doc(a.db, `${path}/rounds/r1/answers/q1`))).data()?.answer, "#FFFFFF");
