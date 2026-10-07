@@ -20,7 +20,7 @@ import Team from "@/lib/components/team";
 import { RoundStage } from "@/lib/components/room/round-stage";
 import { ColorPresenting } from "@/lib/components/color-presenting";
 import { PromptNavigation } from "@/lib/components/room/prompt-navigation";
-import { getAwardedPoints } from "@/lib/components/room/grading";
+import { canRetryAutoGrade, getAwardedPoints } from "@/lib/components/room/grading";
 import { recordedAnswer } from "@/lib/answers";
 import { usePresentingMedia } from "@/lib/hooks/use-presenting-media";
 import {
@@ -133,6 +133,7 @@ export default function RoomContent({
   const [isActivatingNext, setIsActivatingNext] = useState(false);
   const [isPresentingUpdatePending, setIsPresentingUpdatePending] = useState(false);
   const [isEndingRound, setIsEndingRound] = useState(false);
+  const [autoGradeFailedRoundId, setAutoGradeFailedRoundId] = useState<string | null>(null);
   const teamAnswerRoundUnsubRef = useRef<Unsubscribe | null>(null);
   const teamAnswerUnsubsRef = useRef<Map<string, Unsubscribe>>(new Map());
   const handAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -397,6 +398,7 @@ export default function RoomContent({
       !isHost ||
       !presentingRoundMeta ||
       presentingRoundMeta.type === "image" ||
+      presentingRoundMeta.type === "color" ||
       presentingRoundMeta.state !== "closed" ||
       presenting?.question ||
       gradingRequiredRounds[presentingRoundMeta.id] === false
@@ -829,6 +831,8 @@ export default function RoomContent({
   }
 
   async function autoGradeRound(roundId: string) {
+    setAutoGradeFailedRoundId(null);
+    setRoundsError(null);
     try {
       const token = await getToken();
       const response = await fetch(`/api/rooms/${roomSlug}/rounds/${roundId}/grade`, {
@@ -842,10 +846,12 @@ export default function RoomContent({
         const payload = await response.json().catch(() => ({}));
         console.error("[room-content] auto-grade failed", payload);
         setRoundsError(payload.message ?? "Unable to auto-grade this round right now.");
+        setAutoGradeFailedRoundId(roundId);
       }
     } catch (error) {
       console.error("[room-content] auto-grade failed", error);
       setRoundsError("Unable to auto-grade this round right now.");
+      setAutoGradeFailedRoundId(roundId);
     }
   }
 
@@ -1488,8 +1494,8 @@ export default function RoomContent({
                   ) : null}
 
                   <div className="ml-auto flex items-center gap-2">
-                    {activeRoundForControls.type === "color" && activeRoundForControls.state === "closed" && activeRoundForControls.gradingRequired ? (
-                      <button type="button" onClick={() => void autoGradeRound(activeRoundForControls.id)} className="rounded bg-emerald-600 px-3 py-2 text-white">Grade round</button>
+                    {canRetryAutoGrade(activeRoundForControls, autoGradeFailedRoundId) ? (
+                      <button type="button" onClick={() => void autoGradeRound(activeRoundForControls.id)} className="rounded bg-emerald-600 px-3 py-2 text-white">Retry scoring</button>
                     ) : null}
                     {activeRoundForControls.state === "active" ? (
                       <button
