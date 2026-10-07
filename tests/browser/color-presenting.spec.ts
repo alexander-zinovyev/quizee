@@ -2,6 +2,8 @@ import { test, expect } from "@playwright/test";
 import { build } from "esbuild";
 import sharp from "sharp";
 
+test.use({ hasTouch: true });
+
 type Harness = Window & {
   renderColor: (host: boolean, state: "active" | "closed", reveal?: boolean) => void;
   setTeamColor: (team: string, color: string) => void;
@@ -80,12 +82,48 @@ for (const width of [1440, 390]) test(`live player, host and reveal canvas at ${
   await page.addScriptTag({ content: await bundle() });
   const pixel = (label: string, x = 48) => page.getByRole("img", { name: label, exact: true }).evaluate((element, x) => [...(element as HTMLCanvasElement).getContext("2d")!.getImageData(x, 32, 1, 1).data], x);
   await expect.poll(() => pixel("Color question")).toEqual([131, 197, 71, 255]);
+  const hue = page.getByRole("slider", { name: "Hue", exact: true });
+  await expect(hue).toHaveAttribute("aria-orientation", "vertical");
+  const tracks = page.locator(".color-picker-track");
+  await expect(tracks).toHaveCount(3);
+  const boxes = await tracks.evaluateAll((elements) => elements.map((element) => {
+    const rect = element.getBoundingClientRect();
+    return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+  }));
+  expect(boxes.every((box) => box.height > box.width * 2 && box.y === boxes[0].y)).toBe(true);
+  expect(boxes[1].x).toBeCloseTo(boxes[0].x + boxes[0].width);
+  expect(boxes[2].x).toBeCloseTo(boxes[1].x + boxes[1].width);
+  const pickerHeight = await page.locator(".color-picker-tracks").evaluate((element) => element.getBoundingClientRect().height);
+  expect(boxes.every((box) => Math.abs(box.height - pickerHeight) < 1)).toBe(true);
+  for (let index = 0; index < 3; index++) {
+    const handle = (await page.locator(".color-picker-handle").nth(index).boundingBox())!;
+    expect(handle.x + handle.width / 2).toBeCloseTo(boxes[index].x + boxes[index].width / 2);
+  }
+  const initialSaturationTrack = await tracks.nth(1).evaluate((element) => getComputedStyle(element).backgroundImage);
   expect(await pixel("Color question", 16)).toEqual([66, 133, 244, 255]);
   expect(await page.evaluate(() => (window as unknown as Harness).colorReads.some((path) => path.includes("rounds/r1/answers/q1") && !path.includes("teams")))).toBe(false);
   await page.getByRole("slider", { name: "Hue", exact: true }).press("Home");
   await expect.poll(() => pixel("Color question")).not.toEqual([131, 197, 71, 255]);
+  await expect.poll(() => tracks.nth(1).evaluate((element) => getComputedStyle(element).backgroundImage)).not.toBe(initialSaturationTrack);
+  const hueBox = (await hue.boundingBox())!;
+  await page.mouse.move(hueBox.x + hueBox.width / 2, hueBox.y + 16);
+  await page.mouse.down();
+  await page.mouse.move(hueBox.x + hueBox.width / 2, hueBox.y + hueBox.height * 0.65, { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(async () => Number(await hue.inputValue())).toBeGreaterThan(200);
+  await expect.poll(async () => Number(await hue.inputValue())).toBeLessThan(260);
+  if (width === 390) {
+    await page.touchscreen.tap(hueBox.x + hueBox.width / 2, hueBox.y + hueBox.height / 2);
+    await expect.poll(async () => Number(await hue.inputValue())).toBeGreaterThan(160);
+    await expect.poll(async () => Number(await hue.inputValue())).toBeLessThan(200);
+  }
+  await page.getByRole("slider", { name: "Saturation", exact: true }).press("Home");
+  await expect.poll(() => pixel("Color question")).toEqual([197, 197, 197, 255]);
+  await page.getByRole("slider", { name: "Value", exact: true }).press("Home");
+  await expect.poll(() => pixel("Color question")).toEqual([0, 0, 0, 255]);
   await page.evaluate(() => (window as unknown as Harness).setTeamColor("red", "#FF0000"));
   await expect.poll(() => pixel("Color question")).toEqual([255, 0, 0, 255]);
+  await page.getByRole("slider", { name: "Value", exact: true }).blur();
   await page.screenshot({ path: testInfo.outputPath(`player-${width}.png`), fullPage: true });
   await page.evaluate(() => { (window as unknown as Harness).setTeamColor("blue", "#00FF00"); (window as unknown as Harness).renderColor(true, "active"); });
   await expect.poll(() => pixel("Red team's answer")).toEqual([255, 0, 0, 255]);
