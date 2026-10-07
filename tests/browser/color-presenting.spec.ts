@@ -53,10 +53,10 @@ for (const width of [1440, 390]) test(`live player, host and reveal canvas at ${
   const stylesheets = await page.locator('link[rel="stylesheet"]').evaluateAll((links) => links.map((link) => (link as HTMLLinkElement).href));
   await page.route("**/__color-fixture", (route) => route.fulfill({ contentType: "text/html", body: `<html><head>${stylesheets.map((href) => `<link rel="stylesheet" href="${href}">`).join("")}</head><body></body></html>` }));
   await page.goto("/__color-fixture");
-  const image = await sharp({ create: { width: 64, height: 64, channels: 4, background: "#4285F4" } }).png().toBuffer();
-  const maskBytes = Buffer.alloc(64 * 64 * 4, 255);
-  for (let y = 0; y < 64; y++) for (let x = 0; x < 32; x++) maskBytes.fill(0, (y * 64 + x) * 4, (y * 64 + x) * 4 + 3);
-  const mask = await sharp(maskBytes, { raw: { width: 64, height: 64, channels: 4 } }).png().toBuffer();
+  const image = await sharp({ create: { width: 160, height: 64, channels: 4, background: "#4285F4" } }).png().toBuffer();
+  const maskBytes = Buffer.alloc(160 * 64 * 4, 255);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 80; x++) maskBytes.fill(0, (y * 160 + x) * 4, (y * 160 + x) * 4 + 3);
+  const mask = await sharp(maskBytes, { raw: { width: 160, height: 64, channels: 4 } }).png().toBuffer();
   await page.evaluate(({ image, mask }) => {
     const root = document.createElement("div"); root.id = "color-test"; root.className = "flex h-[420px] flex-col bg-zinc-950 text-white";
     document.body.replaceChildren(root);
@@ -89,7 +89,7 @@ for (const width of [1440, 390]) test(`live player, host and reveal canvas at ${
     };
   }, { image: `data:image/png;base64,${image.toString("base64")}`, mask: `data:image/png;base64,${mask.toString("base64")}` });
   await page.addScriptTag({ content: await bundle() });
-  const pixel = (label: string, x = 48) => page.getByRole("img", { name: label, exact: true }).evaluate((element, x) => [...(element as HTMLCanvasElement).getContext("2d")!.getImageData(x, 32, 1, 1).data], x);
+  const pixel = (label: string, x = 120) => page.getByRole("img", { name: label, exact: true }).evaluate((element, x) => [...(element as HTMLCanvasElement).getContext("2d")!.getImageData(x, 32, 1, 1).data], x);
   await expect.poll(() => pixel("Color question")).toEqual([131, 197, 71, 255]);
   const hue = page.getByRole("slider", { name: "Hue", exact: true });
   await expect(hue).toHaveAttribute("aria-orientation", "horizontal");
@@ -100,6 +100,8 @@ for (const width of [1440, 390]) test(`live player, host and reveal canvas at ${
     return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
   }));
   expect(boxes.every((box) => box.width > box.height * 3 && box.x === boxes[0].x)).toBe(true);
+  expect(boxes.every((box) => box.height === 28)).toBe(true);
+  expect((await page.locator(".color-picker-tracks").boundingBox())!.height).toBe(108);
   expect(boxes[1].y).toBeGreaterThan(boxes[0].y + boxes[0].height);
   expect(boxes[2].y).toBeGreaterThan(boxes[1].y + boxes[1].height);
   const imageBox = (await page.getByRole("img", { name: "Color question", exact: true }).boundingBox())!;
