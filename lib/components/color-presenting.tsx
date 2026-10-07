@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { doc, getDocFromServer, onSnapshot } from "firebase/firestore";
+import { Lock, LockOpen } from "lucide-react";
 import { useFirebaseAuth } from "@/app/providers/firebase-auth-provider";
 import { getClientFirestore } from "@/lib/firebase/client";
-import { AnswerWriteQueue } from "@/lib/answer-write-queue";
+import { AnswerWriteQueue, type PendingAnswer } from "@/lib/answer-write-queue";
 import type { RoundMeta, RoundQuestion } from "@/lib/hooks/use-room-rounds";
 import { ColorImage } from "./color-image";
 import { useRoomColorArtwork } from "@/lib/hooks/use-room-color-artwork";
@@ -20,17 +21,23 @@ export function ColorPresenting({ roomSlug, round, question, teamId, isHost, tea
   const initial = question.initialColor ?? "#000000";
   const [saved, setSaved] = useState<string | null>(null);
   const savedRef = useRef(initial);
+  const [locked, setLocked] = useState(false);
+  const lockedRef = useRef(false);
+  const [answerReady, setAnswerReady] = useState(false);
   const [score, setScore] = useState<{ perceptionScore: number; awardedPoints: number } | null>(null);
   const [teamColors, setTeamColors] = useState<Record<string, string>>({});
   const [target, setTarget] = useState<string | null>(null);
-  const [pending, setPending] = useState<string | null>(null);
-  const pendingRef = useRef<string | null>(null);
+  const [pending, setPending] = useState<PendingAnswer | null>(null);
+  const pendingRef = useRef<PendingAnswer | null>(null);
   const [draft, setDraft] = useState<string | null>(null);
   const draftRef = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const queue = useRef<AnswerWriteQueue | null>(null);
   const artwork = useRoomColorArtwork(roomSlug, question.media?.storagePath, question.mask?.storagePath, question.regionIds);
   const canEdit = !isHost && !!teamId && round.state === "active" && !withAnswer;
+  const isLocked = pending?.locked ?? locked;
+  const controlsDisabled = !answerReady || isLocked || pending?.locked !== undefined;
   const reveal = round.state === "closed" && (isHost || withAnswer);
   const teamKey = teams.map((team) => team.id).join("|");
 
@@ -53,11 +60,15 @@ export function ColorPresenting({ roomSlug, round, question, teamId, isHost, tea
     const answerRef = round.state === "closed"
       ? doc(getClientFirestore(), "rooms", roomSlug, "rounds", round.id, "teamAnswers", teamId, "answers", question.id)
       : doc(getClientFirestore(), "rooms", roomSlug, "teams", teamId, "rounds", round.id, "answers", question.id);
-    return onSnapshot(answerRef,
+    return onSnapshot(answerRef, { includeMetadataChanges: true },
       (snap) => {
         const data = snap.data();
         savedRef.current = data?.answer ?? initial;
         setSaved(savedRef.current);
+        lockedRef.current = data?.locked === true;
+        setLocked(lockedRef.current);
+        setAnswerReady(!snap.metadata.fromCache);
+        if (lockedRef.current) { draftRef.current = null; setDraft(null); }
         setScore(round.state === "closed" && typeof data?.perceptionScore === "number" && Number.isFinite(data.perceptionScore) && typeof data.awardedPoints === "number" && Number.isFinite(data.awardedPoints)
           ? { perceptionScore: data.perceptionScore, awardedPoints: data.awardedPoints } : null);
       }, (e) => setError(e.message));
@@ -79,9 +90,11 @@ export function ColorPresenting({ roomSlug, round, question, teamId, isHost, tea
         const snap = await getDocFromServer(answerRef);
         savedRef.current = snap.data()?.answer ?? initial;
         setSaved(savedRef.current);
+        lockedRef.current = snap.data()?.locked === true;
+        setLocked(lockedRef.current);
       },
-      pending: (value) => { pendingRef.current = value?.answer ?? null; setPending(pendingRef.current); },
-      error: (e) => setError(e instanceof Error ? e.message : "Unable to save color."),
+      pending: (value) => { pendingRef.current = value; setPending(value); },
+      error: (e) => setSaveError(e instanceof Error ? e.message : "Unable to save color."),
     });
     queue.current = writer;
     return () => {
@@ -99,7 +112,8 @@ export function ColorPresenting({ roomSlug, round, question, teamId, isHost, tea
     if (!color || !canEdit || !queue.current) return;
     draftRef.current = null;
     setDraft(null);
-    if (color === (pendingRef.current ?? savedRef.current)) return;
+    if (lockedRef.current || pendingRef.current?.locked !== undefined || color === (pendingRef.current?.answer ?? savedRef.current)) return;
+    setSaveError(null);
     queue.current.enqueue({ answer: color });
   }
   function cancel() {
@@ -107,8 +121,16 @@ export function ColorPresenting({ roomSlug, round, question, teamId, isHost, tea
     setDraft(null);
   }
   function change(hex: string) {
+    if (lockedRef.current || pendingRef.current?.locked !== undefined) return;
     draftRef.current = hex;
     setDraft(hex);
+  }
+  function toggleLock() {
+    if (!canEdit || !answerReady || !queue.current || pendingRef.current?.locked !== undefined) return;
+    setSaveError(null);
+    if (!lockedRef.current) commit();
+    cancel();
+    queue.current.enqueue({ locked: !lockedRef.current });
   }
   if (error || artwork?.error) return <p role="alert" className="p-4 text-red-300">{error ?? artwork?.error}</p>;
   if (!artwork?.artwork) return <p className="p-4 text-zinc-100">Loading image...</p>;
@@ -116,12 +138,22 @@ export function ColorPresenting({ roomSlug, round, question, teamId, isHost, tea
   if (isHost) return <div className="@container min-h-0 flex-1 overflow-auto"><div className="grid grid-cols-1 gap-4 p-4 @sm:grid-cols-2 @3xl:grid-cols-3">
     {teams.map((team) => <figure key={team.id} className="min-w-0"><figcaption className="mb-2 break-words text-center text-sm font-semibold text-zinc-100">{team.name}</figcaption><div className="relative"><ColorImage artwork={artwork.artwork!} color={teamColors[team.id] ?? initial} label={`${team.name}'s answer`} /><ColorImageIndicator version="team" /></div></figure>)}
   </div></div>;
-  const color = draft ?? pending ?? saved ?? initial;
+  const color = draft ?? pending?.answer ?? saved ?? initial;
   return <div className="min-h-0 flex-1 overflow-auto"><div className={`grid min-w-0 gap-4 p-4 ${canEdit ? "h-full grid-rows-[minmax(0,1fr)_auto]" : ""}`}>
     {reveal && target ? <ColorAnswerReveal artwork={artwork.artwork} submittedColor={saved ?? initial} targetColor={target} /> : canEdit ? (
       <div className="relative flex min-h-0 items-center justify-center"><ColorImage artwork={artwork.artwork} color={color} className="block h-full w-full object-contain" />{teamId ? <ColorImageIndicator version="team" /> : null}</div>
     ) : <div className="relative"><ColorImage artwork={artwork.artwork} color={color} />{teamId ? <ColorImageIndicator version="team" /> : null}</div>}
-    {canEdit ? <ColorControls color={color} disabled={false} onChange={change} onCommit={commit} onCancel={cancel} /> : null}
+    {canEdit ? <div className="w-full max-w-[472px] justify-self-center">
+      {saveError ? <p role="alert" className="mb-2 text-sm text-red-300">{saveError}</p> : null}
+      <div className="flex min-w-0 items-center gap-3">
+        <ColorControls color={color} disabled={controlsDisabled} onChange={change} onCommit={commit} onCancel={cancel} />
+        <button type="button" aria-label={isLocked ? "Unlock answer" : "Lock answer"} title={isLocked ? "Unlock answer" : "Lock answer"} aria-pressed={isLocked}
+          disabled={!answerReady || pending?.locked !== undefined} onClick={toggleLock}
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded border text-white disabled:cursor-not-allowed disabled:opacity-50 ${isLocked ? "border-emerald-400 bg-emerald-600 hover:bg-emerald-500" : "border-zinc-600 bg-zinc-800 hover:bg-zinc-700"}`}>
+          {isLocked ? <Lock size={18} /> : <LockOpen size={18} />}
+        </button>
+      </div>
+    </div> : null}
     {reveal && teamId ? <div aria-label="Question score" className="flex flex-wrap justify-center gap-4 text-sm text-zinc-100">
       {score ? <><span>Similarity <strong>{score.perceptionScore.toFixed(2)} / 10</strong></span><span>Points <strong>{Number(score.awardedPoints.toFixed(2))}</strong></span></> : <span role="status">Scoring...</span>}
     </div> : null}
