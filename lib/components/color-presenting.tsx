@@ -100,13 +100,13 @@ export function ColorPresenting({ roomSlug, round, question, teamId, isHost, tea
   }
   if (error || artwork?.error) return <p role="alert" className="p-4 text-red-300">{error ?? artwork?.error}</p>;
   if (!artwork?.artwork) return <p className="p-4">Loading image...</p>;
-  if (reveal) return target ? <div className="p-4"><ColorImage artwork={artwork.artwork} color={target} label="Correct answer" /></div> : <p className="p-4">Loading answer...</p>;
-  if (isHost) return <div className="grid grid-cols-1 gap-4 overflow-auto p-4 sm:grid-cols-2 xl:grid-cols-3">
+  if (reveal) return target ? <div className="min-h-0 flex-1 overflow-auto p-4"><ColorImage artwork={artwork.artwork} color={target} label="Correct answer" /></div> : <p className="p-4">Loading answer...</p>;
+  if (isHost) return <div className="@container min-h-0 flex-1 overflow-auto"><div className="grid grid-cols-1 gap-4 p-4 @sm:grid-cols-2 @3xl:grid-cols-3">
     {teams.map((team) => <figure key={team.id} className="min-w-0"><figcaption className="mb-2 break-words text-center text-sm font-semibold">{team.name}</figcaption><ColorImage artwork={artwork.artwork!} color={teamColors[team.id] ?? initial} label={`${team.name}'s answer`} /></figure>)}
-  </div>;
+  </div></div>;
   const color = pending ?? saved ?? initial;
-  return <div className="grid min-w-0 gap-4 overflow-auto p-4 md:grid-cols-[minmax(0,1fr)_minmax(180px,260px)]">
+  return <div className="@container min-h-0 flex-1 overflow-auto"><div className="grid min-w-0 gap-4 p-4 @lg:grid-cols-[minmax(0,1fr)_minmax(160px,240px)]">
     <ColorImage artwork={artwork.artwork} color={color} />
     {!isHost ? <ColorControls color={color} disabled={!canEdit} onChange={change} onCommit={flush} /> : null}
-  </div>;
+  </div></div>;
 }

@@ -231,6 +231,11 @@ export default function RoomContent({
       .map<QuizRoundData | null>((meta, index) => {
         const questions = roundQuestions[meta.id] ?? [];
 
+        if (meta.type === "color") return {
+          id: meta.id, type: "color", title: meta.title, roundNumber: meta.order + 1,
+          questions: questions.map((q) => ({ id: q.id, initialColor: q.initialColor })),
+        };
+
         if (meta.type === "text") {
           return {
             id: meta.id,
@@ -594,12 +599,12 @@ export default function RoomContent({
       const meta = roundsMeta.find((round) => round.id === roundId);
       if (meta?.type === "text" || meta?.type === "multi-step" || meta?.type === "color") {
         const next = presenting?.round === roundId
-          ? { round: roundId, question: meta.type === "color" ? presenting?.question ?? null : null, withAnswer: false }
+          ? { round: roundId, question: meta.type === "color" ? presenting?.question ?? roundQuestions[roundId]?.[0]?.id ?? null : null, withAnswer: false }
           : { round: presenting?.round ?? null, question: presenting?.question ?? null,
               withAnswer: presenting?.withAnswer ?? false, promptPage: presenting?.promptPage ?? 0,
               answerPage: presenting?.answerPage ?? 0 };
         await persistPresentation(next, { closeRound: roundId });
-        if (meta.type === "color") await autoGradeImageRound(roundId);
+        if (meta.type === "color") await autoGradeRound(roundId);
         return;
       }
       const db = getClientFirestore();
@@ -611,7 +616,7 @@ export default function RoomContent({
         gradingRequired: true,
       });
       if (meta?.type === "image") {
-        await autoGradeImageRound(roundId);
+        await autoGradeRound(roundId);
       }
     } catch (error) {
       console.error("[room-content] end round failed", error);
@@ -823,7 +828,7 @@ export default function RoomContent({
     }
   }
 
-  async function autoGradeImageRound(roundId: string) {
+  async function autoGradeRound(roundId: string) {
     try {
       const token = await getToken();
       const response = await fetch(`/api/rooms/${roomSlug}/rounds/${roundId}/grade`, {
@@ -836,11 +841,11 @@ export default function RoomContent({
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
         console.error("[room-content] auto-grade failed", payload);
-        setRoundsError(payload.message ?? "Unable to auto-grade image round right now.");
+        setRoundsError(payload.message ?? "Unable to auto-grade this round right now.");
       }
     } catch (error) {
       console.error("[room-content] auto-grade failed", error);
-      setRoundsError("Unable to auto-grade image round right now.");
+      setRoundsError("Unable to auto-grade this round right now.");
     }
   }
 
@@ -849,9 +854,9 @@ export default function RoomContent({
     setIsEndingRound(true);
     try {
       if (activeRoundForControls.type === "text" || activeRoundForControls.type === "multi-step" || activeRoundForControls.type === "color") {
-        await persistPresentation({ round: activeRoundForControls.id, question: activeRoundForControls.type === "color" ? presenting?.question ?? null : null, withAnswer: false },
+        await persistPresentation({ round: activeRoundForControls.id, question: activeRoundForControls.type === "color" ? presenting?.question ?? controlQuestions[0]?.id ?? null : null, withAnswer: false },
           { closeRound: activeRoundForControls.id });
-        if (activeRoundForControls.type === "color") await autoGradeImageRound(activeRoundForControls.id);
+        if (activeRoundForControls.type === "color") await autoGradeRound(activeRoundForControls.id);
         return;
       }
       const db = getClientFirestore();
@@ -874,7 +879,7 @@ export default function RoomContent({
         }),
       ]);
       if (activeRoundForControls.type === "image") {
-        await autoGradeImageRound(activeRoundForControls.id);
+        await autoGradeRound(activeRoundForControls.id);
       }
     } catch (error) {
       console.error("[room-content] end round failed", error);
@@ -1483,6 +1488,9 @@ export default function RoomContent({
                   ) : null}
 
                   <div className="ml-auto flex items-center gap-2">
+                    {activeRoundForControls.type === "color" && activeRoundForControls.state === "closed" && activeRoundForControls.gradingRequired ? (
+                      <button type="button" onClick={() => void autoGradeRound(activeRoundForControls.id)} className="rounded bg-emerald-600 px-3 py-2 text-white">Grade round</button>
+                    ) : null}
                     {activeRoundForControls.state === "active" ? (
                       <button
                         type="button"

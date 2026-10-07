@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://quizee.local/schemas/quiz.schema.json",
   "title": "Quizee Quiz Schema",
-  "description": "Schema for quiz packs containing text, image, and multi-step rounds.",
+  "description": "Schema for quiz packs containing text, image, multi-step, and color rounds.",
   "type": "array",
   "minItems": 1,
   "items": {

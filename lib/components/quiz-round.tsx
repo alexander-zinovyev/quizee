@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { QuizRoundData } from "@/types/quiz";
 import ImageQuizRound from "./image-round";
 import AnswerRound from "./answer-round";
+import { ColorAnswerSummary } from "./color-answer-summary";
 
 export default function QuizRound(props: QuizRoundData) {
   const {
@@ -24,6 +25,8 @@ export default function QuizRound(props: QuizRoundData) {
     body = (
       <p className="text-sm text-zinc-500 dark:text-zinc-400">{emptyLabel}</p>
     );
+  } else if (props.type === "color") {
+    body = <ColorAnswerSummary key={`${roomSlug}:${teamId}:${roundId}`} roomSlug={roomSlug} roundId={roundId} teamId={teamId} questions={questions} />;
   } else if (props.type === "text" || props.type === "multi-step") {
     const hydrationKey = props.questions
       .map((question) => {

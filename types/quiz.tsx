@@ -1,4 +1,5 @@
 export type Question = {
+  initialColor?: string;
   /**
    * Stable identifier for associating answers with questions.
    */
@@ -119,4 +120,11 @@ export type ImageRoundData = RoundData & {
   onAnswer?: (question: Question, answer: ImageItem) => void;
 };
 
-export type QuizRoundData = TextRoundData | ImageRoundData | MultiStepRoundData;
+export type ColorRoundData = RoundData & {
+  type: "color";
+  questions: Question[];
+  roomSlug?: string;
+  teamId?: string;
+};
+
+export type QuizRoundData = TextRoundData | ImageRoundData | MultiStepRoundData | ColorRoundData;
