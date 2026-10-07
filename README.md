@@ -45,6 +45,7 @@ After closure, sliders are hidden and each team sees its frozen submission until
 reveal. Hover over the revealed image to compare the submission; touch users can
 hold the image, and keyboard users can focus it. Sliders are horizontal below the
 image during the round. Reduced-motion preferences disable the reveal animation.
+Revealed questions show the team's similarity score out of 10 and awarded points.
 
 Similarity is `10 * exp(-CIEDE2000 / 18)`. Threshold mode awards points when the
 unrounded score meets the threshold. Closest mode splits the point pool equally

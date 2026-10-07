@@ -34,7 +34,7 @@ export function ColorControls({ color, disabled, onChange, onCommit }: {
               className="color-picker-handle"
               style={{ left: (() => {
                 const fraction = hsv[channel] / (channel === "h" ? 360 : 100);
-                return `calc(${fraction * 100}% + ${12 - fraction * 24}px)`;
+                return `calc(${fraction * 100}% + ${16 - fraction * 32}px)`;
               })() }}
             />
             <input
