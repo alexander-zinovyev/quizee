@@ -8,6 +8,7 @@ import {
 } from "firebase/firestore";
 
 import { getClientFirestore } from "@/lib/firebase/client";
+import { parseRegionIds } from "@/types/color";
 
 export type RoundMeta = {
   id: string;
@@ -34,6 +35,7 @@ export type RoundQuestionStage = {
 };
 
 export type RoundQuestion = {
+  regionIds?: string[];
   mask?: RoundQuestionMedia | null;
   initialColor?: string;
   id: string;
@@ -291,6 +293,7 @@ export function useRoomRounds(roomSlug: string, isHost?: boolean) {
                       correctAnswer,
                       media,
                       mask: parseMedia(data.mask),
+                      regionIds: data.regionIds === undefined ? undefined : parseRegionIds(data.regionIds),
                       initialColor: typeof data.initialColor === "string" ? data.initialColor : undefined,
                       promptStages:
                         promptStages.length > 0

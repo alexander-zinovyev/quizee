@@ -2,8 +2,10 @@
 
 import { getDownloadURL, getStorage, ref } from "firebase/storage";
 import { getFirebaseClientApp } from "@/lib/firebase/client";
+import { parseColorSvg, type ColorSvg } from "./color-svg";
 
-export type ColorArtwork = { image: ImageData; mask: ImageData };
+export type RasterColorArtwork = { kind?: "raster"; image: ImageData; mask: ImageData };
+export type ColorArtwork = RasterColorArtwork | ColorSvg;
 
 async function readImage(url: string): Promise<ImageData> {
   const image = new Image();
@@ -20,7 +22,14 @@ async function readImage(url: string): Promise<ImageData> {
   return context.getImageData(0, 0, canvas.width, canvas.height);
 }
 
-export async function loadColorArtwork(imageUrl: string, maskUrl: string): Promise<ColorArtwork> {
+export async function loadColorArtwork(imageUrl: string, maskUrl?: string, regionIds?: string[]): Promise<ColorArtwork> {
+  if (regionIds) {
+    if (maskUrl) throw new Error("SVG artwork cannot have a raster mask.");
+    const response = await fetch(imageUrl);
+    if (!response.ok) throw new Error("Unable to load SVG artwork.");
+    return parseColorSvg(await response.text(), regionIds);
+  }
+  if (!maskUrl) throw new Error("Raster artwork requires a mask.");
   const [image, mask] = await Promise.all([readImage(imageUrl), readImage(maskUrl)]);
   if (image.width !== mask.width || image.height !== mask.height) throw new Error("Image and mask dimensions must match.");
   return { image, mask };
@@ -31,31 +40,32 @@ type CacheEntry = { promise: Promise<ColorArtwork>; artwork?: ColorArtwork };
 export class ColorArtworkCache {
   private entries = new Map<string, CacheEntry>();
 
-  constructor(private readonly loader: (image: string, mask: string) => Promise<ColorArtwork>, private readonly maxBytes = 64 * 1024 * 1024) {}
+  constructor(private readonly loader: (image: string, mask?: string, regionIds?: string[]) => Promise<ColorArtwork>, private readonly maxBytes = 64 * 1024 * 1024) {}
 
-  private key(room: string, image: string, mask: string) { return JSON.stringify([room, image, mask]); }
+  private key(room: string, image: string, mask?: string, regionIds?: string[]) { return JSON.stringify([room, image, mask, regionIds]); }
+  private size(artwork: ColorArtwork) { return artwork.kind === "svg" ? new TextEncoder().encode(JSON.stringify(artwork)).byteLength : artwork.image.data.byteLength + artwork.mask.data.byteLength; }
 
-  get(room: string, image: string, mask: string): ColorArtwork | undefined {
-    const key = this.key(room, image, mask), entry = this.entries.get(key);
+  get(room: string, image: string, mask?: string, regionIds?: string[]): ColorArtwork | undefined {
+    const key = this.key(room, image, mask, regionIds), entry = this.entries.get(key);
     if (!entry?.artwork) return undefined;
     this.entries.delete(key);
     this.entries.set(key, entry);
     return entry.artwork;
   }
 
-  load(room: string, image: string, mask: string): Promise<ColorArtwork> {
-    const key = this.key(room, image, mask), existing = this.entries.get(key);
+  load(room: string, image: string, mask?: string, regionIds?: string[]): Promise<ColorArtwork> {
+    const key = this.key(room, image, mask, regionIds), existing = this.entries.get(key);
     if (existing) return existing.promise;
-    const entry: CacheEntry = { promise: Promise.resolve().then(() => this.loader(image, mask)) };
+    const entry: CacheEntry = { promise: Promise.resolve().then(() => this.loader(image, mask, regionIds)) };
     this.entries.set(key, entry);
     entry.promise = entry.promise.then((artwork) => {
       entry.artwork = artwork;
       // Keep decoded pixel buffers bounded; mounted views retain their own artwork.
-      let bytes = [...this.entries.values()].reduce((sum, item) => sum + (item.artwork ? item.artwork.image.data.byteLength + item.artwork.mask.data.byteLength : 0), 0);
+      let bytes = [...this.entries.values()].reduce((sum, item) => sum + (item.artwork ? this.size(item.artwork) : 0), 0);
       for (const [oldKey, oldEntry] of this.entries) {
         if (bytes <= this.maxBytes) break;
         if (!oldEntry.artwork) continue;
-        bytes -= oldEntry.artwork.image.data.byteLength + oldEntry.artwork.mask.data.byteLength;
+        bytes -= this.size(oldEntry.artwork);
         this.entries.delete(oldKey);
       }
       return artwork;
@@ -67,8 +77,8 @@ export class ColorArtworkCache {
   }
 }
 
-export const roomColorArtwork = new ColorArtworkCache(async (image, mask) => {
+export const roomColorArtwork = new ColorArtworkCache(async (image, mask, regionIds) => {
   const storage = getStorage(getFirebaseClientApp());
-  const [imageUrl, maskUrl] = await Promise.all([image, mask].map((path) => getDownloadURL(ref(storage, path))));
-  return loadColorArtwork(imageUrl, maskUrl);
+  const [imageUrl, maskUrl] = await Promise.all([image, ...(mask ? [mask] : [])].map((path) => getDownloadURL(ref(storage, path))));
+  return loadColorArtwork(imageUrl, maskUrl, regionIds);
 });

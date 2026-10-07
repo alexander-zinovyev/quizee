@@ -73,7 +73,7 @@ export function parseColorSvg(source: string, selectedIds?: string[]): ColorSvg 
     const excluded = hidden || ["defs", "clipPath", "linearGradient", "radialGradient"].includes(node.tag);
     const paints = node.children.flatMap((child) => inspect(child, fill, excluded));
     if (!excluded && shapes.has(node.tag) && fill !== "none") paints.push(fill);
-    const solid = paints.length && paints.every((paint) => !paint.startsWith("url("));
+    const solid = paints.length && paints.every((paint) => !paint.startsWith("url(") && new Color(paint).alpha === 1);
     const normalized = solid ? paints.map((paint) => new Color(paint).toString({ format: "hex" })) : [];
     if (!excluded && node.attributes.id && (shapes.has(node.tag) || node.tag === "g") && solid && new Set(normalized).size === 1) eligible.push(node.attributes.id);
     return paints;

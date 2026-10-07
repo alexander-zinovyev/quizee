@@ -25,7 +25,7 @@ export function ColorPresenting({ roomSlug, round, question, teamId, isHost, tea
   const queue = useRef<AnswerWriteQueue | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const queued = useRef<string | null>(null);
-  const artwork = useRoomColorArtwork(roomSlug, question.media?.storagePath, question.mask?.storagePath);
+  const artwork = useRoomColorArtwork(roomSlug, question.media?.storagePath, question.mask?.storagePath, question.regionIds);
   const initial = question.initialColor ?? "#000000";
   const canEdit = !isHost && !!teamId && round.state === "active" && !withAnswer;
   const reveal = round.state === "closed" && (isHost || withAnswer);
