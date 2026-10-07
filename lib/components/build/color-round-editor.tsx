@@ -6,7 +6,9 @@ import type { ColorScoring } from "@/types/color";
 import { HEX_COLOR } from "@/types/color";
 import type { MediaTreeFile } from "./media-tree-shared";
 import MediaSelector from "./media-selector";
-import { ColorImage, useColorArtwork } from "../color-image";
+import { ColorImage } from "../color-image";
+import { loadColorArtwork, type ColorArtwork } from "@/lib/media/color-artwork";
+import { parseColorSvg } from "@/lib/media/color-svg";
 import { validateColorFiles } from "@/lib/build/color-assets";
 
 export type BuildColorQuestion = { id: string; image: string | null; mask?: string | null; regionIds?: string[]; initialColor: string; targetColor: string };
@@ -19,25 +21,35 @@ function ColorQuestionEditor({ question, mediaFiles, onChange }: {
 }) {
   const image = mediaFiles.find((file) => file.path === question.image)?.file;
   const mask = mediaFiles.find((file) => file.path === question.mask)?.file;
-  const [state, setState] = useState<{ imageFile: File; maskFile: File; image: string; mask: string } | null>(null);
-  const [error, setError] = useState<{ imageFile: File; maskFile: File; message: string } | null>(null);
+  const svg = question.image?.endsWith(".svg") ?? false;
+  const [state, setState] = useState<{ imageFile: File; maskFile?: File; artwork?: ColorArtwork; error?: string } | null>(null);
   const [preview, setPreview] = useState<"initialColor" | "targetColor">("initialColor");
-  const current = state?.imageFile === image && state?.maskFile === mask ? state : null;
-  const artwork = useColorArtwork(current?.image ?? null, current?.mask ?? null);
+  const current = state?.imageFile === image && state?.maskFile === (svg ? undefined : mask) ? state : null;
+  const artwork = current?.artwork?.kind === "svg" ? { ...current.artwork, regionIds: question.regionIds ?? [] } : current?.artwork;
   useEffect(() => {
-    if (!image || !mask) return;
+    if (!image || (!svg && !mask)) return;
     let cancelled = false;
-    const imageUrl = URL.createObjectURL(image), maskUrl = URL.createObjectURL(mask);
-    validateColorFiles(image, mask).then(() => {
-      if (!cancelled) setState({ imageFile: image, maskFile: mask, image: imageUrl, mask: maskUrl });
-    }).catch((e: Error) => { if (!cancelled) setError({ imageFile: image, maskFile: mask, message: e.message }); });
-    return () => { cancelled = true; URL.revokeObjectURL(imageUrl); URL.revokeObjectURL(maskUrl); };
-  }, [image, mask]);
-  const validationError = error?.imageFile === image && error?.maskFile === mask ? error?.message : artwork?.error;
+    const urls: string[] = [];
+    const load = async () => {
+      if (svg) return parseColorSvg(await image.text());
+      await validateColorFiles(image, mask!);
+      urls.push(URL.createObjectURL(image), URL.createObjectURL(mask!));
+      return loadColorArtwork(urls[0], urls[1]);
+    };
+    void load().then((artwork) => {
+      if (!cancelled) setState({ imageFile: image, maskFile: svg ? undefined : mask, artwork });
+    }).catch((error: Error) => { if (!cancelled) setState({ imageFile: image, maskFile: svg ? undefined : mask, error: error.message }); });
+    return () => { cancelled = true; urls.forEach((url) => URL.revokeObjectURL(url)); };
+  }, [image, mask, svg]);
+  const regionError = artwork?.kind === "svg" && (!(question.regionIds?.length) || question.regionIds.some((id) => !artwork.eligibleRegionIds.includes(id))) ? "Select at least one valid SVG region." : null;
+  const validationError = current?.error ?? regionError;
   const inputClass = "min-w-0 rounded border border-zinc-300 bg-transparent px-2 py-1.5 dark:border-zinc-700";
   return <div className="grid min-w-0 gap-4 md:grid-cols-2">
     <div className="space-y-3">
-      {(["image", "mask"] as const).map((field) => <div key={field}><p className="mb-1 text-sm font-semibold">{field === "image" ? "Image" : "Mask"}</p><MediaSelector mediaFiles={mediaFiles.filter((file) => /\.(png|jpe?g|webp)$/i.test(file.path))} value={question[field] ?? null} onChange={(value) => onChange({ ...question, [field]: value })} /></div>)}
+      <div><p className="mb-1 text-sm font-semibold">Image</p><MediaSelector mediaFiles={mediaFiles.filter((file) => /\.(png|jpe?g|webp|svg)$/i.test(file.path))} value={question.image} onChange={(image) => onChange({ ...question, image, mask: image?.endsWith(".svg") ? undefined : null, regionIds: image?.endsWith(".svg") ? [] : undefined })} /></div>
+      {svg ? <fieldset className="space-y-2"><legend className="mb-1 text-sm font-semibold">Regions</legend>
+        {artwork?.kind === "svg" ? artwork.eligibleRegionIds.map((id) => <label key={id} className="flex items-center gap-2 text-sm"><input type="checkbox" aria-label={`Recolor ${id}`} checked={question.regionIds?.includes(id) ?? false} onChange={(event) => onChange({ ...question, regionIds: event.target.checked ? [...(question.regionIds ?? []), id] : question.regionIds?.filter((region) => region !== id) })} />{id}</label>) : null}
+      </fieldset> : <div><p className="mb-1 text-sm font-semibold">Mask</p><MediaSelector mediaFiles={mediaFiles.filter((file) => /\.(png|jpe?g|webp)$/i.test(file.path))} value={question.mask ?? null} onChange={(mask) => onChange({ ...question, mask })} /></div>}
       {(["initialColor", "targetColor"] as const).map((field) => <label key={field} className="block text-sm">
         <span className="mb-1 block">{field === "initialColor" ? "Initial color" : "Target color"}</span>
         <span className="flex items-center gap-2"><span className="h-8 w-8 shrink-0 rounded border border-zinc-400" aria-label={HEX_COLOR.test(question[field]) ? question[field] : "Invalid color"} style={{ backgroundColor: HEX_COLOR.test(question[field]) ? question[field] : "transparent" }} />
@@ -48,7 +60,7 @@ function ColorQuestionEditor({ question, mediaFiles, onChange }: {
     </div>
     <div className="min-w-0">
       <div className="mb-3 flex gap-1" role="group" aria-label="Preview color">{(["initialColor", "targetColor"] as const).map((field) => <button key={field} type="button" aria-pressed={preview === field} onClick={() => setPreview(field)} className={`rounded px-3 py-1 text-sm ${preview === field ? "bg-emerald-600 text-white" : "bg-zinc-200 text-zinc-800"}`}>{field === "initialColor" ? "Initial" : "Target"}</button>)}</div>
-      {artwork?.artwork && !validationError && HEX_COLOR.test(question[preview]) ? <ColorImage artwork={artwork.artwork} color={question[preview]} label="Question preview" /> : null}
+      {artwork && !current?.error && HEX_COLOR.test(question[preview]) ? <ColorImage artwork={artwork} color={question[preview]} label="Question preview" /> : null}
     </div>
   </div>;
 }

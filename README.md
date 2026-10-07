@@ -13,7 +13,7 @@ Visit `http://localhost:3000`.
 
 ## Color rounds
 
-The builder supports `color` rounds. Select a static PNG, JPEG, or WebP image and
+The builder supports `color` rounds. For raster questions, select a static PNG, JPEG, or WebP image and
 a grayscale mask with identical dimensions (at most 16 megapixels). White mask
 pixels are recolored, black pixels are preserved, and gray edges are blended.
 Enter six-digit HEX initial and target colors and choose threshold or closest
@@ -46,6 +46,38 @@ reveal. Hover over the revealed image to compare the submission; touch users can
 hold the image, and keyboard users can focus it. Sliders are horizontal below the
 image during the round. Reduced-motion preferences disable the reveal animation.
 Revealed questions show the team's similarity score out of 10 and awarded points.
+
+SVG color questions use one file and a nonempty array of unique region IDs instead
+of a mask:
+
+```json
+{
+  "image": "logo.svg",
+  "regionIds": ["lettering", "symbol"],
+  "initialColor": "#83C547",
+  "targetColor": "#4285F4"
+}
+```
+
+```xml
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 60">
+  <g id="lettering" fill="#4285F4">
+    <rect x="10" y="10" width="20" height="40" />
+    <rect x="40" y="10" width="20" height="40" />
+  </g>
+  <circle id="symbol" cx="95" cy="30" r="20" fill="#4285F4" />
+</svg>
+```
+
+The builder lists eligible IDs as checkboxes and previews all selected regions
+with the same color. Existing raster packs remain supported. SVGs require a valid
+`viewBox` and static shapes or groups with flat, opaque fills for selected regions.
+Use presentation attributes such as `fill` and `stroke`; convert visible text to
+paths. Static local gradients and clipping paths are supported outside editable
+regions. CSS styles, scripts, animation, embedded images, external references, and
+document types are refused. IDs must start with a letter or underscore and contain
+only letters, digits, underscores, dots, colons, and hyphens. SVG files are limited
+to 1 MiB, 5,000 elements, and a nesting depth of 64.
 
 Similarity is `10 * exp(-CIEDE2000 / 18)`. Threshold mode awards points when the
 unrounded score meets the threshold. Closest mode splits the point pool equally
