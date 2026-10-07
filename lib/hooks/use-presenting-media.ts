@@ -3,6 +3,7 @@ import { doc, onSnapshot, type Unsubscribe } from "firebase/firestore";
 import { getDownloadURL, getStorage, ref } from "firebase/storage";
 
 import { getClientFirestore, getFirebaseClientApp } from "@/lib/firebase/client";
+import { roomColorArtwork } from "@/lib/media/color-artwork";
 import type {
   RoundImage,
   RoundImages,
@@ -47,6 +48,11 @@ function getMediaKind(media: RoundQuestionMedia | null | undefined): MediaKind {
 
 export function usesStagedAnswerReveal(roundType: RoundMeta["type"] | null | undefined): boolean {
   return roundType === "text" || roundType === "multi-step";
+}
+
+export function getColorPreloadQuestions(questions: RoundQuestion[], questionId?: string | null): RoundQuestion[] {
+  const index = Math.max(0, questions.findIndex((question) => question.id === questionId));
+  return questions.slice(index, index + 2);
 }
 
 function cacheMediaUrl(
@@ -97,8 +103,8 @@ export function usePresentingMedia({
   const [answerMediaError, setAnswerMediaError] = useState<string | null>(null);
 
   const presentingMedia = useMemo(
-    () => presentingQuestion?.media ?? null,
-    [presentingQuestion]
+    () => presentingRoundMeta?.type === "color" ? null : presentingQuestion?.media ?? null,
+    [presentingQuestion, presentingRoundMeta?.type]
   );
 
   const presentingImageAnswer = useMemo<RoundImage | null>(() => {
@@ -110,7 +116,7 @@ export function usePresentingMedia({
     );
   }, [presentingImageAnswerId, presentingRoundMeta?.id, roundImages]);
 
-  const shouldShowMedia = !!presentingQuestion?.media;
+  const shouldShowMedia = !!presentingMedia;
 
   const isPresentingImageRound = presentingRoundMeta?.type === "image";
 
@@ -391,6 +397,15 @@ export function usePresentingMedia({
 
     activeRoundIds.forEach((roundId) => {
       const meta = roundsMeta.find((r) => r.id === roundId);
+      if (meta?.type === "color") {
+        getColorPreloadQuestions(roundQuestions[roundId] ?? [], presenting?.round === roundId ? presenting.question : null).forEach((question) => {
+          if (!question.media?.storagePath || !question.mask?.storagePath) return;
+          void roomColorArtwork.load(roomSlug, question.media.storagePath, question.mask.storagePath).catch((error: unknown) => {
+            console.error("[room-content] color artwork preload failed", error);
+          });
+        });
+        return;
+      }
       const mediaItems =
         meta?.type === "image"
           ? [
@@ -446,7 +461,7 @@ export function usePresentingMedia({
           });
       });
     });
-  }, [roundImages, roundQuestions, roundsMeta]);
+  }, [roundImages, roundQuestions, roundsMeta, roomSlug, presenting?.round, presenting?.question]);
 
   const getCachedMediaUrl = (storagePath: string) => {
     return mediaUrlCacheRef.current.get(storagePath)?.url;
