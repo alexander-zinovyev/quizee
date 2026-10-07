@@ -116,6 +116,7 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
     } finally { URL.revokeObjectURL(url); }
   }, x);
   await expect.poll(() => pixel("Color question")).toEqual([131, 197, 71, 255]);
+  await expect(page.getByText("Team", { exact: true })).toBeVisible();
   if (format === "svg") await expect.poll(() => pixel("Color question", 40)).toEqual([131, 197, 71, 255]);
   const hue = page.getByRole("slider", { name: "Hue", exact: true });
   await expect(hue).toHaveAttribute("aria-orientation", "horizontal");
@@ -131,6 +132,11 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
   expect(boxes[1].y).toBeGreaterThan(boxes[0].y + boxes[0].height);
   expect(boxes[2].y).toBeGreaterThan(boxes[1].y + boxes[1].height);
   const imageBox = (await page.getByRole("img", { name: "Color question", exact: true }).boundingBox())!;
+  const activeIndicator = (await page.getByText("Team", { exact: true }).boundingBox())!;
+  const activeWidth = Math.min(imageBox.width, imageBox.height * 160 / 64);
+  const activeHeight = activeWidth * 64 / 160;
+  expect(Math.abs(activeIndicator.x - imageBox.x - (imageBox.width - activeWidth) / 2 - 8)).toBeLessThan(1);
+  expect(Math.abs(activeIndicator.y - imageBox.y - (imageBox.height - activeHeight) / 2 - 8)).toBeLessThan(1);
   expect(boxes[0].y).toBeGreaterThanOrEqual(imageBox.y + imageBox.height);
   expect(boxes[2].y + boxes[2].height).toBeLessThanOrEqual(420);
   for (let index = 0; index < 3; index++) {
@@ -173,6 +179,7 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
   await page.evaluate(() => { (window as unknown as Harness).setTeamColor("blue", "#00FF00"); (window as unknown as Harness).renderColor(true, "active"); });
   await expect.poll(() => pixel("Red team's answer")).toEqual([255, 0, 0, 255]);
   await expect.poll(() => pixel("Blue team's answer")).toEqual([0, 255, 0, 255]);
+  await expect(page.getByText("Team", { exact: true })).toHaveCount(2);
   if (format === "svg") {
     const bounds = (await page.getByRole("img", { name: "Red team's answer" }).boundingBox())!;
     expect(Math.abs(bounds.height - bounds.width * 64 / 160)).toBeLessThan(1);
@@ -191,8 +198,11 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
   await page.evaluate(() => (window as unknown as Harness).renderColor(true, "closed"));
   await expect(page.getByRole("img", { name: "Correct answer" })).toHaveCount(1);
   await expect.poll(() => pixel("Correct answer")).toEqual([66, 133, 244, 255]);
+  await expect(page.getByText("Original", { exact: true })).toBeVisible();
+  await expect(page.getByText("Team", { exact: true })).toHaveCount(0);
   await page.evaluate(() => (window as unknown as Harness).renderColor(false, "closed"));
   await expect(page.getByRole("slider")).toHaveCount(0);
+  await expect(page.getByText("Team", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Question score")).toHaveCount(0);
   await expect(page.getByRole("img", { name: "Correct answer" })).toHaveCount(0);
   await expect.poll(() => pixel("Color question")).toEqual([255, 0, 0, 255]);
@@ -231,10 +241,25 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
   await expect.poll(() => pixel("Submitted answer")).toEqual([255, 0, 0, 255]);
   await expect(page.locator(".color-answer-correct-layer")).toHaveCSS("clip-path", "inset(0px 0px 0px 50%)");
   expect(await halves()).toEqual([[255, 0, 0], [66, 133, 244]]);
+  await expect(comparison.getByText("Team", { exact: true })).toBeVisible();
+  await expect(comparison.getByText("Original", { exact: true })).toBeVisible();
+  const imageBounds = (await comparison.boundingBox())!;
+  const teamLabel = (await comparison.getByText("Team", { exact: true }).boundingBox())!;
+  const originalLabel = (await comparison.getByText("Original", { exact: true }).boundingBox())!;
+  const artworkWidth = Math.min(imageBounds.width, imageBounds.height * 160 / 64);
+  const artworkHeight = artworkWidth * 64 / 160;
+  const horizontalInset = (imageBounds.width - artworkWidth) / 2;
+  const verticalInset = (imageBounds.height - artworkHeight) / 2;
+  expect(Math.abs(teamLabel.x - imageBounds.x - horizontalInset - 8)).toBeLessThan(1);
+  expect(Math.abs(imageBounds.x + imageBounds.width - originalLabel.x - originalLabel.width - horizontalInset - 8)).toBeLessThan(1);
+  expect(Math.abs(teamLabel.y - imageBounds.y - verticalInset - 8)).toBeLessThan(1);
+  expect(Math.abs(originalLabel.y - imageBounds.y - verticalInset - 8)).toBeLessThan(1);
   await page.screenshot({ path: testInfo.outputPath(`split-${width}.png`), fullPage: true });
   await page.mouse.move(0, 0);
   await expect.poll(() => pixel("Correct answer")).toEqual([66, 133, 244, 255]);
   await expect(page.locator(".color-answer-correct-layer")).toHaveCSS("clip-path", "inset(0px)");
+  await expect(comparison.getByText("Team", { exact: true })).toBeHidden();
+  await expect(comparison.getByText("Original", { exact: true })).toBeVisible();
   await comparison.focus();
   await expect.poll(() => pixel("Submitted answer")).toEqual([255, 0, 0, 255]);
   await comparison.blur();

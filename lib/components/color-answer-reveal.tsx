@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ColorImage, type ColorArtwork } from "./color-image";
+import { ColorImageIndicator } from "./color-image-indicator";
 
 export function ColorAnswerReveal({ artwork, submittedColor, targetColor }: {
   artwork: ColorArtwork; submittedColor: string; targetColor: string;
@@ -34,12 +35,14 @@ export function ColorAnswerReveal({ artwork, submittedColor, targetColor }: {
       }}
       onKeyUp={() => setHeld(false)}
     >
-      <span className="block" aria-hidden={!comparing}>
+      <span className="relative block" aria-hidden={!comparing}>
         <ColorImage artwork={artwork} color={submittedColor} label="Submitted answer" />
+        <ColorImageIndicator version="team" hidden={!comparing} />
       </span>
       <span className="color-answer-correct-layer absolute inset-0 block" style={{ clipPath: comparing ? "inset(0 0 0 50%)" : "inset(0)" }}>
-        <span className="color-answer-transition block" style={{ animation: revealed ? "none" : undefined }} onAnimationEnd={() => setRevealed(true)}>
+        <span className="color-answer-transition relative block" style={{ animation: revealed ? "none" : undefined }} onAnimationEnd={() => setRevealed(true)}>
           <ColorImage artwork={artwork} color={targetColor} label="Correct answer" />
+          <ColorImageIndicator version="original" />
         </span>
       </span>
       <span aria-hidden="true" className="color-answer-fold" style={{ animation: revealed ? "none" : undefined }} />

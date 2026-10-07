@@ -43,8 +43,9 @@ images during the round and the correct image after closure. Players see the
 correct image with a left-to-right page-turn-style wipe when the host selects Show answer.
 After closure, sliders are hidden and each team sees its frozen submission until
 reveal. Hover over the revealed image for a split comparison: the left half shows
-the submission and the right half shows the correct image. Touch users can hold
-the image, and keyboard users can focus it. Sliders are horizontal below the
+the submission and the right half shows the correct image. Image indicators label
+the submission "Team" at the top left and the correct version "Original" at the
+top right. Touch users can hold the image, and keyboard users can focus it. Sliders are horizontal below the
 image during the round. Reduced-motion preferences disable the reveal animation.
 Revealed questions show the team's similarity score out of 10 and awarded points.
 
