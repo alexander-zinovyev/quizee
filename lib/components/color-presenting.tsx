@@ -2,12 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { doc, getDocFromServer, onSnapshot } from "firebase/firestore";
-import { getDownloadURL, getStorage, ref } from "firebase/storage";
 import { useFirebaseAuth } from "@/app/providers/firebase-auth-provider";
-import { getClientFirestore, getFirebaseClientApp } from "@/lib/firebase/client";
+import { getClientFirestore } from "@/lib/firebase/client";
 import { AnswerWriteQueue } from "@/lib/answer-write-queue";
 import type { RoundMeta, RoundQuestion } from "@/lib/hooks/use-room-rounds";
-import { ColorImage, useColorArtwork } from "./color-image";
+import { ColorImage } from "./color-image";
+import { useRoomColorArtwork } from "@/lib/hooks/use-room-color-artwork";
 import { ColorControls } from "./color-controls";
 import { ColorAnswerReveal } from "./color-answer-reveal";
 
@@ -16,8 +16,8 @@ export function ColorPresenting({ roomSlug, round, question, teamId, isHost, tea
   teams: Array<{ id: string; name: string }>; withAnswer: boolean;
 }) {
   const { getToken } = useFirebaseAuth();
-  const [urls, setUrls] = useState<{ image: string; mask: string } | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
+  const [score, setScore] = useState<{ perceptionScore: number; awardedPoints: number } | null>(null);
   const [teamColors, setTeamColors] = useState<Record<string, string>>({});
   const [target, setTarget] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
@@ -25,7 +25,7 @@ export function ColorPresenting({ roomSlug, round, question, teamId, isHost, tea
   const queue = useRef<AnswerWriteQueue | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const queued = useRef<string | null>(null);
-  const artwork = useColorArtwork(urls?.image ?? null, urls?.mask ?? null);
+  const artwork = useRoomColorArtwork(roomSlug, question.media?.storagePath, question.mask?.storagePath);
   const initial = question.initialColor ?? "#000000";
   const canEdit = !isHost && !!teamId && round.state === "active" && !withAnswer;
   const reveal = round.state === "closed" && (isHost || withAnswer);
@@ -46,22 +46,17 @@ export function ColorPresenting({ roomSlug, round, question, teamId, isHost, tea
   }, [reveal, roomSlug, round.id, question.id]);
 
   useEffect(() => {
-    let cancelled = false;
-    if (!question.media?.storagePath || !question.mask?.storagePath) return;
-    const storage = getStorage(getFirebaseClientApp());
-    Promise.all([question.media.storagePath, question.mask.storagePath].map((path) => getDownloadURL(ref(storage, path))))
-      .then(([image, mask]) => { if (!cancelled) setUrls({ image, mask }); })
-      .catch((e: Error) => { if (!cancelled) setError(e.message); });
-    return () => { cancelled = true; };
-  }, [question.media?.storagePath, question.mask?.storagePath]);
-
-  useEffect(() => {
     if (!teamId || isHost) return;
     const answerRef = round.state === "closed"
       ? doc(getClientFirestore(), "rooms", roomSlug, "rounds", round.id, "teamAnswers", teamId, "answers", question.id)
       : doc(getClientFirestore(), "rooms", roomSlug, "teams", teamId, "rounds", round.id, "answers", question.id);
     return onSnapshot(answerRef,
-      (snap) => setSaved(snap.data()?.answer ?? initial), (e) => setError(e.message));
+      (snap) => {
+        const data = snap.data();
+        setSaved(data?.answer ?? initial);
+        setScore(round.state === "closed" && typeof data?.perceptionScore === "number" && Number.isFinite(data.perceptionScore) && typeof data.awardedPoints === "number" && Number.isFinite(data.awardedPoints)
+          ? { perceptionScore: data.perceptionScore, awardedPoints: data.awardedPoints } : null);
+      }, (e) => setError(e.message));
   }, [teamId, isHost, roomSlug, round.id, round.state, question.id, initial]);
 
   useEffect(() => {
@@ -103,10 +98,10 @@ export function ColorPresenting({ roomSlug, round, question, teamId, isHost, tea
     if (!timer.current) timer.current = setTimeout(flush, 150);
   }
   if (error || artwork?.error) return <p role="alert" className="p-4 text-red-300">{error ?? artwork?.error}</p>;
-  if (!artwork?.artwork) return <p className="p-4">Loading image...</p>;
+  if (!artwork?.artwork) return <p className="p-4 text-zinc-100">Loading image...</p>;
   if (reveal && isHost) return target ? <div className="min-h-0 flex-1 overflow-auto p-4"><ColorImage artwork={artwork.artwork} color={target} label="Correct answer" /></div> : <p className="p-4">Loading answer...</p>;
   if (isHost) return <div className="@container min-h-0 flex-1 overflow-auto"><div className="grid grid-cols-1 gap-4 p-4 @sm:grid-cols-2 @3xl:grid-cols-3">
-    {teams.map((team) => <figure key={team.id} className="min-w-0"><figcaption className="mb-2 break-words text-center text-sm font-semibold">{team.name}</figcaption><ColorImage artwork={artwork.artwork!} color={teamColors[team.id] ?? initial} label={`${team.name}'s answer`} /></figure>)}
+    {teams.map((team) => <figure key={team.id} className="min-w-0"><figcaption className="mb-2 break-words text-center text-sm font-semibold text-zinc-100">{team.name}</figcaption><ColorImage artwork={artwork.artwork!} color={teamColors[team.id] ?? initial} label={`${team.name}'s answer`} /></figure>)}
   </div></div>;
   const color = pending ?? saved ?? initial;
   return <div className="min-h-0 flex-1 overflow-auto"><div className={`grid min-w-0 gap-4 p-4 ${canEdit ? "h-full grid-rows-[minmax(0,1fr)_auto]" : ""}`}>
@@ -114,5 +109,8 @@ export function ColorPresenting({ roomSlug, round, question, teamId, isHost, tea
       <div className="flex min-h-0 items-center justify-center"><ColorImage artwork={artwork.artwork} color={color} className="block h-full w-full object-contain" /></div>
     ) : <ColorImage artwork={artwork.artwork} color={color} />}
     {canEdit ? <ColorControls color={color} disabled={false} onChange={change} onCommit={flush} /> : null}
+    {reveal && teamId ? <div aria-label="Question score" className="flex flex-wrap justify-center gap-4 text-sm text-zinc-100">
+      {score ? <><span>Similarity <strong>{score.perceptionScore.toFixed(2)} / 10</strong></span><span>Points <strong>{Number(score.awardedPoints.toFixed(2))}</strong></span></> : <span role="status">Scoring...</span>}
+    </div> : null}
   </div></div>;
 }
