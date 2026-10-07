@@ -40,10 +40,11 @@ scoring. Prepare masks in an external image editor.
 Players edit HSV controls in the presenting view. Teams share automatically
 saved HEX answers; untouched answers use the initial color. Hosts see live team
 images during the round and the correct image after closure. Players see the
-correct image with an animated transition when the host selects Show answer.
+correct image with a left-to-right page-turn-style wipe when the host selects Show answer.
 After closure, sliders are hidden and each team sees its frozen submission until
-reveal. Hover over the revealed image to compare the submission; touch users can
-hold the image, and keyboard users can focus it. Sliders are horizontal below the
+reveal. Hover over the revealed image for a split comparison: the left half shows
+the submission and the right half shows the correct image. Touch users can hold
+the image, and keyboard users can focus it. Sliders are horizontal below the
 image during the round. Reduced-motion preferences disable the reveal animation.
 Revealed questions show the team's similarity score out of 10 and awarded points.
 
@@ -69,7 +70,7 @@ of a mask:
 </svg>
 ```
 
-The builder lists eligible IDs as checkboxes and previews all selected regions
+The builder provides editable dropdown rows with add/remove controls and previews all selected regions
 with the same color. Existing raster packs remain supported. SVGs require a valid
 `viewBox` and static shapes or groups with flat, opaque fills for selected regions.
 Use presentation attributes such as `fill` and `stroke`; convert visible text to

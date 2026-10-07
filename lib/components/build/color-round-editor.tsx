@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowUp, ArrowDown, X } from "lucide-react";
+import { ArrowUp, ArrowDown, Plus, X } from "lucide-react";
 import type { ColorScoring } from "@/types/color";
 import { HEX_COLOR } from "@/types/color";
 import type { MediaTreeFile } from "./media-tree-shared";
@@ -46,9 +46,21 @@ function ColorQuestionEditor({ question, mediaFiles, onChange }: {
   const inputClass = "min-w-0 rounded border border-zinc-300 bg-transparent px-2 py-1.5 dark:border-zinc-700";
   return <div className="grid min-w-0 gap-4 md:grid-cols-2">
     <div className="space-y-3">
-      <div><p className="mb-1 text-sm font-semibold">Image</p><MediaSelector mediaFiles={mediaFiles.filter((file) => /\.(png|jpe?g|webp|svg)$/i.test(file.path))} value={question.image} onChange={(image) => onChange({ ...question, image, mask: image?.endsWith(".svg") ? undefined : null, regionIds: image?.endsWith(".svg") ? [] : undefined })} /></div>
+      <div><p className="mb-1 text-sm font-semibold">Image</p><MediaSelector mediaFiles={mediaFiles.filter((file) => /\.(png|jpe?g|webp|svg)$/i.test(file.path))} value={question.image} onChange={(image) => { if (image !== question.image) onChange({ ...question, image, mask: image?.endsWith(".svg") ? undefined : null, regionIds: image?.endsWith(".svg") ? [] : undefined }); }} /></div>
       {svg ? <fieldset className="space-y-2"><legend className="mb-1 text-sm font-semibold">Regions</legend>
-        {artwork?.kind === "svg" ? artwork.eligibleRegionIds.map((id) => <label key={id} className="flex items-center gap-2 text-sm"><input type="checkbox" aria-label={`Recolor ${id}`} checked={question.regionIds?.includes(id) ?? false} onChange={(event) => onChange({ ...question, regionIds: event.target.checked ? [...(question.regionIds ?? []), id] : question.regionIds?.filter((region) => region !== id) })} />{id}</label>) : null}
+        {artwork?.kind === "svg" ? <>
+          {(question.regionIds ?? []).map((id, index) => <div key={index} className="flex min-w-0 items-center gap-2">
+            <select aria-label={`SVG region ${index + 1}`} className={`${inputClass} flex-1 text-sm`} value={id} onChange={(event) => onChange({ ...question, regionIds: question.regionIds!.map((region, row) => row === index ? event.target.value : region) })}>
+              {!artwork.eligibleRegionIds.includes(id) ? <option value={id}>{id}</option> : null}
+              {artwork.eligibleRegionIds.filter((region) => region === id || !question.regionIds?.includes(region)).map((region) => <option key={region} value={region}>{region}</option>)}
+            </select>
+            <button type="button" title={`Remove region ${index + 1}`} aria-label={`Remove region ${index + 1}`} onClick={() => onChange({ ...question, regionIds: question.regionIds!.filter((_region, row) => row !== index) })} className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded text-red-500"><X size={16} /></button>
+          </div>)}
+          <button type="button" disabled={artwork.eligibleRegionIds.every((id) => question.regionIds?.includes(id))} className="inline-flex items-center gap-1 rounded px-2 py-1 text-sm text-emerald-600 disabled:opacity-40" onClick={() => {
+            const next = artwork.eligibleRegionIds.find((id) => !question.regionIds?.includes(id));
+            if (next) onChange({ ...question, regionIds: [...(question.regionIds ?? []), next] });
+          }}><Plus size={16} />Add region</button>
+        </> : null}
       </fieldset> : <div><p className="mb-1 text-sm font-semibold">Mask</p><MediaSelector mediaFiles={mediaFiles.filter((file) => /\.(png|jpe?g|webp)$/i.test(file.path))} value={question.mask ?? null} onChange={(mask) => onChange({ ...question, mask })} /></div>}
       {(["initialColor", "targetColor"] as const).map((field) => <label key={field} className="block text-sm">
         <span className="mb-1 block">{field === "initialColor" ? "Initial color" : "Target color"}</span>
