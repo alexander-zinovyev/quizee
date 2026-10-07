@@ -1,4 +1,5 @@
 import { posix } from "node:path";
+import { HEX_COLOR, parseColorScoring, type ColorScoring } from "@/types/color";
 
 export type ValidatedStage = {
   text?: string;
@@ -54,7 +55,15 @@ export type ValidatedMultiStepRound = {
   questions: ValidatedMultiStepQuestion[];
 };
 
-export type ValidatedRound = ValidatedTextRound | ValidatedImageRound | ValidatedMultiStepRound;
+export type ValidatedColorRound = {
+  order: number;
+  type: "color";
+  title: string;
+  scoring: ColorScoring;
+  questions: Array<{ order: number; imagePath: string; maskPath: string; initialColor: string; targetColor: string }>;
+};
+
+export type ValidatedRound = ValidatedTextRound | ValidatedImageRound | ValidatedMultiStepRound | ValidatedColorRound;
 
 export const ROOM_ID_REGEX = /^[a-z0-9-]{3,50}$/;
 
@@ -241,8 +250,8 @@ export function validateQuizFile(content: string): ValidatedRound[] | string {
     const title = ensureString(round?.title);
     const questions = round?.questions;
 
-    if (type !== "text" && type !== "image" && type !== "multi-step") {
-      return `Round ${roundIndex + 1}: only "text", "image", or "multi-step" rounds are supported right now.`;
+    if (type !== "text" && type !== "image" && type !== "multi-step" && type !== "color") {
+      return `Round ${roundIndex + 1}: unsupported round type.`;
     }
 
     if (!title) {
@@ -251,6 +260,27 @@ export function validateQuizFile(content: string): ValidatedRound[] | string {
 
     if (!Array.isArray(questions) || questions.length === 0) {
       return `Round ${roundIndex + 1}: questions array is required and cannot be empty.`;
+    }
+
+    if (type === "color") {
+      let scoring: ColorScoring;
+      try { scoring = parseColorScoring(round.scoring); }
+      catch (error) { return `Round ${roundIndex + 1}: ${(error as Error).message}`; }
+      const colorQuestions: ValidatedColorRound["questions"] = [];
+      for (const [index, raw] of questions.entries()) {
+        if (!raw || typeof raw !== "object") return `Round ${roundIndex + 1}: invalid color question.`;
+        const q = raw as Record<string, unknown>;
+        if (Object.keys(q).some((key) => !["image", "mask", "initialColor", "targetColor"].includes(key))) return "Unexpected color question field.";
+        const image = validateMediaPath(q.image, "Color image");
+        const mask = validateMediaPath(q.mask, "Color mask");
+        if (typeof image === "string") return image;
+        if (typeof mask === "string") return mask;
+        if (![image.path, mask.path].every((path) => /\.(png|jpe?g|webp)$/i.test(path) && !path.split("/").includes(".."))) return "Color assets must be relative PNG, JPEG, or WebP images.";
+        if (typeof q.initialColor !== "string" || !HEX_COLOR.test(q.initialColor) || typeof q.targetColor !== "string" || !HEX_COLOR.test(q.targetColor)) return "Color values must be six-digit HEX colors.";
+        colorQuestions.push({ order: index, imagePath: image.path, maskPath: mask.path, initialColor: q.initialColor.toUpperCase(), targetColor: q.targetColor.toUpperCase() });
+      }
+      validatedRounds.push({ order: roundIndex, type, title, scoring, questions: colorQuestions });
+      continue;
     }
 
     if (type === "text") {

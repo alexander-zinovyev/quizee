@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 import { posix } from "node:path";
+import sharp from "sharp";
 
 import { getServerAuth, getServerFirestore, getServerStorageBucket } from "@/server/database";
 import {
@@ -245,6 +246,23 @@ export async function POST(request: NextRequest) {
     });
   }
 
+  try {
+    for (const round of rounds) {
+      if (round.type !== "color") continue;
+      for (const question of round.questions) {
+        const dimensions = await Promise.all([question.imagePath, question.maskPath].map(async (path) => {
+          const [bytes] = await bucket.file(mediaFiles.get(path)!.uploadPath).download();
+          const metadata = await sharp(bytes, { limitInputPixels: 16777216 }).metadata();
+          if (!["png", "jpeg", "webp"].includes(metadata.format ?? "") || (metadata.pages ?? 1) !== 1 || !metadata.width || !metadata.height) throw new Error("Color assets must be static raster images.");
+          return metadata;
+        }));
+        if (dimensions[0].width !== dimensions[1].width || dimensions[0].height !== dimensions[1].height) throw new Error("Color image and mask dimensions must match.");
+      }
+    }
+  } catch (error) {
+    return NextResponse.json({ message: (error as Error).message }, { status: 400 });
+  }
+
   const batch = db.batch();
   const copiedMedia = new Set<string>();
   const resolveMedia = async (path: string) => {
@@ -327,7 +345,16 @@ export async function POST(request: NextRequest) {
 
     batch.set(roundRef, createRoundDocumentData(round));
 
-    if (round.type === "text") {
+    if (round.type === "color") {
+      for (const question of round.questions) {
+        const id = `question-${question.order + 1}`;
+        batch.set(roundRef.collection("questions").doc(id), {
+          order: question.order, media: await resolveMedia(question.imagePath),
+          mask: await resolveMedia(question.maskPath), initialColor: question.initialColor,
+        });
+        batch.set(roundRef.collection("answers").doc(id), { answer: question.targetColor });
+      }
+    } else if (round.type === "text") {
       for (const question of round.questions) {
         const questionId = `question-${question.order + 1}`;
         const questionRef = roundRef.collection("questions").doc(questionId);

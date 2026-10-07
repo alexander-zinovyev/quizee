@@ -9,6 +9,24 @@
     "$ref": "#/$defs/round"
   },
   "$defs": {
+    "hexColor": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
+    "colorAsset": { "type": "string", "pattern": "^(?!/)(?!media/)(?!.*(?:^|/)\\.\\.(?:/|$)).+\\.(png|jpg|jpeg|webp)$" },
+    "colorScoring": {
+      "oneOf": [
+        { "type": "object", "additionalProperties": false, "required": ["mode"], "properties": {
+          "mode": { "const": "threshold" }, "points": { "type": "number", "exclusiveMinimum": 0 }, "threshold": { "type": "number", "minimum": 0, "maximum": 10 }
+        } },
+        { "type": "object", "additionalProperties": false, "required": ["mode"], "properties": {
+          "mode": { "const": "closest" }, "points": { "type": "number", "exclusiveMinimum": 0 }, "tieTolerance": { "type": "number", "minimum": 0, "maximum": 10 }
+        } }
+      ]
+    },
+    "colorQuestion": { "type": "object", "additionalProperties": false, "required": ["image", "mask", "initialColor", "targetColor"], "properties": {
+      "image": { "$ref": "#/$defs/colorAsset" }, "mask": { "$ref": "#/$defs/colorAsset" }, "initialColor": { "$ref": "#/$defs/hexColor" }, "targetColor": { "$ref": "#/$defs/hexColor" }
+    } },
+    "colorRound": { "type": "object", "additionalProperties": false, "required": ["type", "title", "questions", "scoring"], "properties": {
+      "type": { "const": "color" }, "title": { "$ref": "#/$defs/nonEmptyText" }, "scoring": { "$ref": "#/$defs/colorScoring" }, "questions": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/colorQuestion" } }
+    } },
     "nonEmptyText": {
       "type": "string",
       "minLength": 1,
@@ -216,6 +234,7 @@
     },
     "round": {
       "oneOf": [
+        { "$ref": "#/$defs/colorRound" },
         {
           "$ref": "#/$defs/textRound"
         },

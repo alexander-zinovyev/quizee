@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test:rules": "tsx server/rooms/answer-rules.test.ts",
-    "test:validation": "tsx server/rooms/validation.test.ts && tsx server/rooms/manifest.test.ts && tsx lib/answers.test.ts && tsx lib/answer-write-queue.test.ts && tsx server/rooms/answer-input.test.ts && tsx server/rooms/multi-step-submission.test.ts && tsx server/rooms/presentation.test.ts && tsx lib/components/answer-round.test.tsx && tsx lib/components/room/grading.test.ts && tsx lib/hooks/use-room-rounds.test.ts && tsx lib/hooks/use-presenting-media.test.ts && tsx app/build/page.test.ts && tsx lib/components/room/prompt-navigation.test.tsx && tsx app/[room]/team-score-breakdown.test.ts"
+    "test:validation": "tsx server/rooms/validation.test.ts && tsx server/rooms/manifest.test.ts && tsx lib/answers.test.ts && tsx lib/answer-write-queue.test.ts && tsx server/rooms/answer-input.test.ts && tsx server/rooms/multi-step-submission.test.ts && tsx server/rooms/presentation.test.ts && tsx lib/components/answer-round.test.tsx && tsx lib/components/room/grading.test.ts && tsx lib/hooks/use-room-rounds.test.ts && tsx lib/hooks/use-presenting-media.test.ts && tsx app/build/page.test.ts && tsx lib/components/room/prompt-navigation.test.tsx && tsx app/[room]/team-score-breakdown.test.ts",
+    "test:color": "tsx server/rooms/color-validation.test.ts"
   },
   "dependencies": {
     "@daily-co/daily-js": "^0.86.0",
@@ -21,6 +22,7 @@
     "@moq/token": "^0.3.3",
     "@moq/watch": "^0.5.4",
     "@opentelemetry/api": "^1.9.0",
+    "colorjs.io": "^0.7.1",
     "dotenv": "^17.2.3",
     "drizzle-orm": "^0.44.7",
     "fflate": "^0.8.2",
@@ -32,7 +34,8 @@
     "pg": "^8.16.3",
     "react": "19.2.8",
     "react-color-palette": "^7.3.1",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "sharp": "^0.35.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
