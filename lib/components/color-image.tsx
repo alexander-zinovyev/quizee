@@ -2,29 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { recolorPixels } from "@/lib/color";
+import { loadColorArtwork, type ColorArtwork } from "@/lib/media/color-artwork";
 
-export type ColorArtwork = { image: ImageData; mask: ImageData };
-
-async function readImage(url: string): Promise<ImageData> {
-  const image = new Image();
-  image.crossOrigin = "anonymous";
-  image.src = url;
-  await image.decode();
-  if (!image.naturalWidth || !image.naturalHeight || image.naturalWidth * image.naturalHeight > 16777216) throw new Error("Color image is empty or exceeds 16 megapixels.");
-  const canvas = document.createElement("canvas");
-  canvas.width = image.naturalWidth;
-  canvas.height = image.naturalHeight;
-  const context = canvas.getContext("2d", { willReadFrequently: true });
-  if (!context) throw new Error("Canvas is unavailable.");
-  context.drawImage(image, 0, 0);
-  return context.getImageData(0, 0, canvas.width, canvas.height);
-}
-
-export async function loadColorArtwork(imageUrl: string, maskUrl: string): Promise<ColorArtwork> {
-  const [image, mask] = await Promise.all([readImage(imageUrl), readImage(maskUrl)]);
-  if (image.width !== mask.width || image.height !== mask.height) throw new Error("Image and mask dimensions must match.");
-  return { image, mask };
-}
+export type { ColorArtwork } from "@/lib/media/color-artwork";
 
 export function useColorArtwork(imageUrl: string | null, maskUrl: string | null) {
   const [state, setState] = useState<{ key: string; artwork?: ColorArtwork; error?: string } | null>(null);
