@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { recolorPixels } from "@/lib/color";
 import { loadColorArtwork, type ColorArtwork } from "@/lib/media/color-artwork";
+import { ColorSvgImage } from "./color-svg";
 
 export type { ColorArtwork } from "@/lib/media/color-artwork";
 
@@ -26,9 +27,10 @@ export function ColorImage({ artwork, color, original = false, label = "Color qu
   const canvas = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const context = canvas.current?.getContext("2d");
-    if (!context) return;
+    if (!context || artwork.kind === "svg") return;
     context.putImageData(original ? artwork.image : new ImageData(recolorPixels(artwork.image.data, artwork.mask.data, color), artwork.image.width, artwork.image.height), 0, 0);
   }, [artwork, color, original]);
+  if (artwork.kind === "svg") return <ColorSvgImage artwork={artwork} color={color} original={original} label={label} className={className} />;
   return <canvas ref={canvas} width={artwork.image.width} height={artwork.image.height}
     role="img" aria-label={label} className={className} style={{ aspectRatio: `${artwork.image.width}/${artwork.image.height}` }} />;
 }

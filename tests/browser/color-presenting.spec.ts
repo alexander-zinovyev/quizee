@@ -12,7 +12,7 @@ type Harness = Window & {
   gradeTeamColor: (team: string, perceptionScore: number, awardedPoints: number) => void;
 };
 
-async function bundle() {
+async function bundle(format: "raster" | "svg") {
   const result = await build({
     stdin: { contents: `
       import React from 'react';
@@ -24,7 +24,7 @@ async function bundle() {
         root.render(
         <ColorPresenting key={host ? 'host' : 'player'} roomSlug="demo"
           round={{ id:'r1', type:'color', state, title:'Colors', order:0 }}
-          question={{ id:'q1', order:0, prompt:null, displayPrompt:'Question 1', initialColor:'#83C547', media:{storagePath:'image'}, mask:{storagePath:'mask'} }}
+          question={{ id:'q1', order:0, prompt:null, displayPrompt:'Question 1', initialColor:'#83C547', media:{storagePath:'image'}, ${format === "svg" ? "regionIds:['left','right']" : "mask:{storagePath:'mask'}"} }}
           teamId="red" isHost={host} teams={[{id:'red',name:'Red team'},{id:'blue',name:'Blue team'}]} withAnswer={reveal} />);
       };
       window.renderColor(false, 'active');`, resolveDir: process.cwd(), loader: "tsx" },
@@ -48,7 +48,7 @@ async function bundle() {
   return result.outputFiles[0].text;
 }
 
-for (const width of [1440, 390]) test(`live player, host and reveal canvas at ${width}px`, async ({ page }, testInfo) => {
+for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]) test(`live ${format} player, host and reveal at ${width}px`, async ({ page }, testInfo) => {
   await page.setViewportSize({ width, height: 900 });
   await page.goto("/build");
   await expect(page.getByRole("button", { name: "Add round", exact: true })).toBeVisible();
@@ -90,14 +90,33 @@ for (const width of [1440, 390]) test(`live player, host and reveal canvas at ${
       docs[path] = { ...docs[path], perceptionScore, awardedPoints };
       listeners.get(path)?.forEach((callback) => callback(snapshot(path)));
     };
-    window.fetch = async (_url, options) => {
+    const assetFetch = window.fetch.bind(window);
+    window.fetch = async (url, options) => {
+      if (typeof url === "string" && url.startsWith("data:")) return assetFetch(url);
       const body = JSON.parse(options!.body as string); setTeamColor(body.teamId, body.answer);
       return new Response("{}", { status: 200 });
     };
-  }, { image: `data:image/png;base64,${image.toString("base64")}`, mask: `data:image/png;base64,${mask.toString("base64")}` });
-  await page.addScriptTag({ content: await bundle() });
-  const pixel = (label: string, x = 120) => page.getByRole("img", { name: label, exact: true }).evaluate((element, x) => [...(element as HTMLCanvasElement).getContext("2d")!.getImageData(x, 32, 1, 1).data], x);
+  }, { image: format === "svg" ? `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 64"><rect width="160" height="64" fill="#4285F4"/><rect id="left" x="80" width="40" height="64" fill="#4285F4"/><rect id="right" x="120" width="40" height="64" fill="#4285F4"/></svg>')}` : `data:image/png;base64,${image.toString("base64")}`, mask: `data:image/png;base64,${mask.toString("base64")}` });
+  await page.addScriptTag({ content: await bundle(format) });
+  const assetReads = format === "svg" ? ["image"] : ["image", "mask"];
+  const pixel = (label: string, x = 120) => page.getByRole("img", { name: label, exact: true }).evaluate(async (element, x) => {
+    if (element instanceof HTMLCanvasElement) return [...element.getContext("2d")!.getImageData(x, 32, 1, 1).data];
+    const image = new Image();
+    const copy = element.cloneNode(true) as SVGSVGElement;
+    copy.setAttribute("width", "160"); copy.setAttribute("height", "64");
+    const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(copy)], { type: "image/svg+xml" }));
+    try {
+      image.src = url;
+      await image.decode();
+      const canvas = document.createElement("canvas");
+      canvas.width = 160; canvas.height = 64;
+      const context = canvas.getContext("2d")!;
+      context.drawImage(image, 0, 0, 160, 64);
+      return [...context.getImageData(x, 32, 1, 1).data];
+    } finally { URL.revokeObjectURL(url); }
+  }, x);
   await expect.poll(() => pixel("Color question")).toEqual([131, 197, 71, 255]);
+  if (format === "svg") await expect.poll(() => pixel("Color question", 100)).toEqual([131, 197, 71, 255]);
   const hue = page.getByRole("slider", { name: "Hue", exact: true });
   await expect(hue).toHaveAttribute("aria-orientation", "horizontal");
   const tracks = page.locator(".color-picker-track");
@@ -154,6 +173,10 @@ for (const width of [1440, 390]) test(`live player, host and reveal canvas at ${
   await page.evaluate(() => { (window as unknown as Harness).setTeamColor("blue", "#00FF00"); (window as unknown as Harness).renderColor(true, "active"); });
   await expect.poll(() => pixel("Red team's answer")).toEqual([255, 0, 0, 255]);
   await expect.poll(() => pixel("Blue team's answer")).toEqual([0, 255, 0, 255]);
+  if (format === "svg") {
+    const bounds = (await page.getByRole("img", { name: "Red team's answer" }).boundingBox())!;
+    expect(Math.abs(bounds.height - bounds.width * 64 / 160)).toBeLessThan(1);
+  }
   const labelColor = await page.getByText("Red team", { exact: true }).evaluate((element) => {
     const canvas = document.createElement("canvas");
     canvas.width = canvas.height = 1;
@@ -163,10 +186,10 @@ for (const width of [1440, 390]) test(`live player, host and reveal canvas at ${
     return [...context.getImageData(0, 0, 1, 1).data];
   });
   expect(labelColor.slice(0, 3).every((channel) => channel >= 230)).toBe(true);
-  expect(await page.evaluate(() => (window as unknown as Harness).colorAssetReads)).toEqual(["image", "mask"]);
+  expect(await page.evaluate(() => (window as unknown as Harness).colorAssetReads)).toEqual(assetReads);
   await page.screenshot({ path: testInfo.outputPath(`host-${width}.png`), fullPage: true });
   await page.evaluate(() => (window as unknown as Harness).renderColor(true, "closed"));
-  await expect(page.locator("canvas")).toHaveCount(1);
+  await expect(page.getByRole("img", { name: "Correct answer" })).toHaveCount(1);
   await expect.poll(() => pixel("Correct answer")).toEqual([66, 133, 244, 255]);
   await page.evaluate(() => (window as unknown as Harness).renderColor(false, "closed"));
   await expect(page.getByRole("slider")).toHaveCount(0);
@@ -219,6 +242,6 @@ for (const width of [1440, 390]) test(`live player, host and reveal canvas at ${
   await page.evaluate(() => (window as unknown as Harness).gradeTeamColor("red", 0, 0));
   await expect(page.getByLabel("Question score")).toContainText("0.00 / 10");
   await expect(page.getByLabel("Question score")).toContainText("Points 0");
-  expect(await page.evaluate(() => (window as unknown as Harness).colorAssetReads)).toEqual(["image", "mask"]);
+  expect(await page.evaluate(() => (window as unknown as Harness).colorAssetReads)).toEqual(assetReads);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });

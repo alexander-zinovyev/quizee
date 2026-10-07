@@ -399,8 +399,8 @@ export function usePresentingMedia({
       const meta = roundsMeta.find((r) => r.id === roundId);
       if (meta?.type === "color") {
         getColorPreloadQuestions(roundQuestions[roundId] ?? [], presenting?.round === roundId ? presenting.question : null).forEach((question) => {
-          if (!question.media?.storagePath || !question.mask?.storagePath) return;
-          void roomColorArtwork.load(roomSlug, question.media.storagePath, question.mask.storagePath).catch((error: unknown) => {
+          if (!question.media?.storagePath || (!question.mask?.storagePath && !question.regionIds?.length)) return;
+          void roomColorArtwork.load(roomSlug, question.media.storagePath, question.mask?.storagePath, question.regionIds).catch((error: unknown) => {
             console.error("[room-content] color artwork preload failed", error);
           });
         });
