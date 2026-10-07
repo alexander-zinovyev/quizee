@@ -10,6 +10,7 @@ import { ColorImage } from "./color-image";
 import { useRoomColorArtwork } from "@/lib/hooks/use-room-color-artwork";
 import { ColorControls } from "./color-controls";
 import { ColorAnswerReveal } from "./color-answer-reveal";
+import { ColorImageIndicator } from "./color-image-indicator";
 
 export function ColorPresenting({ roomSlug, round, question, teamId, isHost, teams, withAnswer }: {
   roomSlug: string; round: RoundMeta; question: RoundQuestion; teamId?: string | null; isHost: boolean;
@@ -99,15 +100,15 @@ export function ColorPresenting({ roomSlug, round, question, teamId, isHost, tea
   }
   if (error || artwork?.error) return <p role="alert" className="p-4 text-red-300">{error ?? artwork?.error}</p>;
   if (!artwork?.artwork) return <p className="p-4 text-zinc-100">Loading image...</p>;
-  if (reveal && isHost) return target ? <div className="min-h-0 flex-1 overflow-auto p-4"><ColorImage artwork={artwork.artwork} color={target} label="Correct answer" /></div> : <p className="p-4">Loading answer...</p>;
+  if (reveal && isHost) return target ? <div className="min-h-0 flex-1 overflow-auto p-4"><div className="relative"><ColorImage artwork={artwork.artwork} color={target} label="Correct answer" /><ColorImageIndicator version="original" /></div></div> : <p className="p-4">Loading answer...</p>;
   if (isHost) return <div className="@container min-h-0 flex-1 overflow-auto"><div className="grid grid-cols-1 gap-4 p-4 @sm:grid-cols-2 @3xl:grid-cols-3">
-    {teams.map((team) => <figure key={team.id} className="min-w-0"><figcaption className="mb-2 break-words text-center text-sm font-semibold text-zinc-100">{team.name}</figcaption><ColorImage artwork={artwork.artwork!} color={teamColors[team.id] ?? initial} label={`${team.name}'s answer`} /></figure>)}
+    {teams.map((team) => <figure key={team.id} className="min-w-0"><figcaption className="mb-2 break-words text-center text-sm font-semibold text-zinc-100">{team.name}</figcaption><div className="relative"><ColorImage artwork={artwork.artwork!} color={teamColors[team.id] ?? initial} label={`${team.name}'s answer`} /><ColorImageIndicator version="team" /></div></figure>)}
   </div></div>;
   const color = pending ?? saved ?? initial;
   return <div className="min-h-0 flex-1 overflow-auto"><div className={`grid min-w-0 gap-4 p-4 ${canEdit ? "h-full grid-rows-[minmax(0,1fr)_auto]" : ""}`}>
     {reveal && target ? <ColorAnswerReveal artwork={artwork.artwork} submittedColor={saved ?? initial} targetColor={target} /> : canEdit ? (
-      <div className="flex min-h-0 items-center justify-center"><ColorImage artwork={artwork.artwork} color={color} className="block h-full w-full object-contain" /></div>
-    ) : <ColorImage artwork={artwork.artwork} color={color} />}
+      <div className="relative flex min-h-0 items-center justify-center"><ColorImage artwork={artwork.artwork} color={color} className="block h-full w-full object-contain" />{teamId ? <ColorImageIndicator version="team" /> : null}</div>
+    ) : <div className="relative"><ColorImage artwork={artwork.artwork} color={color} />{teamId ? <ColorImageIndicator version="team" /> : null}</div>}
     {canEdit ? <ColorControls color={color} disabled={false} onChange={change} onCommit={flush} /> : null}
     {reveal && teamId ? <div aria-label="Question score" className="flex flex-wrap justify-center gap-4 text-sm text-zinc-100">
       {score ? <><span>Similarity <strong>{score.perceptionScore.toFixed(2)} / 10</strong></span><span>Points <strong>{Number(score.awardedPoints.toFixed(2))}</strong></span></> : <span role="status">Scoring...</span>}
