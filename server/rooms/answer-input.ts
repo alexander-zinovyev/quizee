@@ -3,6 +3,7 @@ import { isAnswerCommitted, parseTeamAnswer, type AnswerMutation, type TeamAnswe
 import { RoomOperationError } from "./operation-error";
 import { parsePresentation } from "./presentation";
 import { parsePointsPerStep } from "./multi-step-submission";
+import { HEX_COLOR } from "@/types/color";
 
 export type AnswerSave = { teamId: string; expectedStep?: number; mutation: AnswerMutation };
 
@@ -41,7 +42,16 @@ export async function saveTeamAnswer(
     if (!team.exists || !round.exists || !question.exists) throw new RoomOperationError("Answer destination not found.", 404);
     const roundData = round.data()!;
     if (room.data()?.state !== "playing" || roundData.state !== "active") throw new RoomOperationError("Round is not accepting answers.");
-    if (roundData.type !== "text" && roundData.type !== "multi-step") throw new RoomOperationError("Unsupported answer type.", 400);
+    if (roundData.type !== "text" && roundData.type !== "multi-step" && roundData.type !== "color") throw new RoomOperationError("Unsupported answer type.", 400);
+    if (roundData.type === "color") {
+      const current = parsePresentation(room.data()?.presenting);
+      if (current.round !== roundId || current.question !== questionId || current.withAnswer) throw new RoomOperationError("Question is not accepting colors.");
+      if (typeof save.mutation.answer !== "string" || !HEX_COLOR.test(save.mutation.answer)) throw new RoomOperationError("Expected a six-digit HEX color.", 400);
+      if (save.expectedStep !== undefined) throw new RoomOperationError("Color answers do not have steps.", 400);
+      const color = save.mutation.answer.toUpperCase();
+      tx.set(team.ref.collection("rounds").doc(roundId).collection("answers").doc(questionId), { answer: color, user: uid, locked: false });
+      return { answer: color, user: uid, locked: false };
+    }
     if (roundData.type === "multi-step") {
       if (typeof roundData.allowAnswerChanges !== "boolean") throw new Error("Invalid answer-change policy.");
       const current = parsePresentation(room.data()?.presenting);
