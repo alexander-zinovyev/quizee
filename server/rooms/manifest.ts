@@ -1,4 +1,5 @@
 import type { ValidatedRound } from "./validation";
+import type { ColorScoring } from "@/types/color";
 
 export type RoundDocumentData = {
   type: ValidatedRound["type"];
@@ -10,6 +11,7 @@ export type RoundDocumentData = {
   gradingRequired: false;
   pointsPerStep?: number[];
   allowAnswerChanges?: boolean;
+  scoring?: ColorScoring;
 };
 
 function addStageMedia(mediaPaths: Set<string>, stages: Array<{ media?: { path: string } }>) {
@@ -24,6 +26,10 @@ export function collectReferencedMedia(rounds: ValidatedRound[]): Set<string> {
   const referencedMedia = new Set<string>();
 
   rounds.forEach((round) => {
+    if (round.type === "color") {
+      round.questions.forEach((q) => { referencedMedia.add(q.imagePath); referencedMedia.add(q.maskPath); });
+      return;
+    }
     if (round.type === "text") {
       round.questions.forEach((question) => {
         addStageMedia(referencedMedia, question.promptStages);
@@ -62,6 +68,7 @@ export function createRoundDocumentData(round: ValidatedRound): RoundDocumentDat
     gradingRequired: false,
   };
 
+  if (round.type === "color") return { ...base, scoring: round.scoring };
   if (round.type !== "multi-step") {
     return base;
   }

@@ -21,6 +21,7 @@ jobs:
           java-version: 21
       - run: npm ci
       - run: npm run test:validation
+      - run: npm run test:color
       - run: npx next typegen
       - run: npx tsc --noEmit
       - run: npx --yes firebase-tools@14.12.0 emulators:exec --only firestore --project demo-quizee-drafts "npm run test:rules"

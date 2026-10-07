@@ -2,7 +2,7 @@ type JsonSchema = {
   $ref?: string;
   $defs?: Record<string, JsonSchema>;
   type?: string;
-  properties?: Record<string, JsonSchema>;
+  properties?: Record<string, JsonSchema | undefined>;
   required?: string[];
   additionalProperties?: boolean;
   items?: JsonSchema;
@@ -12,6 +12,9 @@ type JsonSchema = {
   const?: unknown;
   oneOf?: JsonSchema[];
   anyOf?: JsonSchema[];
+  minimum?: number;
+  maximum?: number;
+  exclusiveMinimum?: number;
 };
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -171,7 +174,7 @@ function validateNode(
 
     const props = schema.properties ?? {};
     Object.entries(props).forEach(([key, propSchema]) => {
-      if (key in value) {
+      if (propSchema && key in value) {
         errors.push(...validateNode(value[key], propSchema, `${path}.${key}`, root));
       }
     });
@@ -209,6 +212,13 @@ function validateNode(
     return errors;
   }
 
+  if (schema.type === "number") {
+    if (typeof value !== "number" || !Number.isFinite(value)) return [validationError(path, "expected finite number.")];
+    if ((schema.minimum !== undefined && value < schema.minimum) ||
+        (schema.maximum !== undefined && value > schema.maximum) ||
+        (schema.exclusiveMinimum !== undefined && value <= schema.exclusiveMinimum)) return [validationError(path, "number outside allowed range.")];
+  }
+  if (schema.type === "boolean" && typeof value !== "boolean") return [validationError(path, "expected boolean.")];
   return [];
 }
 
