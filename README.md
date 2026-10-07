@@ -40,7 +40,11 @@ scoring. Prepare masks in an external image editor.
 Players edit HSV controls in the presenting view. Teams share automatically
 saved HEX answers; untouched answers use the initial color. Hosts see live team
 images during the round and the correct image after closure. Players see the
-correct image when the host selects Show answer.
+correct image with an animated transition when the host selects Show answer.
+After closure, sliders are hidden and each team sees its frozen submission until
+reveal. Hover over the revealed image to compare the submission; touch users can
+hold the image, and keyboard users can focus it. Sliders are horizontal below the
+image during the round. Reduced-motion preferences disable the reveal animation.
 
 Similarity is `10 * exp(-CIEDE2000 / 18)`. Threshold mode awards points when the
 unrounded score meets the threshold. Closest mode splits the point pool equally

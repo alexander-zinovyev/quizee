@@ -19,9 +19,9 @@ export function ColorControls({ color, disabled, onChange, onCommit }: {
   const gray = hsvToHex({ ...hsv, s: 0 });
   const bright = hsvToHex({ ...hsv, v: 100 });
   const backgrounds = {
-    h: "linear-gradient(to bottom, #FF0000 0%, #FFFF00 16.667%, #00FF00 33.333%, #00FFFF 50%, #0000FF 66.667%, #FF00FF 83.333%, #FF0000 100%)",
-    s: `linear-gradient(to bottom, ${saturated}, ${gray})`,
-    v: `linear-gradient(to bottom, ${bright}, #000000)`,
+    h: "linear-gradient(to right, #FF0000 0%, #FFFF00 16.667%, #00FF00 33.333%, #00FFFF 50%, #0000FF 66.667%, #FF00FF 83.333%, #FF0000 100%)",
+    s: `linear-gradient(to right, ${gray}, ${saturated})`,
+    v: `linear-gradient(to right, #000000, ${bright})`,
   };
 
   return (
@@ -32,14 +32,14 @@ export function ColorControls({ color, disabled, onChange, onCommit }: {
             <span
               aria-hidden="true"
               className="color-picker-handle"
-              style={{ top: (() => {
-                const fraction = channel === "h" ? hsv.h / 360 : 1 - hsv[channel] / 100;
-                return `calc(${fraction * 100}% + ${16 - fraction * 32}px)`;
+              style={{ left: (() => {
+                const fraction = hsv[channel] / (channel === "h" ? 360 : 100);
+                return `calc(${fraction * 100}% + ${12 - fraction * 24}px)`;
               })() }}
             />
             <input
               aria-label={{ h: "Hue", s: "Saturation", v: "Value" }[channel]}
-              aria-orientation="vertical"
+              aria-orientation="horizontal"
               aria-valuetext={`${Math.round(hsv[channel])}${channel === "h" ? " degrees" : " percent"}`}
               title={{ h: "Hue", s: "Saturation", v: "Value" }[channel]}
               type="range"
@@ -47,7 +47,6 @@ export function ColorControls({ color, disabled, onChange, onCommit }: {
               max={channel === "h" ? 360 : 100}
               step={1}
               value={hsv[channel]}
-              style={{ direction: channel === "h" ? "ltr" : "rtl" }}
               onChange={(event) => change(channel, Number(event.target.value))}
               onPointerUp={onCommit}
               onPointerCancel={onCommit}

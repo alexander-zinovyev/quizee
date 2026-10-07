@@ -54,7 +54,7 @@ body {
 }
 
 .color-picker {
-  width: min(100%, 180px);
+  width: min(100%, 420px);
   min-width: 0;
   margin: 0;
   padding: 0;
@@ -64,11 +64,7 @@ body {
 
 .color-picker-tracks {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  height: clamp(180px, 34vh, 360px);
-  overflow: hidden;
-  border-radius: 20px;
-  box-shadow: 0 8px 20px rgb(0 0 0 / 20%);
+  gap: 12px;
 }
 
 .color-picker-track {
@@ -76,14 +72,16 @@ body {
   display: block;
   min-width: 0;
   min-height: 0;
-  height: 100%;
+  height: 28px;
+  overflow: hidden;
+  border-radius: 999px;
 }
 
 .color-picker-track input {
   position: absolute;
   inset: 0;
   appearance: none;
-  writing-mode: vertical-lr;
+  writing-mode: horizontal-tb;
   display: block;
   width: 100%;
   height: 100%;
@@ -109,23 +107,23 @@ body {
 
 .color-picker-track input::-webkit-slider-thumb {
   appearance: none;
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
   opacity: 0;
 }
 
 .color-picker-track input::-moz-range-thumb {
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
   opacity: 0;
 }
 
 /* Native ranges handle input; overlays keep the visible handles centered. */
 .color-picker-handle {
   position: absolute;
-  left: 50%;
-  width: 32px;
-  height: 32px;
+  top: 50%;
+  width: 24px;
+  height: 24px;
   transform: translate(-50%, -50%);
   pointer-events: none;
   border: 1px solid rgb(0 0 0 / 12%);
@@ -145,4 +143,19 @@ body {
 
 .color-picker-track input:disabled {
   cursor: default;
+}
+
+.color-answer-transition {
+  animation: color-answer-reveal 700ms ease-in-out both;
+}
+
+@keyframes color-answer-reveal {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .color-answer-transition {
+    animation: none;
+  }
 }
