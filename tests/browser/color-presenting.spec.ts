@@ -7,11 +7,13 @@ test.use({ hasTouch: true });
 type Harness = Window & {
   renderColor: (host: boolean, state: "active" | "closed", reveal?: boolean) => void;
   setTeamColor: (team: string, color: string) => void;
+  setTeamLocked: (team: string, locked: boolean) => void;
   colorReads: string[];
   colorAssetReads: string[];
   gradeTeamColor: (team: string, perceptionScore: number, awardedPoints: number) => void;
-  colorWrites: Array<{ teamId: string; answer: string }>;
+  colorWrites: Array<{ teamId: string; answer?: string; locked?: boolean }>;
   getTeamColor: (team: string) => string;
+  rejectNextColorWrite: boolean;
 };
 
 async function bundle(format: "raster" | "svg") {
@@ -36,7 +38,7 @@ async function bundle(format: "raster" | "svg") {
       builder.onLoad({ filter: /.*/, namespace: "color-mock" }, (args) => {
         if (args.path === "firebase/firestore") return { contents: `
           export const doc = (_, ...parts) => parts.join('/');
-          export const onSnapshot = (path, callback) => window.colorTransport.subscribe(path, callback);
+          export const onSnapshot = (path, optionsOrCallback, callback) => window.colorTransport.subscribe(path, typeof optionsOrCallback === 'function' ? optionsOrCallback : callback);
           export const getDocFromServer = async path => window.colorTransport.snapshot(path);` };
         if (args.path === "firebase/storage") return { contents: `
           export const getStorage = () => ({});
@@ -64,12 +66,12 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
   await page.evaluate(({ image, mask }) => {
     const root = document.createElement("div"); root.id = "color-test"; root.className = "flex h-[420px] flex-col bg-zinc-950";
     document.body.replaceChildren(root);
-    const docs: Record<string, { answer: string; perceptionScore?: number; awardedPoints?: number }> = { "rooms/demo/rounds/r1/answers/q1": { answer: "#4285F4" } };
-    const listeners = new Map<string, Set<(value: { data: () => { answer: string } | undefined }) => void>>();
+    const docs: Record<string, { answer: string; locked?: boolean; perceptionScore?: number; awardedPoints?: number }> = { "rooms/demo/rounds/r1/answers/q1": { answer: "#4285F4" } };
     const w = window as unknown as Record<string, unknown>;
     const reads: string[] = [];
     w.colorAssets = { image, mask }; w.colorReads = reads; w.colorAssetReads = []; w.colorWrites = [];
-    const snapshot = (path: string): { data: () => { answer: string } | undefined } => ({ data: () => docs[path] });
+    const snapshot = (path: string) => ({ data: () => docs[path], metadata: { fromCache: false } });
+    const listeners = new Map<string, Set<(value: ReturnType<typeof snapshot>) => void>>();
     w.colorTransport = { snapshot, subscribe: (path: string, callback: (value: ReturnType<typeof snapshot>) => void) => {
       reads.push(path);
       if (!listeners.has(path)) listeners.set(path, new Set());
@@ -78,9 +80,15 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
     } };
     const setTeamColor = (team: string, color: string) => {
       const path = `rooms/demo/teams/${team}/rounds/r1/answers/q1`;
-      docs[path] = { answer: color }; listeners.get(path)?.forEach((callback) => callback(snapshot(path)));
+      docs[path] = { ...docs[path], answer: color }; listeners.get(path)?.forEach((callback) => callback(snapshot(path)));
+    };
+    const setTeamLocked = (team: string, locked: boolean) => {
+      const path = `rooms/demo/teams/${team}/rounds/r1/answers/q1`;
+      docs[path] = { ...docs[path], answer: docs[path]?.answer ?? "#83C547", locked };
+      listeners.get(path)?.forEach((callback) => callback(snapshot(path)));
     };
     w.setTeamColor = setTeamColor;
+    w.setTeamLocked = setTeamLocked;
     w.getTeamColor = (team: string) => docs[`rooms/demo/teams/${team}/rounds/r1/answers/q1`]?.answer ?? "#83C547";
     w.freezeColorAnswers = () => {
       for (const team of ["red", "blue"]) {
@@ -97,8 +105,15 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
     window.fetch = async (url, options) => {
       if (typeof url === "string" && url.startsWith("data:")) return assetFetch(url);
       const body = JSON.parse(options!.body as string);
-      (w.colorWrites as Array<{ teamId: string; answer: string }>).push(body);
-      setTeamColor(body.teamId, body.answer);
+      (w.colorWrites as Harness["colorWrites"]).push(body);
+      if (w.rejectNextColorWrite) {
+        w.rejectNextColorWrite = false;
+        return new Response(JSON.stringify({ message: "Unable to save answer lock." }), { status: 503 });
+      }
+      if ("answer" in body) {
+        if (docs[`rooms/demo/teams/${body.teamId}/rounds/r1/answers/q1`]?.locked) return new Response(JSON.stringify({ message: "Unlock the answer before editing." }), { status: 409 });
+        setTeamColor(body.teamId, body.answer);
+      } else setTeamLocked(body.teamId, body.locked);
       return new Response("{}", { status: 200 });
     };
   }, { image: format === "svg" ? `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 64"><rect width="160" height="64" fill="#4285F4"/><rect id="left" x="16" width="64" height="64" fill="#4285F4"/><rect id="right" x="80" width="80" height="64" fill="#4285F4"/></svg>')}` : `data:image/png;base64,${image.toString("base64")}`, mask: `data:image/png;base64,${mask.toString("base64")}` });
@@ -124,6 +139,26 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
   await expect(page.getByText("Team", { exact: true })).toBeVisible();
   if (format === "svg") await expect.poll(() => pixel("Color question", 40)).toEqual([131, 197, 71, 255]);
   const hue = page.getByRole("slider", { name: "Hue", exact: true });
+  const writeCount = () => page.evaluate(() => (window as unknown as Harness).colorWrites.length);
+  await expect(page.getByRole("button", { name: "Lock answer", exact: true })).toBeEnabled();
+  await page.evaluate(() => { (window as unknown as Harness).rejectNextColorWrite = true; });
+  await page.getByRole("button", { name: "Lock answer", exact: true }).click();
+  await expect(page.getByRole("alert")).toHaveText("Unable to save answer lock.");
+  await expect(page.getByRole("button", { name: "Lock answer", exact: true })).toBeEnabled();
+  await expect(hue).toBeEnabled();
+  await page.getByRole("button", { name: "Lock answer", exact: true }).click();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Unlock answer", exact: true })).toBeEnabled();
+  await expect(hue).toBeDisabled();
+  expect(await page.evaluate(() => (window as unknown as Harness).getTeamColor("red"))).toBe("#83C547");
+  await page.evaluate(() => (window as unknown as Harness).setTeamLocked("red", false));
+  await expect(hue).toBeEnabled();
+  await page.getByRole("button", { name: "Lock answer", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Unlock answer", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Unlock answer", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Lock answer", exact: true })).toBeEnabled();
+  await expect(hue).toBeEnabled();
+  const initialWrites = await writeCount();
   await expect(hue).toHaveAttribute("aria-orientation", "horizontal");
   const tracks = page.locator(".color-picker-track");
   await expect(tracks).toHaveCount(3);
@@ -157,9 +192,16 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
   expect(leftHandle.x - boxes[0].x).toBeGreaterThanOrEqual(4);
   await expect.poll(() => pixel("Color question")).not.toEqual([131, 197, 71, 255]);
   await expect.poll(() => tracks.nth(1).evaluate((element) => getComputedStyle(element).backgroundImage)).not.toBe(initialSaturationTrack);
-  const writeCount = () => page.evaluate(() => (window as unknown as Harness).colorWrites.length);
-  await expect.poll(writeCount).toBe(1);
+  await expect.poll(writeCount).toBe(initialWrites + 1);
   await page.clock.install();
+  const colorBeforeLock = await page.evaluate(() => (window as unknown as Harness).getTeamColor("red"));
+  await page.getByRole("button", { name: "Lock answer", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Unlock answer", exact: true })).toBeEnabled();
+  await page.clock.runFor(600);
+  await expect(hue).toBeDisabled();
+  expect(await page.evaluate(() => (window as unknown as Harness).getTeamColor("red"))).toBe(colorBeforeLock);
+  await page.getByRole("button", { name: "Unlock answer", exact: true }).click();
+  await expect(hue).toBeEnabled();
   const beforeDrag = await writeCount();
   const beforeSavedColor = await page.evaluate(() => (window as unknown as Harness).getTeamColor("red"));
   const hueBox = (await hue.boundingBox())!;
@@ -245,11 +287,25 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
     expect(boxes[index].x + boxes[index].width - handle.x - handle.width).toBeGreaterThanOrEqual(4);
   }
   await page.getByRole("slider", { name: "Value", exact: true }).blur();
+  const beforeRemoteLock = await writeCount();
+  await page.mouse.move(hueBox.x + 16, hueBox.y + hueBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(hueBox.x + hueBox.width / 2, hueBox.y + hueBox.height / 2, { steps: 3 });
+  expect(await pixel("Color question")).not.toEqual([255, 0, 0, 255]);
+  await page.evaluate(() => (window as unknown as Harness).setTeamLocked("red", true));
+  await expect(hue).toBeDisabled();
+  await expect.poll(() => pixel("Color question")).toEqual([255, 0, 0, 255]);
+  await page.mouse.up();
+  await page.clock.runFor(600);
+  expect(await writeCount()).toBe(beforeRemoteLock);
+  await page.getByRole("button", { name: "Unlock answer", exact: true }).click();
+  await expect(hue).toBeEnabled();
   await page.screenshot({ path: testInfo.outputPath(`player-${width}.png`), fullPage: true });
   await page.evaluate(() => { (window as unknown as Harness).setTeamColor("blue", "#00FF00"); (window as unknown as Harness).renderColor(true, "active"); });
   await expect.poll(() => pixel("Red team's answer")).toEqual([255, 0, 0, 255]);
   await expect.poll(() => pixel("Blue team's answer")).toEqual([0, 255, 0, 255]);
   await expect(page.getByText("Team", { exact: true })).toHaveCount(2);
+  await expect(page.getByRole("button", { name: /^(Unl|L)ock answer$/ })).toHaveCount(0);
   if (format === "svg") {
     const bounds = (await page.getByRole("img", { name: "Red team's answer" }).boundingBox())!;
     expect(Math.abs(bounds.height - bounds.width * 64 / 160)).toBeLessThan(1);
@@ -272,6 +328,7 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
   await expect(page.getByText("Team", { exact: true })).toHaveCount(0);
   await page.evaluate(() => (window as unknown as Harness).renderColor(false, "closed"));
   await expect(page.getByRole("slider")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^(Unl|L)ock answer$/ })).toHaveCount(0);
   await expect(page.getByText("Team", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Question score")).toHaveCount(0);
   await expect(page.getByRole("img", { name: "Correct answer" })).toHaveCount(0);
@@ -330,7 +387,9 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
   await expect(page.locator(".color-answer-correct-layer")).toHaveCSS("clip-path", "inset(0px)");
   await expect(comparison.getByText("Team", { exact: true })).toBeHidden();
   await expect(comparison.getByText("Original", { exact: true })).toBeVisible();
+  await page.keyboard.press("Tab");
   await comparison.focus();
+  await expect(comparison).toBeFocused();
   await expect.poll(() => pixel("Submitted answer")).toEqual([255, 0, 0, 255]);
   await comparison.blur();
   await expect.poll(() => pixel("Correct answer")).toEqual([66, 133, 244, 255]);

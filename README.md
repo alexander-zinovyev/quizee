@@ -40,7 +40,10 @@ scoring. Prepare masks in an external image editor.
 Players edit HSV controls in the presenting view. Teams share automatically
 saved HEX answers; slider changes preview locally and are saved when dragging
 ends or a keyboard adjustment finishes. Canceled drags are discarded, and
-unchanged colors create no writes. Untouched answers use the initial color. Hosts see live team
+unchanged colors create no writes. The lock button beside the sliders locks the
+question's answer for the whole team; any teammate can unlock it while the question
+is active. Locking preserves the selected color, including untouched initial colors.
+Untouched answers use the initial color. Hosts see live team
 images during the round and the correct image after closure. Players see the
 correct image with a left-to-right page-turn-style wipe when the host selects Show answer.
 After closure, sliders are hidden and each team sees its frozen submission until
