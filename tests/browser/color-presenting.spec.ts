@@ -10,6 +10,8 @@ type Harness = Window & {
   colorReads: string[];
   colorAssetReads: string[];
   gradeTeamColor: (team: string, perceptionScore: number, awardedPoints: number) => void;
+  colorWrites: Array<{ teamId: string; answer: string }>;
+  getTeamColor: (team: string) => string;
 };
 
 async function bundle(format: "raster" | "svg") {
@@ -66,7 +68,7 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
     const listeners = new Map<string, Set<(value: { data: () => { answer: string } | undefined }) => void>>();
     const w = window as unknown as Record<string, unknown>;
     const reads: string[] = [];
-    w.colorAssets = { image, mask }; w.colorReads = reads; w.colorAssetReads = [];
+    w.colorAssets = { image, mask }; w.colorReads = reads; w.colorAssetReads = []; w.colorWrites = [];
     const snapshot = (path: string): { data: () => { answer: string } | undefined } => ({ data: () => docs[path] });
     w.colorTransport = { snapshot, subscribe: (path: string, callback: (value: ReturnType<typeof snapshot>) => void) => {
       reads.push(path);
@@ -79,6 +81,7 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
       docs[path] = { answer: color }; listeners.get(path)?.forEach((callback) => callback(snapshot(path)));
     };
     w.setTeamColor = setTeamColor;
+    w.getTeamColor = (team: string) => docs[`rooms/demo/teams/${team}/rounds/r1/answers/q1`]?.answer ?? "#83C547";
     w.freezeColorAnswers = () => {
       for (const team of ["red", "blue"]) {
         const path = `rooms/demo/rounds/r1/teamAnswers/${team}/answers/q1`;
@@ -93,7 +96,9 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
     const assetFetch = window.fetch.bind(window);
     window.fetch = async (url, options) => {
       if (typeof url === "string" && url.startsWith("data:")) return assetFetch(url);
-      const body = JSON.parse(options!.body as string); setTeamColor(body.teamId, body.answer);
+      const body = JSON.parse(options!.body as string);
+      (w.colorWrites as Array<{ teamId: string; answer: string }>).push(body);
+      setTeamColor(body.teamId, body.answer);
       return new Response("{}", { status: 200 });
     };
   }, { image: format === "svg" ? `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 64"><rect width="160" height="64" fill="#4285F4"/><rect id="left" x="16" width="64" height="64" fill="#4285F4"/><rect id="right" x="80" width="80" height="64" fill="#4285F4"/></svg>')}` : `data:image/png;base64,${image.toString("base64")}`, mask: `data:image/png;base64,${mask.toString("base64")}` });
@@ -152,15 +157,80 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
   expect(leftHandle.x - boxes[0].x).toBeGreaterThanOrEqual(4);
   await expect.poll(() => pixel("Color question")).not.toEqual([131, 197, 71, 255]);
   await expect.poll(() => tracks.nth(1).evaluate((element) => getComputedStyle(element).backgroundImage)).not.toBe(initialSaturationTrack);
+  const writeCount = () => page.evaluate(() => (window as unknown as Harness).colorWrites.length);
+  await expect.poll(writeCount).toBe(1);
+  await page.clock.install();
+  const beforeDrag = await writeCount();
+  const beforeSavedColor = await page.evaluate(() => (window as unknown as Harness).getTeamColor("red"));
   const hueBox = (await hue.boundingBox())!;
   await page.mouse.move(hueBox.x + 12, hueBox.y + hueBox.height / 2);
   await page.mouse.down();
   await page.mouse.move(hueBox.x + hueBox.width * 0.65, hueBox.y + hueBox.height / 2, { steps: 5 });
+  const previewDuringDrag = await pixel("Color question");
+  expect(previewDuringDrag).not.toEqual([197, 71, 71, 255]);
+  await page.clock.runFor(600);
+  expect(await writeCount()).toBe(beforeDrag);
+  expect(await page.evaluate(() => (window as unknown as Harness).getTeamColor("red"))).toBe(beforeSavedColor);
+  await hue.blur();
+  expect(await writeCount()).toBe(beforeDrag);
+  await page.evaluate(() => (window as unknown as Harness).setTeamColor("red", "#00FF00"));
+  await expect.poll(() => pixel("Color question")).toEqual(previewDuringDrag);
   await page.mouse.up();
+  await expect.poll(writeCount).toBe(beforeDrag + 1);
+  await hue.blur();
+  await page.clock.runFor(600);
+  expect(await writeCount()).toBe(beforeDrag + 1);
   await expect.poll(async () => Number(await hue.inputValue())).toBeGreaterThan(200);
   await expect.poll(async () => Number(await hue.inputValue())).toBeLessThan(260);
+  const savedHue = Number(await hue.inputValue());
+  const thumbX = hueBox.x + 12 + (hueBox.width - 24) * savedHue / 360;
+  const beforeNoop = await writeCount();
+  await page.mouse.move(thumbX, hueBox.y + hueBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(hueBox.x + hueBox.width * 0.25, hueBox.y + hueBox.height / 2, { steps: 3 });
+  await page.mouse.move(thumbX, hueBox.y + hueBox.height / 2, { steps: 3 });
+  await page.mouse.up();
+  await hue.blur();
+  await page.clock.runFor(600);
+  expect(await writeCount()).toBe(beforeNoop);
+  const beforeCancel = await writeCount();
+  const savedPixel = await pixel("Color question");
+  await page.mouse.move(thumbX, hueBox.y + hueBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(hueBox.x + hueBox.width * 0.4, hueBox.y + hueBox.height / 2, { steps: 3 });
+  expect(await pixel("Color question")).not.toEqual(savedPixel);
+  await hue.dispatchEvent("pointercancel", { pointerId: 1, pointerType: "mouse", isPrimary: true });
+  await page.mouse.up();
+  await page.clock.runFor(600);
+  expect(await writeCount()).toBe(beforeCancel);
+  await expect.poll(() => pixel("Color question")).toEqual(savedPixel);
+  const beforeOutsideRelease = await writeCount();
+  await page.mouse.move(thumbX, hueBox.y + hueBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(hueBox.x + hueBox.width + 40, hueBox.y + hueBox.height + 20, { steps: 5 });
+  await page.clock.runFor(600);
+  expect(await writeCount()).toBe(beforeOutsideRelease);
+  await page.mouse.up();
+  await expect.poll(writeCount).toBe(beforeOutsideRelease + 1);
+  const beforeKeyboard = await writeCount();
+  await hue.focus();
+  await page.keyboard.down("ArrowLeft");
+  await page.keyboard.down("ArrowLeft");
+  await page.keyboard.down("ArrowLeft");
+  await page.clock.runFor(600);
+  expect(await writeCount()).toBe(beforeKeyboard);
+  await page.keyboard.down("Shift");
+  await page.keyboard.up("Shift");
+  expect(await writeCount()).toBe(beforeKeyboard);
+  await page.keyboard.up("ArrowLeft");
+  await expect.poll(writeCount).toBe(beforeKeyboard + 1);
+  await hue.blur();
+  await page.clock.runFor(600);
+  expect(await writeCount()).toBe(beforeKeyboard + 1);
   if (width === 390) {
+    const beforeTouch = await writeCount();
     await page.touchscreen.tap(hueBox.x + hueBox.width / 2, hueBox.y + hueBox.height / 2);
+    await expect.poll(writeCount).toBe(beforeTouch + 1);
     await expect.poll(async () => Number(await hue.inputValue())).toBeGreaterThan(160);
     await expect.poll(async () => Number(await hue.inputValue())).toBeLessThan(200);
   }
