@@ -27,7 +27,7 @@ export function collectReferencedMedia(rounds: ValidatedRound[]): Set<string> {
 
   rounds.forEach((round) => {
     if (round.type === "color") {
-      round.questions.forEach((q) => { referencedMedia.add(q.imagePath); referencedMedia.add(q.maskPath); });
+      round.questions.forEach((q) => { referencedMedia.add(q.imagePath); if (q.maskPath) referencedMedia.add(q.maskPath); });
       return;
     }
     if (round.type === "text") {

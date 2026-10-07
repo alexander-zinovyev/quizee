@@ -7,6 +7,7 @@ type JsonSchema = {
   additionalProperties?: boolean;
   items?: JsonSchema;
   minItems?: number;
+  uniqueItems?: boolean;
   minLength?: number;
   pattern?: string;
   const?: unknown;
@@ -154,6 +155,9 @@ function validateNode(
       return [validationError(path, "expected array.")];
     }
     const errors: string[] = [];
+    if (schema.uniqueItems && value.some((item, index) => value.slice(0, index).some((previous) => JSON.stringify(previous) === JSON.stringify(item)))) {
+      errors.push(validationError(path, "array items must be unique."));
+    }
     if (typeof schema.minItems === "number" && value.length < schema.minItems) {
       errors.push(validationError(path, `expected at least ${schema.minItems} items.`));
     }

@@ -11,7 +11,7 @@ import { createTarGz } from "@/lib/build/tar-gz";
 import { readTarEntries } from "@/lib/build/tar-reader";
 import { validateAgainstQuizSchema } from "@/lib/build/quiz-schema-validator";
 import quizSchema from "@/types/quiz.schema.json";
-import { HEX_COLOR, parseColorScoring, type ColorPackRound } from "@/types/color";
+import { parseColorQuestion, parseColorScoring, type ColorPackRound } from "@/types/color";
 import { validateColorPackAssets } from "@/lib/build/color-assets";
 import MediaTreePanel, {
   type MediaFileNode,
@@ -132,12 +132,14 @@ export function buildQuizFromBuilderState(rounds: BuildRound[], mediaFiles: Medi
       const questions: ColorPackRound["questions"] = [];
       for (const [index, question] of (round.colorQuestions ?? []).entries()) {
         const context = `Round ${roundNo}, question ${index + 1}`;
-        for (const path of [question.image, question.mask]) {
+        for (const path of question.image?.endsWith(".svg") ? [question.image] : [question.image, question.mask]) {
           if (!path || !mediaByPath.has(path)) errors.push(`${context}: image or mask file not found (${path ?? "none"}).`);
           else usedMediaPaths.add(path);
         }
-        if (!HEX_COLOR.test(question.initialColor) || !HEX_COLOR.test(question.targetColor)) errors.push(`${context}: enter six-digit HEX colors.`);
-        questions.push({ image: question.image ?? "", mask: question.mask ?? "", initialColor: question.initialColor, targetColor: question.targetColor });
+        try {
+          const base = { image: question.image ?? "", initialColor: question.initialColor, targetColor: question.targetColor };
+          questions.push(parseColorQuestion(question.image?.endsWith(".svg") ? { ...base, regionIds: question.regionIds } : { ...base, mask: question.mask ?? "" }));
+        } catch (error) { errors.push(`${context}: ${(error as Error).message}`); }
       }
       quizRounds.push({ type: "color", title, scoring, questions });
       return;
@@ -329,7 +331,7 @@ function collectReferencedMediaPaths(rounds: QuizRound[]): Set<string> {
   const refs = new Set<string>();
 
   rounds.forEach((round) => {
-    if (round.type === "color") { round.questions.forEach((q) => { refs.add(q.image); refs.add(q.mask); }); return; }
+    if (round.type === "color") { round.questions.forEach((q) => { refs.add(q.image); if (q.mask) refs.add(q.mask); }); return; }
     if (round.type === "text") {
       round.questions.forEach((question) => {
         question.prompt.stages.forEach((stage) => {

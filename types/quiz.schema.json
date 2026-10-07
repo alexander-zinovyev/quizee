@@ -11,6 +11,8 @@
   "$defs": {
     "hexColor": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
     "colorAsset": { "type": "string", "pattern": "^(?!/)(?!media/)(?!.*(?:^|/)\\.\\.(?:/|$)).+\\.(png|jpg|jpeg|webp)$" },
+    "colorSvgAsset": { "type": "string", "pattern": "^(?!/)(?!media/)(?!.*(?:^|/)\\.\\.(?:/|$)).+\\.svg$" },
+    "regionIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.:-]*$" } },
     "colorScoring": {
       "oneOf": [
         { "type": "object", "additionalProperties": false, "required": ["mode"], "properties": {
@@ -21,9 +23,13 @@
         } }
       ]
     },
-    "colorQuestion": { "type": "object", "additionalProperties": false, "required": ["image", "mask", "initialColor", "targetColor"], "properties": {
+    "colorRasterQuestion": { "type": "object", "additionalProperties": false, "required": ["image", "mask", "initialColor", "targetColor"], "properties": {
       "image": { "$ref": "#/$defs/colorAsset" }, "mask": { "$ref": "#/$defs/colorAsset" }, "initialColor": { "$ref": "#/$defs/hexColor" }, "targetColor": { "$ref": "#/$defs/hexColor" }
     } },
+    "colorSvgQuestion": { "type": "object", "additionalProperties": false, "required": ["image", "regionIds", "initialColor", "targetColor"], "properties": {
+      "image": { "$ref": "#/$defs/colorSvgAsset" }, "regionIds": { "$ref": "#/$defs/regionIds" }, "initialColor": { "$ref": "#/$defs/hexColor" }, "targetColor": { "$ref": "#/$defs/hexColor" }
+    } },
+    "colorQuestion": { "oneOf": [{ "$ref": "#/$defs/colorRasterQuestion" }, { "$ref": "#/$defs/colorSvgQuestion" }] },
     "colorRound": { "type": "object", "additionalProperties": false, "required": ["type", "title", "questions", "scoring"], "properties": {
       "type": { "const": "color" }, "title": { "$ref": "#/$defs/nonEmptyText" }, "scoring": { "$ref": "#/$defs/colorScoring" }, "questions": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/colorQuestion" } }
     } },
