@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 
 import { getServerAuth, getServerFirestore } from "@/server/database";
+import { gradeColorRound } from "@/server/rooms/color-scoring";
 
 const SESSION_COOKIE_NAME = "__session";
 
@@ -84,6 +85,11 @@ export async function POST(
     }
 
     const roundData = roundSnap.data() ?? {};
+    if (roundData.type === "color") {
+      if (roundData.state !== "closed") return NextResponse.json({ message: "Round must be closed before grading." }, { status: 409 });
+      await gradeColorRound(db, roomSlug, roundId, authResult.uid);
+      return NextResponse.json({ status: "ok" });
+    }
     if (roundData.type !== "image") {
       return NextResponse.json(
         { message: "Auto-grading is only available for image rounds." },
