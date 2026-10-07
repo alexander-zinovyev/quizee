@@ -38,6 +38,12 @@ assert.deepEqual(colors.quizRounds, [{ type: "color", title: "Colors", scoring: 
   questions: [{ image: "image.png", mask: "mask.png", initialColor: "#123456", targetColor: "#FFFFFF" }] }]);
 assert.ok(buildQuizFromBuilderState([colorRound], []).errors.length);
 assert.ok(buildQuizFromBuilderState([{ ...colorRound, scoring: { mode: "threshold", points: 1, threshold: 11 } }], mediaFiles).errors.length);
+const svgRound: BuildRound = { ...colorRound, colorQuestions: [{ id: "vector-1", image: "logo.svg", regionIds: ["left", "right"], initialColor: "#123456", targetColor: "#FFFFFF" }] };
+const svgMedia = [{ id: "logo.svg", name: "logo.svg", path: "logo.svg", file: new File([], "logo.svg") }];
+const vectors = buildQuizFromBuilderState([svgRound], svgMedia);
+assert.deepEqual(vectors.errors, []);
+assert.deepEqual(vectors.quizRounds[0].questions[0], { image: "logo.svg", regionIds: ["left", "right"], initialColor: "#123456", targetColor: "#FFFFFF" });
+assert.ok(buildQuizFromBuilderState([{ ...svgRound, colorQuestions: [{ ...svgRound.colorQuestions![0], regionIds: ["left", "left"] }] }], svgMedia).errors.length);
 assert.deepEqual(result.errors, []);
 assert.deepEqual(result.quizRounds, [
   {
