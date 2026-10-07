@@ -18,6 +18,7 @@ import {
 import Member from "@/lib/components/member";
 import Team from "@/lib/components/team";
 import { RoundStage } from "@/lib/components/room/round-stage";
+import { ColorPresenting } from "@/lib/components/color-presenting";
 import { PromptNavigation } from "@/lib/components/room/prompt-navigation";
 import { getAwardedPoints } from "@/lib/components/room/grading";
 import { recordedAnswer } from "@/lib/answers";
@@ -1390,7 +1391,10 @@ export default function RoomContent({
                 ) : null}
               </div>
             </header>
-            <RoundStage
+            {presentingRoundMeta?.type === "color" && presentingQuestion ? (
+              <ColorPresenting key={`${presentingRoundMeta.id}:${presentingQuestion.id}:${viewerTeamId ?? "host"}`}
+                roomSlug={roomSlug} round={presentingRoundMeta} question={presentingQuestion} teamId={viewerTeamId} isHost={!!isHost} />
+            ) : <RoundStage
               answerMediaError={answerMediaError}
               displayRoundMeta={displayRoundMeta}
               finalizeScores={() => void finalizeScores()}
@@ -1415,7 +1419,7 @@ export default function RoomContent({
               presentingQuestion={stagedPresentingQuestion}
               presentingRoundMeta={presentingRoundMeta}
               setGradingTeamIndex={setGradingTeamIndex}
-            />
+            />}
             {isHost && activeRoundForControls ? (
               <footer className="border-t border-white/10 bg-black/40 px-5 py-3 text-white">
                 <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em]">

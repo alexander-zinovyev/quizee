@@ -11,7 +11,7 @@ export type HostRound = {
   roundNumber: number;
   order: number;
   state: "scheduled" | "active" | "closed";
-  type: "text" | "image" | "multi-step";
+  type: "text" | "image" | "multi-step" | "color";
   questions: HostRoundQuestion[];
 };
 
