@@ -27,6 +27,17 @@ const round: BuildRound = {
 };
 
 const result = buildQuizFromBuilderState([round], []);
+const colorRound: BuildRound = { ...round, type: "color", name: "Colors", multiStepQuestions: [],
+  scoring: { mode: "closest", points: 1, tieTolerance: 0.05 }, colorQuestions: [
+    { id: "color-1", image: "image.png", mask: "mask.png", initialColor: "#123456", targetColor: "#FFFFFF" },
+  ] };
+const mediaFiles = ["image.png", "mask.png"].map((path) => ({ id: path, path, name: path, file: new File([], path), parentId: "root" }));
+const colors = buildQuizFromBuilderState([colorRound], mediaFiles);
+assert.deepEqual(colors.errors, []);
+assert.deepEqual(colors.quizRounds, [{ type: "color", title: "Colors", scoring: colorRound.scoring,
+  questions: [{ image: "image.png", mask: "mask.png", initialColor: "#123456", targetColor: "#FFFFFF" }] }]);
+assert.ok(buildQuizFromBuilderState([colorRound], []).errors.length);
+assert.ok(buildQuizFromBuilderState([{ ...colorRound, scoring: { mode: "threshold", points: 1, threshold: 11 } }], mediaFiles).errors.length);
 assert.deepEqual(result.errors, []);
 assert.deepEqual(result.quizRounds, [
   {
