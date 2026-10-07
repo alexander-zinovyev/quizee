@@ -9,6 +9,7 @@ import { AnswerWriteQueue } from "@/lib/answer-write-queue";
 import type { RoundMeta, RoundQuestion } from "@/lib/hooks/use-room-rounds";
 import { ColorImage, useColorArtwork } from "./color-image";
 import { ColorControls } from "./color-controls";
+import { ColorAnswerReveal } from "./color-answer-reveal";
 
 export function ColorPresenting({ roomSlug, round, question, teamId, isHost, teams, withAnswer }: {
   roomSlug: string; round: RoundMeta; question: RoundQuestion; teamId?: string | null; isHost: boolean;
@@ -56,9 +57,12 @@ export function ColorPresenting({ roomSlug, round, question, teamId, isHost, tea
 
   useEffect(() => {
     if (!teamId || isHost) return;
-    return onSnapshot(doc(getClientFirestore(), "rooms", roomSlug, "teams", teamId, "rounds", round.id, "answers", question.id),
+    const answerRef = round.state === "closed"
+      ? doc(getClientFirestore(), "rooms", roomSlug, "rounds", round.id, "teamAnswers", teamId, "answers", question.id)
+      : doc(getClientFirestore(), "rooms", roomSlug, "teams", teamId, "rounds", round.id, "answers", question.id);
+    return onSnapshot(answerRef,
       (snap) => setSaved(snap.data()?.answer ?? initial), (e) => setError(e.message));
-  }, [teamId, isHost, roomSlug, round.id, question.id, initial]);
+  }, [teamId, isHost, roomSlug, round.id, round.state, question.id, initial]);
 
   useEffect(() => {
     if (!canEdit || !teamId) return;
@@ -100,13 +104,15 @@ export function ColorPresenting({ roomSlug, round, question, teamId, isHost, tea
   }
   if (error || artwork?.error) return <p role="alert" className="p-4 text-red-300">{error ?? artwork?.error}</p>;
   if (!artwork?.artwork) return <p className="p-4">Loading image...</p>;
-  if (reveal) return target ? <div className="min-h-0 flex-1 overflow-auto p-4"><ColorImage artwork={artwork.artwork} color={target} label="Correct answer" /></div> : <p className="p-4">Loading answer...</p>;
+  if (reveal && isHost) return target ? <div className="min-h-0 flex-1 overflow-auto p-4"><ColorImage artwork={artwork.artwork} color={target} label="Correct answer" /></div> : <p className="p-4">Loading answer...</p>;
   if (isHost) return <div className="@container min-h-0 flex-1 overflow-auto"><div className="grid grid-cols-1 gap-4 p-4 @sm:grid-cols-2 @3xl:grid-cols-3">
     {teams.map((team) => <figure key={team.id} className="min-w-0"><figcaption className="mb-2 break-words text-center text-sm font-semibold">{team.name}</figcaption><ColorImage artwork={artwork.artwork!} color={teamColors[team.id] ?? initial} label={`${team.name}'s answer`} /></figure>)}
   </div></div>;
   const color = pending ?? saved ?? initial;
-  return <div className="@container min-h-0 flex-1 overflow-auto"><div className="grid min-w-0 gap-4 p-4 @lg:grid-cols-[minmax(0,1fr)_minmax(160px,240px)]">
-    <ColorImage artwork={artwork.artwork} color={color} />
-    {!isHost ? <ColorControls color={color} disabled={!canEdit} onChange={change} onCommit={flush} /> : null}
+  return <div className="min-h-0 flex-1 overflow-auto"><div className={`grid min-w-0 gap-4 p-4 ${canEdit ? "h-full grid-rows-[minmax(0,1fr)_auto]" : ""}`}>
+    {reveal && target ? <ColorAnswerReveal artwork={artwork.artwork} submittedColor={saved ?? initial} targetColor={target} /> : canEdit ? (
+      <div className="flex min-h-0 items-center justify-center"><ColorImage artwork={artwork.artwork} color={color} className="block h-full w-full object-contain" /></div>
+    ) : <ColorImage artwork={artwork.artwork} color={color} />}
+    {canEdit ? <ColorControls color={color} disabled={false} onChange={change} onCommit={flush} /> : null}
   </div></div>;
 }

@@ -40,8 +40,8 @@ export function useColorArtwork(imageUrl: string | null, maskUrl: string | null)
   return state?.key === key ? state : null;
 }
 
-export function ColorImage({ artwork, color, original = false, label = "Color question" }: {
-  artwork: ColorArtwork; color: string; original?: boolean; label?: string;
+export function ColorImage({ artwork, color, original = false, label = "Color question", className = "block max-h-[55vh] w-full object-contain" }: {
+  artwork: ColorArtwork; color: string; original?: boolean; label?: string; className?: string;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
@@ -50,5 +50,5 @@ export function ColorImage({ artwork, color, original = false, label = "Color qu
     context.putImageData(original ? artwork.image : new ImageData(recolorPixels(artwork.image.data, artwork.mask.data, color), artwork.image.width, artwork.image.height), 0, 0);
   }, [artwork, color, original]);
   return <canvas ref={canvas} width={artwork.image.width} height={artwork.image.height}
-    role="img" aria-label={label} className="block max-h-[55vh] w-full object-contain" style={{ aspectRatio: `${artwork.image.width}/${artwork.image.height}` }} />;
+    role="img" aria-label={label} className={className} style={{ aspectRatio: `${artwork.image.width}/${artwork.image.height}` }} />;
 }
