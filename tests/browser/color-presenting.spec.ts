@@ -57,7 +57,7 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
   await page.goto("/__color-fixture");
   const image = await sharp({ create: { width: 160, height: 64, channels: 4, background: "#4285F4" } }).png().toBuffer();
   const maskBytes = Buffer.alloc(160 * 64 * 4, 255);
-  for (let y = 0; y < 64; y++) for (let x = 0; x < 80; x++) maskBytes.fill(0, (y * 160 + x) * 4, (y * 160 + x) * 4 + 3);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 16; x++) maskBytes.fill(0, (y * 160 + x) * 4, (y * 160 + x) * 4 + 3);
   const mask = await sharp(maskBytes, { raw: { width: 160, height: 64, channels: 4 } }).png().toBuffer();
   await page.evaluate(({ image, mask }) => {
     const root = document.createElement("div"); root.id = "color-test"; root.className = "flex h-[420px] flex-col bg-zinc-950";
@@ -96,7 +96,7 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
       const body = JSON.parse(options!.body as string); setTeamColor(body.teamId, body.answer);
       return new Response("{}", { status: 200 });
     };
-  }, { image: format === "svg" ? `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 64"><rect width="160" height="64" fill="#4285F4"/><rect id="left" x="80" width="40" height="64" fill="#4285F4"/><rect id="right" x="120" width="40" height="64" fill="#4285F4"/></svg>')}` : `data:image/png;base64,${image.toString("base64")}`, mask: `data:image/png;base64,${mask.toString("base64")}` });
+  }, { image: format === "svg" ? `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 64"><rect width="160" height="64" fill="#4285F4"/><rect id="left" x="16" width="64" height="64" fill="#4285F4"/><rect id="right" x="80" width="80" height="64" fill="#4285F4"/></svg>')}` : `data:image/png;base64,${image.toString("base64")}`, mask: `data:image/png;base64,${mask.toString("base64")}` });
   await page.addScriptTag({ content: await bundle(format) });
   const assetReads = format === "svg" ? ["image"] : ["image", "mask"];
   const pixel = (label: string, x = 120) => page.getByRole("img", { name: label, exact: true }).evaluate(async (element, x) => {
@@ -116,7 +116,7 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
     } finally { URL.revokeObjectURL(url); }
   }, x);
   await expect.poll(() => pixel("Color question")).toEqual([131, 197, 71, 255]);
-  if (format === "svg") await expect.poll(() => pixel("Color question", 100)).toEqual([131, 197, 71, 255]);
+  if (format === "svg") await expect.poll(() => pixel("Color question", 40)).toEqual([131, 197, 71, 255]);
   const hue = page.getByRole("slider", { name: "Hue", exact: true });
   await expect(hue).toHaveAttribute("aria-orientation", "horizontal");
   const tracks = page.locator(".color-picker-track");
@@ -139,7 +139,7 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
     expect(handle.y - boxes[index].y).toBeGreaterThanOrEqual(4);
   }
   const initialSaturationTrack = await tracks.nth(1).evaluate((element) => getComputedStyle(element).backgroundImage);
-  expect(await pixel("Color question", 16)).toEqual([66, 133, 244, 255]);
+  expect(await pixel("Color question", 8)).toEqual([66, 133, 244, 255]);
   expect(await page.evaluate(() => (window as unknown as Harness).colorReads.some((path) => path.includes("rounds/r1/answers/q1") && !path.includes("teams")))).toBe(false);
   await page.getByRole("slider", { name: "Hue", exact: true }).press("Home");
   const leftHandle = (await page.locator(".color-picker-handle").first().boundingBox())!;
@@ -198,6 +198,7 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
   await expect.poll(() => pixel("Color question")).toEqual([255, 0, 0, 255]);
   await page.evaluate(() => (window as unknown as Harness).setTeamColor("red", "#00FF00"));
   await expect.poll(() => pixel("Color question")).toEqual([255, 0, 0, 255]);
+  await page.mouse.move(0, 0);
   await page.evaluate(() => (window as unknown as Harness).renderColor(false, "closed", true));
   await expect.poll(() => pixel("Correct answer")).toEqual([66, 133, 244, 255]);
   await expect(page.getByLabel("Question score")).toContainText("Scoring...");
@@ -209,22 +210,31 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
   await transition.evaluate((element) => {
     const animation = element.getAnimations()[0];
     animation.pause();
-    animation.currentTime = 350;
+    animation.currentTime = 500;
+    const fold = element.closest("button")!.querySelector(".color-answer-fold")!.getAnimations()[0];
+    if (fold) { fold.pause(); fold.currentTime = 500; }
   });
-  const opacity = await transition.evaluate((element) => Number(getComputedStyle(element).opacity));
-  expect(opacity).toBeGreaterThan(0);
-  expect(opacity).toBeLessThan(1);
-  const screenshot = await comparison.screenshot();
-  const bounds = (await comparison.boundingBox())!;
-  const composite = await sharp(screenshot).extract({ left: Math.floor(bounds.width / 2 + Math.min(bounds.width, bounds.height) / 4), top: Math.floor(bounds.height / 2), width: 1, height: 1 }).raw().toBuffer();
-  expect(composite[0]).toBeGreaterThan(66);
-  expect(composite[0]).toBeLessThan(255);
+  await expect(transition).toHaveCSS("clip-path", "inset(0px 50% 0px 0px)");
+  await expect(page.locator(".color-answer-fold")).toHaveCSS("opacity", "1");
+  async function halves() {
+    const screenshot = await comparison.screenshot();
+    const bounds = (await comparison.boundingBox())!;
+    const imageWidth = Math.min(bounds.width, bounds.height * 160 / 64);
+    const pixels = await Promise.all([-1, 1].map(async (side) => [...await sharp(screenshot).extract({ left: Math.floor(bounds.width / 2 + side * imageWidth / 4), top: Math.floor(bounds.height / 2), width: 1, height: 1 }).removeAlpha().raw().toBuffer()]));
+    return pixels;
+  }
+  expect(await halves()).toEqual([[66, 133, 244], [255, 0, 0]]);
+  await page.screenshot({ path: testInfo.outputPath(`wipe-${width}.png`), fullPage: true });
   await transition.evaluate((element) => element.getAnimations()[0].finish());
   await page.mouse.move(0, 0);
   await comparison.hover();
   await expect.poll(() => pixel("Submitted answer")).toEqual([255, 0, 0, 255]);
+  await expect(page.locator(".color-answer-correct-layer")).toHaveCSS("clip-path", "inset(0px 0px 0px 50%)");
+  expect(await halves()).toEqual([[255, 0, 0], [66, 133, 244]]);
+  await page.screenshot({ path: testInfo.outputPath(`split-${width}.png`), fullPage: true });
   await page.mouse.move(0, 0);
   await expect.poll(() => pixel("Correct answer")).toEqual([66, 133, 244, 255]);
+  await expect(page.locator(".color-answer-correct-layer")).toHaveCSS("clip-path", "inset(0px)");
   await comparison.focus();
   await expect.poll(() => pixel("Submitted answer")).toEqual([255, 0, 0, 255]);
   await comparison.blur();
