@@ -10,12 +10,15 @@ import type { RoundMeta, RoundQuestion } from "@/lib/hooks/use-room-rounds";
 import { ColorImage, useColorArtwork } from "./color-image";
 import { ColorControls } from "./color-controls";
 
-export function ColorPresenting({ roomSlug, round, question, teamId, isHost }: {
+export function ColorPresenting({ roomSlug, round, question, teamId, isHost, teams, withAnswer }: {
   roomSlug: string; round: RoundMeta; question: RoundQuestion; teamId?: string | null; isHost: boolean;
+  teams: Array<{ id: string; name: string }>; withAnswer: boolean;
 }) {
   const { getToken } = useFirebaseAuth();
   const [urls, setUrls] = useState<{ image: string; mask: string } | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
+  const [teamColors, setTeamColors] = useState<Record<string, string>>({});
+  const [target, setTarget] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const queue = useRef<AnswerWriteQueue | null>(null);
@@ -23,7 +26,23 @@ export function ColorPresenting({ roomSlug, round, question, teamId, isHost }: {
   const queued = useRef<string | null>(null);
   const artwork = useColorArtwork(urls?.image ?? null, urls?.mask ?? null);
   const initial = question.initialColor ?? "#000000";
-  const canEdit = !isHost && !!teamId && round.state === "active";
+  const canEdit = !isHost && !!teamId && round.state === "active" && !withAnswer;
+  const reveal = round.state === "closed" && (isHost || withAnswer);
+  const teamKey = teams.map((team) => team.id).join("|");
+
+  useEffect(() => {
+    if (!isHost || round.state !== "active") return;
+    const db = getClientFirestore();
+    const unsubs = teamKey.split("|").filter(Boolean).map((id) => onSnapshot(doc(db, "rooms", roomSlug, "teams", id, "rounds", round.id, "answers", question.id),
+      (snap) => setTeamColors((prev) => ({ ...prev, [id]: snap.data()?.answer ?? initial })), (e) => setError(e.message)));
+    return () => unsubs.forEach((unsubscribe) => unsubscribe());
+  }, [isHost, round.state, teamKey, roomSlug, round.id, question.id, initial]);
+
+  useEffect(() => {
+    if (!reveal) return;
+    return onSnapshot(doc(getClientFirestore(), "rooms", roomSlug, "rounds", round.id, "answers", question.id),
+      (snap) => setTarget(snap.data()?.answer ?? null), (e) => setError(e.message));
+  }, [reveal, roomSlug, round.id, question.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -81,6 +100,10 @@ export function ColorPresenting({ roomSlug, round, question, teamId, isHost }: {
   }
   if (error || artwork?.error) return <p role="alert" className="p-4 text-red-300">{error ?? artwork?.error}</p>;
   if (!artwork?.artwork) return <p className="p-4">Loading image...</p>;
+  if (reveal) return target ? <div className="p-4"><ColorImage artwork={artwork.artwork} color={target} label="Correct answer" /></div> : <p className="p-4">Loading answer...</p>;
+  if (isHost) return <div className="grid grid-cols-1 gap-4 overflow-auto p-4 sm:grid-cols-2 xl:grid-cols-3">
+    {teams.map((team) => <figure key={team.id} className="min-w-0"><figcaption className="mb-2 break-words text-center text-sm font-semibold">{team.name}</figcaption><ColorImage artwork={artwork.artwork!} color={teamColors[team.id] ?? initial} label={`${team.name}'s answer`} /></figure>)}
+  </div>;
   const color = pending ?? saved ?? initial;
   return <div className="grid min-w-0 gap-4 overflow-auto p-4 md:grid-cols-[minmax(0,1fr)_minmax(180px,260px)]">
     <ColorImage artwork={artwork.artwork} color={color} />

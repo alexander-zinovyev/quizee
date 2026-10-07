@@ -592,13 +592,14 @@ export default function RoomContent({
     setRoundsError(null);
     try {
       const meta = roundsMeta.find((round) => round.id === roundId);
-      if (meta?.type === "text" || meta?.type === "multi-step") {
+      if (meta?.type === "text" || meta?.type === "multi-step" || meta?.type === "color") {
         const next = presenting?.round === roundId
-          ? { round: roundId, question: null, withAnswer: false }
+          ? { round: roundId, question: meta.type === "color" ? presenting?.question ?? null : null, withAnswer: false }
           : { round: presenting?.round ?? null, question: presenting?.question ?? null,
               withAnswer: presenting?.withAnswer ?? false, promptPage: presenting?.promptPage ?? 0,
               answerPage: presenting?.answerPage ?? 0 };
         await persistPresentation(next, { closeRound: roundId });
+        if (meta.type === "color") await autoGradeImageRound(roundId);
         return;
       }
       const db = getClientFirestore();
@@ -847,9 +848,10 @@ export default function RoomContent({
     if (!isHost || !activeRoundForControls || activeRoundForControls.state !== "active") return;
     setIsEndingRound(true);
     try {
-      if (activeRoundForControls.type === "text" || activeRoundForControls.type === "multi-step") {
-        await persistPresentation({ round: activeRoundForControls.id, question: null, withAnswer: false },
+      if (activeRoundForControls.type === "text" || activeRoundForControls.type === "multi-step" || activeRoundForControls.type === "color") {
+        await persistPresentation({ round: activeRoundForControls.id, question: activeRoundForControls.type === "color" ? presenting?.question ?? null : null, withAnswer: false },
           { closeRound: activeRoundForControls.id });
+        if (activeRoundForControls.type === "color") await autoGradeImageRound(activeRoundForControls.id);
         return;
       }
       const db = getClientFirestore();
@@ -1393,7 +1395,8 @@ export default function RoomContent({
             </header>
             {presentingRoundMeta?.type === "color" && presentingQuestion ? (
               <ColorPresenting key={`${presentingRoundMeta.id}:${presentingQuestion.id}:${viewerTeamId ?? "host"}`}
-                roomSlug={roomSlug} round={presentingRoundMeta} question={presentingQuestion} teamId={viewerTeamId} isHost={!!isHost} />
+                roomSlug={roomSlug} round={presentingRoundMeta} question={presentingQuestion} teamId={viewerTeamId} isHost={!!isHost}
+                teams={teams ?? []} withAnswer={presenting?.withAnswer ?? false} />
             ) : <RoundStage
               answerMediaError={answerMediaError}
               displayRoundMeta={displayRoundMeta}
