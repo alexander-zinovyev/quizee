@@ -11,6 +11,8 @@ import { createTarGz } from "@/lib/build/tar-gz";
 import { readTarEntries } from "@/lib/build/tar-reader";
 import { validateAgainstQuizSchema } from "@/lib/build/quiz-schema-validator";
 import quizSchema from "@/types/quiz.schema.json";
+import { HEX_COLOR, parseColorScoring, type ColorPackRound } from "@/types/color";
+import { validateColorPackAssets } from "@/lib/build/color-assets";
 import MediaTreePanel, {
   type MediaFileNode,
   type MediaTreePanelState,
@@ -58,7 +60,7 @@ type QuizMultiStepRound = {
   }>;
 };
 
-type QuizRound = QuizTextRound | QuizImageRound | QuizMultiStepRound;
+type QuizRound = QuizTextRound | QuizImageRound | QuizMultiStepRound | ColorPackRound;
 
 function makeId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -120,6 +122,25 @@ export function buildQuizFromBuilderState(rounds: BuildRound[], mediaFiles: Medi
     const title = round.name.trim();
     if (!title) {
       errors.push(`Round ${roundNo}: name is required.`);
+    }
+
+    if (round.type === "color") {
+      let scoring;
+      try { scoring = parseColorScoring(round.scoring); }
+      catch (error) { errors.push(`Round ${roundNo}: ${(error as Error).message}`); return; }
+      if (!round.colorQuestions?.length) errors.push(`Round ${roundNo}: add at least one color question.`);
+      const questions: ColorPackRound["questions"] = [];
+      for (const [index, question] of (round.colorQuestions ?? []).entries()) {
+        const context = `Round ${roundNo}, question ${index + 1}`;
+        for (const path of [question.image, question.mask]) {
+          if (!path || !mediaByPath.has(path)) errors.push(`${context}: image or mask file not found (${path ?? "none"}).`);
+          else usedMediaPaths.add(path);
+        }
+        if (!HEX_COLOR.test(question.initialColor) || !HEX_COLOR.test(question.targetColor)) errors.push(`${context}: enter six-digit HEX colors.`);
+        questions.push({ image: question.image ?? "", mask: question.mask ?? "", initialColor: question.initialColor, targetColor: question.targetColor });
+      }
+      quizRounds.push({ type: "color", title, scoring, questions });
+      return;
     }
 
     if (round.type === "text") {
@@ -308,6 +329,7 @@ function collectReferencedMediaPaths(rounds: QuizRound[]): Set<string> {
   const refs = new Set<string>();
 
   rounds.forEach((round) => {
+    if (round.type === "color") { round.questions.forEach((q) => { refs.add(q.image); refs.add(q.mask); }); return; }
     if (round.type === "text") {
       round.questions.forEach((question) => {
         question.prompt.stages.forEach((stage) => {
@@ -343,6 +365,10 @@ function collectReferencedMediaPaths(rounds: QuizRound[]): Set<string> {
 
 function mapQuizRoundsToBuildRounds(rounds: QuizRound[]): BuildRound[] {
   return rounds.map((round) => {
+    if (round.type === "color") return {
+      id: makeId(), collapsed: false, name: round.title, type: "color", textQuestions: [], imageItems: [], multiStepQuestions: [], pointsPerStep: [1], allowAnswerChanges: false,
+      scoring: parseColorScoring(round.scoring), colorQuestions: round.questions.map((q) => ({ id: makeId(), ...q })),
+    } satisfies BuildRound;
     if (round.type === "text") {
       return {
         id: makeId(),
@@ -629,6 +655,7 @@ export default function BuildPage() {
 
       const nextRounds = mapQuizRoundsToBuildRounds(quizRounds);
       const nextMediaTreeState = mapMediaEntriesToTreeState([...mediaEntryMap.values()]);
+      await validateColorPackAssets(quizRounds, new Map([...mediaEntryMap.values()].map((entry) => [entry.path, new Blob([new Uint8Array(entry.bytes)])])));
 
       setInitialRounds(nextRounds);
       setRoundsState(nextRounds);
@@ -636,8 +663,8 @@ export default function BuildPage() {
       setMediaTreeState(nextMediaTreeState);
       setPanelRevision((prev) => prev + 1);
       setLoadSuccess(`Loaded ${nextRounds.length} round(s) and ${mediaEntryMap.size} media file(s).`);
-    } catch {
-      setLoadErrors(["Failed to load pack. Make sure the file is a valid .tar.gz archive."]);
+    } catch (error) {
+      setLoadErrors([error instanceof Error ? error.message : "Failed to load pack."]);
     } finally {
       setIsLoadingPack(false);
     }
@@ -664,6 +691,7 @@ export default function BuildPage() {
 
     setIsGeneratingPack(true);
     try {
+      await validateColorPackAssets(quizRounds, new Map(mediaFiles.map((file) => [file.path, file.file])));
       const entries: Array<{ name: string; data: Uint8Array }> = [];
       entries.push({
         name: "quiz.json",
@@ -693,8 +721,8 @@ export default function BuildPage() {
       URL.revokeObjectURL(url);
 
       setGenerateSuccess("Pack generated and downloaded.");
-    } catch {
-      setGenerateErrors(["Failed to generate pack."]);
+    } catch (error) {
+      setGenerateErrors([error instanceof Error ? error.message : "Failed to generate pack."]);
     } finally {
       setIsGeneratingPack(false);
     }

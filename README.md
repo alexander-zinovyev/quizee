@@ -11,6 +11,41 @@ npm run dev
 
 Visit `http://localhost:3000`.
 
+## Color rounds
+
+The builder supports `color` rounds. Select a static PNG, JPEG, or WebP image and
+a grayscale mask with identical dimensions (at most 16 megapixels). White mask
+pixels are recolored, black pixels are preserved, and gray edges are blended.
+Enter six-digit HEX initial and target colors and choose threshold or closest
+scoring. Prepare masks in an external image editor.
+
+```json
+[
+  {
+    "type": "color",
+    "title": "True Colors",
+    "scoring": { "mode": "threshold", "threshold": 8.5, "points": 1 },
+    "questions": [
+      {
+        "image": "logo.png",
+        "mask": "logo-mask.png",
+        "initialColor": "#83C547",
+        "targetColor": "#4285F4"
+      }
+    ]
+  }
+]
+```
+
+Players edit HSV controls in the presenting view. Teams share automatically
+saved HEX answers; untouched answers use the initial color. Hosts see live team
+images during the round and the correct image after closure. Players see the
+correct image when the host selects Show answer.
+
+Similarity is `10 * exp(-CIEDE2000 / 18)`. Threshold mode awards points when the
+unrounded score meets the threshold. Closest mode splits the point pool equally
+between teams within `tieTolerance` of the best score (default `0.05`).
+
 ## Firebase setup
 
 1. Create a Firebase project and enable Cloud Firestore.
