@@ -29,6 +29,7 @@ type BreakdownQuestion = {
   awardedPoints: number | null;
   step: number | null;
   attempts: BreakdownAttempt[];
+  perceptionScore: number | null;
 };
 
 type BreakdownRound = {
@@ -86,7 +87,7 @@ export default function TeamScoreBreakdownDialog({
             );
             const answersByQuestion = new Map<
               string,
-              { answer: string; awardedPoints: number | null; step: number | null; attempts: BreakdownAttempt[] }
+              { answer: string; awardedPoints: number | null; step: number | null; attempts: BreakdownAttempt[]; perceptionScore: number | null }
             >();
             answersSnap.forEach((snap) => {
               const data = snap.data();
@@ -95,6 +96,7 @@ export default function TeamScoreBreakdownDialog({
                 awardedPoints:
                   typeof data.awardedPoints === "number" ? getAwardedPoints(data.awardedPoints, round.type) : null,
                 attempts: parseBreakdownAttempts(data.attempts),
+                perceptionScore: typeof data.perceptionScore === "number" ? data.perceptionScore : null,
               });
             });
 
@@ -111,6 +113,7 @@ export default function TeamScoreBreakdownDialog({
                   awardedPoints: answer?.awardedPoints ?? null,
                   step: answer?.step ?? null,
                   attempts: answer?.attempts ?? [],
+                  perceptionScore: answer?.perceptionScore ?? null,
                 };
               });
 
@@ -298,6 +301,7 @@ export default function TeamScoreBreakdownDialog({
                                   </span>
                                 ) : null}
                                 <p className="text-sm text-zinc-100">{question.answer || "—"}</p>
+                                {round.type === "color" && question.perceptionScore !== null ? <span className="text-xs text-zinc-300">{question.perceptionScore.toFixed(2)} / 10</span> : null}
                               </div>
                               {question.attempts.length > 1 ? (
                                 <div className="mt-1 flex flex-wrap gap-1">
