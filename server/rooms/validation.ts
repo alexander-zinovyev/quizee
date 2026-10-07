@@ -1,5 +1,5 @@
 import { posix } from "node:path";
-import { HEX_COLOR, parseColorScoring, type ColorScoring } from "@/types/color";
+import { parseColorQuestion, parseColorScoring, type ColorScoring } from "@/types/color";
 
 export type ValidatedStage = {
   text?: string;
@@ -60,7 +60,7 @@ export type ValidatedColorRound = {
   type: "color";
   title: string;
   scoring: ColorScoring;
-  questions: Array<{ order: number; imagePath: string; maskPath: string; initialColor: string; targetColor: string }>;
+  questions: Array<{ order: number; imagePath: string; initialColor: string; targetColor: string } & ({ maskPath: string; regionIds?: never } | { regionIds: string[]; maskPath?: never })>;
 };
 
 export type ValidatedRound = ValidatedTextRound | ValidatedImageRound | ValidatedMultiStepRound | ValidatedColorRound;
@@ -268,16 +268,11 @@ export function validateQuizFile(content: string): ValidatedRound[] | string {
       catch (error) { return `Round ${roundIndex + 1}: ${(error as Error).message}`; }
       const colorQuestions: ValidatedColorRound["questions"] = [];
       for (const [index, raw] of questions.entries()) {
-        if (!raw || typeof raw !== "object") return `Round ${roundIndex + 1}: invalid color question.`;
-        const q = raw as Record<string, unknown>;
-        if (Object.keys(q).some((key) => !["image", "mask", "initialColor", "targetColor"].includes(key))) return "Unexpected color question field.";
-        const image = validateMediaPath(q.image, "Color image");
-        const mask = validateMediaPath(q.mask, "Color mask");
-        if (typeof image === "string") return image;
-        if (typeof mask === "string") return mask;
-        if (![image.path, mask.path].every((path) => /\.(png|jpe?g|webp)$/i.test(path) && !path.split("/").includes(".."))) return "Color assets must be relative PNG, JPEG, or WebP images.";
-        if (typeof q.initialColor !== "string" || !HEX_COLOR.test(q.initialColor) || typeof q.targetColor !== "string" || !HEX_COLOR.test(q.targetColor)) return "Color values must be six-digit HEX colors.";
-        colorQuestions.push({ order: index, imagePath: image.path, maskPath: mask.path, initialColor: q.initialColor.toUpperCase(), targetColor: q.targetColor.toUpperCase() });
+        try {
+          const q = parseColorQuestion(raw);
+          const base = { order: index, imagePath: q.image, initialColor: q.initialColor, targetColor: q.targetColor };
+          colorQuestions.push(q.regionIds ? { ...base, regionIds: q.regionIds } : { ...base, maskPath: q.mask });
+        } catch (error) { return `Round ${roundIndex + 1}, question ${index + 1}: ${(error as Error).message}`; }
       }
       validatedRounds.push({ order: roundIndex, type, title, scoring, questions: colorQuestions });
       continue;

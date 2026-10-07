@@ -9,7 +9,7 @@ import MediaSelector from "./media-selector";
 import { ColorImage, useColorArtwork } from "../color-image";
 import { validateColorFiles } from "@/lib/build/color-assets";
 
-export type BuildColorQuestion = { id: string; image: string | null; mask: string | null; initialColor: string; targetColor: string };
+export type BuildColorQuestion = { id: string; image: string | null; mask?: string | null; regionIds?: string[]; initialColor: string; targetColor: string };
 export function createColorQuestion(): BuildColorQuestion {
   return { id: crypto.randomUUID(), image: null, mask: null, initialColor: "#83C547", targetColor: "#4285F4" };
 }
@@ -37,7 +37,7 @@ function ColorQuestionEditor({ question, mediaFiles, onChange }: {
   const inputClass = "min-w-0 rounded border border-zinc-300 bg-transparent px-2 py-1.5 dark:border-zinc-700";
   return <div className="grid min-w-0 gap-4 md:grid-cols-2">
     <div className="space-y-3">
-      {(["image", "mask"] as const).map((field) => <div key={field}><p className="mb-1 text-sm font-semibold">{field === "image" ? "Image" : "Mask"}</p><MediaSelector mediaFiles={mediaFiles.filter((file) => /\.(png|jpe?g|webp)$/i.test(file.path))} value={question[field]} onChange={(value) => onChange({ ...question, [field]: value })} /></div>)}
+      {(["image", "mask"] as const).map((field) => <div key={field}><p className="mb-1 text-sm font-semibold">{field === "image" ? "Image" : "Mask"}</p><MediaSelector mediaFiles={mediaFiles.filter((file) => /\.(png|jpe?g|webp)$/i.test(file.path))} value={question[field] ?? null} onChange={(value) => onChange({ ...question, [field]: value })} /></div>)}
       {(["initialColor", "targetColor"] as const).map((field) => <label key={field} className="block text-sm">
         <span className="mb-1 block">{field === "initialColor" ? "Initial color" : "Target color"}</span>
         <span className="flex items-center gap-2"><span className="h-8 w-8 shrink-0 rounded border border-zinc-400" aria-label={HEX_COLOR.test(question[field]) ? question[field] : "Invalid color"} style={{ backgroundColor: HEX_COLOR.test(question[field]) ? question[field] : "transparent" }} />

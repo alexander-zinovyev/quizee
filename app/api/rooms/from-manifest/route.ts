@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 import { posix } from "node:path";
 import { validateColorAssets } from "@/server/rooms/color-assets";
+import { parseColorSvg } from "@/lib/media/color-svg";
 
 import { getServerAuth, getServerFirestore, getServerStorageBucket } from "@/server/database";
 import {
@@ -250,6 +251,11 @@ export async function POST(request: NextRequest) {
     for (const round of rounds) {
       if (round.type !== "color") continue;
       for (const question of round.questions) {
+        if (question.regionIds) {
+          const [bytes] = await bucket.file(mediaFiles.get(question.imagePath)!.uploadPath).download();
+          parseColorSvg(new TextDecoder("utf-8", { fatal: true }).decode(bytes), question.regionIds);
+          continue;
+        }
         const [image, mask] = await Promise.all([question.imagePath, question.maskPath].map(async (path) => {
           const [bytes] = await bucket.file(mediaFiles.get(path)!.uploadPath).download();
           return bytes;
@@ -348,7 +354,7 @@ export async function POST(request: NextRequest) {
         const id = `question-${question.order + 1}`;
         batch.set(roundRef.collection("questions").doc(id), {
           order: question.order, media: await resolveMedia(question.imagePath),
-          mask: await resolveMedia(question.maskPath), initialColor: question.initialColor,
+          ...(question.regionIds ? { regionIds: question.regionIds } : { mask: await resolveMedia(question.maskPath) }), initialColor: question.initialColor,
         });
         batch.set(roundRef.collection("answers").doc(id), { answer: question.targetColor });
       }

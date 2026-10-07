@@ -1,4 +1,5 @@
 import type { ColorPackRound } from "@/types/color";
+import { parseColorSvg } from "@/lib/media/color-svg";
 
 export async function validateColorFiles(image: Blob, mask: Blob) {
   const loaded: ImageBitmap[] = [];
@@ -13,9 +14,16 @@ export async function validateColorPackAssets(rounds: Array<{ type: string }>, f
   for (const round of rounds) {
     if (round.type !== "color") continue;
     for (const [index, question] of (round as ColorPackRound).questions.entries()) {
-      const image = files.get(question.image), mask = files.get(question.mask);
-      if (!image || !mask) throw new Error(`Color question ${index + 1}: missing image or mask.`);
-      try { await validateColorFiles(image, mask); }
+      const image = files.get(question.image);
+      if (!image) throw new Error(`Color question ${index + 1}: missing image.`);
+      try {
+        if (question.regionIds) parseColorSvg(await image.text(), question.regionIds);
+        else {
+          const mask = files.get(question.mask);
+          if (!mask) throw new Error("Missing mask.");
+          await validateColorFiles(image, mask);
+        }
+      }
       catch (error) { throw new Error(`Color question ${index + 1}: ${(error as Error).message}`); }
     }
   }
