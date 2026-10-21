@@ -78,19 +78,32 @@ of a mask:
 
 The builder provides editable dropdown rows with add/remove controls and previews all selected regions
 with the same color. Existing raster packs remain supported. SVGs require a valid
-`viewBox` and static shapes or groups with flat, opaque fills for selected regions.
+`viewBox`, or positive numeric/px `width` and `height` from which a `viewBox` can be
+inferred. Editable regions must have author-supplied IDs. The importer does not
+create region IDs for unnamed shapes. Regions can be static shapes or groups with
+flat, opaque fills, or stroke-only shapes/groups with one opaque stroke color.
+Filled regions retain their existing outlines when recolored.
 Presentation attributes and inline `style` declarations support `fill`, `fill-rule`,
 `fill-opacity`, `stroke`, `stroke-width`, `stroke-opacity`, `stroke-linecap`,
 `stroke-linejoin`, `stroke-miterlimit`, `stroke-dasharray`, `stroke-dashoffset`,
-`opacity`, `clip-path`, `clip-rule`, `stop-color`, and `stop-opacity`. Inline styles
+`opacity`, `clip-path`, `clip-rule`, `stop-color`, `stop-opacity`, `color`,
+`paint-order`, and `overflow`. The displayed image is clipped to its root viewport,
+as with an external SVG image, so it cannot overlap neighboring controls.
+`currentColor` inherits the SVG's own color rather
+than the app theme. Inline styles
 are normalized to attributes, preserving declaration order and `!important`
 precedence, so region recoloring still works. Unsupported style properties and
-malformed values are refused. Convert visible text to paths. Static local gradients
-and clipping paths are supported outside editable regions. Embedded `<style>`
+malformed values are refused. `xml:space` and the editor-only declaration
+`-inkscape-stroke:none` are accepted and discarded. Convert visible text to paths.
+Static local gradients and clipping paths are supported outside editable regions.
+Local `<use href="#id">` and `<use xlink:href="#id">` references to shapes or groups
+are expanded into independent copies; give each editable `use` instance (or its
+containing group) its own ID. Cyclic, missing, or external references are refused.
+Embedded `<style>`
 blocks, CSS variables, scripts, animation, embedded images, external references, and
 document types are refused. IDs must start with a letter or underscore and contain
 only letters, digits, underscores, dots, colons, and hyphens. SVG files are limited
-to 1 MiB, 5,000 elements, and a nesting depth of 64.
+to 1 MiB, 5,000 elements, and a nesting depth of 64, including expanded copies.
 
 Similarity is `10 * exp(-CIEDE2000 / 18)`. Threshold mode awards points when the
 unrounded score meets the threshold. Closest mode splits the point pool equally

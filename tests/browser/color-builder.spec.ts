@@ -4,6 +4,7 @@ import { gunzipSync } from "fflate";
 import { readFile } from "node:fs/promises";
 import { createTarGz } from "../../lib/build/tar-gz";
 import { readTarEntries } from "../../lib/build/tar-reader";
+import { parseColorSvg } from "../../lib/media/color-svg";
 
 async function pack(maskWidth = 64) {
   const image = await sharp({ create: { width: 64, height: 64, channels: 4, background: "#4285F4" } }).png().toBuffer();
@@ -109,4 +110,31 @@ test("builder refuses unknown SVG regions and active content", async ({ page }) 
   await expect(page.getByText(/references must be local IDs/)).toBeVisible();
   await input.setInputFiles({ name: "unsupported-style.tar.gz", mimeType: "application/gzip", buffer: await svgPack(["left"], '<rect style="filter:blur(2px)"/>') });
   await expect(page.getByText(/Unsupported SVG inline style property: filter/)).toBeVisible();
+});
+
+for (const width of [1440, 390]) test(`builder imports and exports third-party SVG logos at ${width}px`, async ({ page }, testInfo) => {
+  const names = ["harley", "jurassic", "mastercard", "mcdonalds", "olympic", "playstation", "redbull", "slack"];
+  const sources = await Promise.all(names.map((name) => readFile(`tests/fixtures/color-svg/${name}.svg`)));
+  const questions = sources.map((source, index) => ({ image: `${names[index]}.svg`, regionIds: [parseColorSvg(source.toString()).eligibleRegionIds[0]], initialColor: "#83C547", targetColor: "#4285F4" }));
+  const quiz = [{ type: "color", title: "Logo Colors", scoring: { mode: "closest" }, questions }];
+  const pack = Buffer.from(createTarGz([
+    { name: "quiz.json", data: new TextEncoder().encode(JSON.stringify(quiz)) },
+    ...sources.map((data, index) => ({ name: `media/${names[index]}.svg`, data })),
+  ]));
+  await page.setViewportSize({ width, height: 900 });
+  await page.goto("/build");
+  await page.locator('input[accept=".tar.gz,application/gzip"]').setInputFiles({ name: "logos.tar.gz", mimeType: "application/gzip", buffer: pack });
+  await expect(page.getByText("Loaded 1 round(s) and 8 media file(s).")).toBeVisible();
+  await expect(page.getByRole("img", { name: "Question preview", exact: true })).toHaveCount(8);
+  await expect(page.getByText("Select at least one valid SVG region.", { exact: true })).toHaveCount(0);
+  const selectors = page.getByLabel("SVG region 1", { exact: true });
+  for (let index = 0; index < names.length; index++) await expect(selectors.nth(index)).toHaveValue(questions[index].regionIds[0]);
+  const downloading = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Generate pack", exact: true }).click();
+  const entries = readTarEntries(gunzipSync(await readFile((await (await downloading).path())!)));
+  const exported = JSON.parse(new TextDecoder().decode(entries.find((entry) => entry.name === "quiz.json")!.data));
+  expect(exported[0].questions.map((question: { regionIds: string[] }) => question.regionIds)).toEqual(questions.map((question) => question.regionIds));
+  for (let index = 0; index < names.length; index++) expect(Buffer.from(entries.find((entry) => entry.name === `media/${names[index]}.svg`)!.data)).toEqual(sources[index]);
+  await page.screenshot({ path: testInfo.outputPath(`logo-builder-${width}.png`), fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
