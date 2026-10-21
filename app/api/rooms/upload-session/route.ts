@@ -4,6 +4,7 @@ import { FieldValue } from "firebase-admin/firestore";
 
 import { getServerAuth, getServerFirestore } from "@/server/database";
 import { validateRoomId } from "@/server/rooms/validation";
+import { hostingResponse } from "@/server/rooms/hosting-response";
 
 const SESSION_COOKIE_NAME = "__session";
 const MAX_UPLOAD_FILES = 250;
@@ -46,6 +47,10 @@ async function authenticateRequest(request: NextRequest): Promise<{ uid: string 
 }
 
 export async function POST(request: NextRequest) {
+  return hostingResponse("Preparing quiz upload", () => createUploadSession(request));
+}
+
+async function createUploadSession(request: NextRequest) {
   const authResult = await authenticateRequest(request);
   if (!("uid" in authResult)) {
     return authResult;
