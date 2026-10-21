@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 
 import { buildQuizFromBuilderState } from "./page";
 import type { BuildRound } from "@/lib/components/build/round-builder-panel";
+import { validateAgainstQuizSchema } from "@/lib/build/quiz-schema-validator";
+import quizSchema from "@/types/quiz.schema.json";
 
 const round: BuildRound = {
   id: "round-1",
@@ -27,6 +29,22 @@ const round: BuildRound = {
 };
 
 const result = buildQuizFromBuilderState([round], []);
+assert.deepEqual(validateAgainstQuizSchema(result.quizRounds, quizSchema), []);
+
+// A round with many invalid steps must report its own errors, even when
+// another round shape produces fewer errors.
+const invalidStepsRound = {
+  ...result.quizRounds[0],
+  pointsPerStep: [5, 3, 1],
+  questions: Array.from({ length: 8 }, () => ({
+    steps: Array.from({ length: 3 }, () => ({ media: "unsupported.txt" })),
+    answer: { hint: "Answer", stages: [{ text: "Reveal" }] },
+  })),
+};
+const schemaErrors = validateAgainstQuizSchema([invalidStepsRound], quizSchema);
+assert.equal(schemaErrors.length, 24);
+assert.ok(schemaErrors.every((error) => error.includes("expected a relative media path")), schemaErrors.join("\n"));
+assert.ok(schemaErrors[0].startsWith("Round 1, question 1 step 1 media:"));
 const colorRound: BuildRound = { ...round, type: "color", name: "Colors", multiStepQuestions: [],
   scoring: { mode: "closest", points: 1, tieTolerance: 0.05 }, colorQuestions: [
     { id: "color-1", image: "image.png", mask: "mask.png", initialColor: "#123456", targetColor: "#FFFFFF" },

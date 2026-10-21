@@ -40,6 +40,8 @@ function describePath(path: string): string {
   description = description.replace(/\.questions\[(\d+)\]/g, (_match, index: string) => `, question ${Number(index) + 1}`);
   description = description.replace(/\.prompt\.stages\[(\d+)\]/g, (_match, index: string) => ` prompt stage ${Number(index) + 1}`);
   description = description.replace(/\.answer\.stages\[(\d+)\]/g, (_match, index: string) => ` answer stage ${Number(index) + 1}`);
+  description = description.replace(/\.steps\[(\d+)\]/g, (_match, index: string) => ` step ${Number(index) + 1}`);
+  description = description.replace(/(step \d+)\./g, "$1 ");
   description = description.replace(/, question (\d+)\./g, ", question $1 ");
   description = description.replace(/Round (\d+)\./g, "Round $1 ");
 
@@ -52,6 +54,17 @@ function validationError(path: string, message: string): string {
 
 function uniqueErrors(errors: string[]): string[] {
   return [...new Set(errors)];
+}
+
+function matchesObjectDiscriminator(value: unknown, schema: JsonSchema, root: JsonSchema): boolean {
+  if (schema.$ref) {
+    const resolved = resolveRef(root, schema.$ref);
+    return resolved !== null && matchesObjectDiscriminator(value, resolved, root);
+  }
+  if (!isObject(value)) return false;
+  const discriminators = Object.entries(schema.properties ?? {})
+    .filter(([, property]) => property?.const !== undefined);
+  return discriminators.length > 0 && discriminators.every(([key, property]) => value[key] === property!.const);
 }
 
 function summarizeAnyOfErrors(errors: string[], path: string): string[] {
@@ -121,6 +134,15 @@ function validateNode(
     }
     if (passes.length > 1) {
       return [validationError(path, "matches more than one allowed shape.")];
+    }
+
+    // Report the selected shape's errors instead of an unrelated shape that
+    // happens to have fewer errors. All branches above still enforce oneOf.
+    const matchingBranches = schema.oneOf
+      .map((item, index) => ({ schema: item, errors: branchErrors[index] }))
+      .filter((branch) => matchesObjectDiscriminator(value, branch.schema, root));
+    if (matchingBranches.length === 1) {
+      return uniqueErrors(matchingBranches[0].errors);
     }
 
     const shortestBranchErrors = branchErrors.reduce<string[] | null>((shortest, errors) => {
