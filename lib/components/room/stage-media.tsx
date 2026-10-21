@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 
+import AudioPlayer from "@/lib/components/audio-player";
 import ZoomableImage from "@/lib/components/zoomable-image";
 
 type MediaKind = {
@@ -35,6 +36,8 @@ export default function StageMedia({
   videoClassName,
   fitImageToParent = false,
   playbackActive = true,
+  durationSeconds,
+  playbackKey,
 }: {
   url: string;
   kind?: MediaKind;
@@ -50,6 +53,8 @@ export default function StageMedia({
   videoClassName?: string;
   fitImageToParent?: boolean;
   playbackActive?: boolean;
+  durationSeconds?: number;
+  playbackKey?: string;
 }) {
   const mediaElementRef = useRef<HTMLMediaElement | null>(null);
   const resolvedKind =
@@ -106,22 +111,9 @@ export default function StageMedia({
 
   if (resolvedKind.isAudio) {
     return (
-      <audio
-        ref={(element) => {
-          mediaElementRef.current = element;
-        }}
-        src={url}
-        className={audioClassName ?? "w-full"}
-        controls
-        autoPlay={playbackActive}
-        onLoadedMetadata={(event) => {
-          event.currentTarget.volume = mediaVolume;
-          if (!playbackActive) {
-            event.currentTarget.pause();
-            event.currentTarget.currentTime = 0;
-          }
-        }}
-      />
+      <AudioPlayer url={url} durationSeconds={durationSeconds} volume={mediaVolume}
+        playbackActive={playbackActive} playbackKey={playbackKey} label={alt}
+        className={audioClassName} />
     );
   }
 

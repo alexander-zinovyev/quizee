@@ -60,10 +60,12 @@ export function RoundStage({
     question?: string | null;
     withAnswer?: boolean;
     answerPage?: number;
+    promptPage?: number;
   } | null;
   presentingAnswer: string | null;
   presentingAnswerMedia:
     | {
+        durationSeconds?: number;
         filename?: string | null;
         originalPath?: string | null;
       }
@@ -71,6 +73,7 @@ export function RoundStage({
   presentingAnswerMediaUrl: string | null;
   presentingMedia:
     | {
+        durationSeconds?: number;
         filename?: string | null;
       }
     | null;
@@ -276,6 +279,8 @@ export function RoundStage({
                         ) : presentingMediaUrl ? (
                           <StageMedia
                             url={presentingMediaUrl}
+                            durationSeconds={presentingMedia?.durationSeconds}
+                            playbackKey={`${presentingRoundMeta?.id}:${presentingQuestion.id}:prompt:${presenting?.promptPage ?? 0}`}
                             kind={mediaKind}
                             fallbackName={presentingMedia.filename}
                             alt={presentingMedia.filename ?? "Question media"}
@@ -305,6 +310,8 @@ export function RoundStage({
                     ) : presentingAnswerMediaUrl ? (
                       <StageMedia
                         url={presentingAnswerMediaUrl}
+                        durationSeconds={presentingAnswerMedia?.durationSeconds}
+                        playbackKey={`${presentingRoundMeta?.id}:${presentingQuestion.id}:answer:${presenting?.answerPage ?? 0}`}
                         kind={answerMediaKind}
                         fallbackName={
                           presentingAnswerMedia?.filename ??
@@ -340,6 +347,8 @@ export function RoundStage({
                           <div className="w-full">
                             <StageMedia
                               url={presentingMediaUrl}
+                              durationSeconds={presentingMedia?.durationSeconds}
+                              playbackKey={`${presentingRoundMeta?.id}:${presentingQuestion.id}:prompt:${presenting?.promptPage ?? 0}`}
                               kind={mediaKind}
                               fallbackName={presentingMedia.filename}
                               alt={presentingMedia.filename ?? "Question media"}
@@ -359,6 +368,8 @@ export function RoundStage({
                           <div className="flex h-full min-h-0 w-full items-center justify-center">
                             <StageMedia
                               url={presentingMediaUrl}
+                              durationSeconds={presentingMedia?.durationSeconds}
+                              playbackKey={`${presentingRoundMeta?.id}:${presentingQuestion.id}:prompt:${presenting?.promptPage ?? 0}`}
                               kind={mediaKind}
                               fallbackName={presentingMedia.filename}
                               alt={presentingMedia.filename ?? "Question media"}
@@ -389,6 +400,8 @@ export function RoundStage({
                           ) : presentingMediaUrl ? (
                             <StageMedia
                               url={presentingMediaUrl}
+                              durationSeconds={presentingMedia?.durationSeconds}
+                              playbackKey={`${presentingRoundMeta?.id}:${presentingQuestion.id}:prompt:${presenting?.promptPage ?? 0}`}
                               kind={mediaKind}
                               fallbackName={presentingMedia.filename}
                               alt={presentingMedia.filename ?? "Question media"}
@@ -444,6 +457,8 @@ export function RoundStage({
                     <div className="flex h-full min-h-0 w-full self-stretch items-center justify-center">
                       <StageMedia
                         url={presentingAnswerMediaUrl}
+                        durationSeconds={presentingAnswerMedia?.durationSeconds}
+                        playbackKey={`${presentingRoundMeta?.id}:${presentingQuestion.id}:answer:${presenting?.answerPage ?? 0}`}
                         kind={answerMediaKind}
                         fallbackName={
                           presentingAnswerMedia?.filename ??
