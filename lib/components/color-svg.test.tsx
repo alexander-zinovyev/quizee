@@ -40,3 +40,15 @@ for (let index = 0; index < svgs.length; index++) {
 }
 const original = new DOMParser().parseFromString(renderToStaticMarkup(createElement(ColorImage, { artwork, color: "#FF0000", original: true })), "text/xml");
 assert.equal(original.getElementsByTagName("g").item(0)!.getAttribute("fill"), "#4285F4");
+
+const strokeArtwork = parseColorSvg('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20"><defs><g id="ring"><circle r="9" fill="none" stroke="currentColor"/></g></defs><use id="left" href="#ring" color="red" x="10" y="10"/><use id="right" href="#ring" color="blue" x="30" y="10"/></svg>', ["left"]);
+assert.equal(strokeArtwork.regionPaints.left, "stroke");
+const strokeDocument = new DOMParser().parseFromString(renderToStaticMarkup(createElement(ColorImage, { artwork: strokeArtwork, color: "#00FF00" })), "text/xml");
+const groups = [...strokeDocument.getElementsByTagName("g")];
+const left = groups.find((node) => node.getAttribute("id")?.endsWith("-left"))!;
+const right = groups.find((node) => node.getAttribute("id")?.endsWith("-right"))!;
+assert.equal(left.getElementsByTagName("circle").item(0)!.getAttribute("stroke"), "#00FF00");
+assert.equal(left.getElementsByTagName("circle").item(0)!.getAttribute("fill"), "none");
+assert.equal(right.getAttribute("color"), "blue");
+assert.equal(right.getElementsByTagName("circle").item(0)!.getAttribute("stroke"), "currentColor");
+assert.equal(strokeDocument.getElementsByTagName("defs").item(0)!.getElementsByTagName("circle").item(0)!.getAttribute("stroke"), "currentColor");
