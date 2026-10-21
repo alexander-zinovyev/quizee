@@ -41,7 +41,7 @@
     "relativeMediaPath": {
       "type": "string",
       "minLength": 1,
-      "pattern": "^(?!/)(?!media/)(?!.*(?:^|/)\\.\\.(?:/|$)).+\\.(png|jpg|jpeg|gif|webp|svg|mp3|wav|ogg|m4a|mp4|mov|webm)$"
+      "pattern": "^(?!/)(?!media/)(?!.*(?:^|/)\\.\\.(?:/|$)).+\\.(png|jpg|jpeg|gif|webp|svg|mp3|wav|ogg|m4a|aac|mp4|mov|webm)$"
     },
     "stage": {
       "type": "object",

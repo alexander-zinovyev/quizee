@@ -23,6 +23,7 @@ const ALLOWED_MEDIA_EXTENSIONS = new Set([
   ".wav",
   ".ogg",
   ".m4a",
+  ".aac",
   ".mp4",
   ".mov",
   ".webm",
@@ -243,11 +244,13 @@ export default function HostPage() {
                           ? "audio/ogg"
                           : ext === ".m4a"
                             ? "audio/mp4"
-                            : ext === ".mp4"
-                              ? "video/mp4"
-                              : ext === ".mov"
-                                ? "video/quicktime"
-                                : "video/webm";
+                            : ext === ".aac"
+                              ? "audio/aac"
+                              : ext === ".mp4"
+                                ? "video/mp4"
+                                : ext === ".mov"
+                                  ? "video/quicktime"
+                                  : "video/webm";
         const blob = new Blob([file.buffer], { type: contentType });
         mediaEntries.push({
           relativePath: normalizedPath,

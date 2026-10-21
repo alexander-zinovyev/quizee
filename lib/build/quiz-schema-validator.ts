@@ -86,7 +86,7 @@ function describeStringPattern(pattern: string): string {
     return "expected non-empty text.";
   }
 
-  if (pattern.includes("(png|jpg|jpeg|gif|webp|svg|mp3|wav|ogg|m4a|mp4|mov|webm)")) {
+  if (pattern.includes("(png|jpg|jpeg|gif|webp|svg|mp3|wav|ogg|m4a|aac|mp4|mov|webm)")) {
     return "expected a relative media path with a supported extension.";
   }
 

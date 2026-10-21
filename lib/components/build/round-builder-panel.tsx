@@ -300,7 +300,7 @@ function inferMediaKind(path: string | null): { isAudio: boolean; isImage: boole
   const ext = path.toLowerCase().split(".").pop() ?? "";
   return {
     isImage: ["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext),
-    isAudio: ["mp3", "wav", "ogg", "m4a"].includes(ext),
+    isAudio: ["mp3", "wav", "ogg", "m4a", "aac"].includes(ext),
     isVideo: ["mp4", "mov", "webm"].includes(ext),
   };
 }
