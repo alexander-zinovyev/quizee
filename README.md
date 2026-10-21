@@ -105,9 +105,14 @@ document types are refused. IDs must start with a letter or underscore and conta
 only letters, digits, underscores, dots, colons, and hyphens. SVG files are limited
 to 1 MiB, 5,000 elements, and a nesting depth of 64, including expanded copies.
 
-Similarity is `10 * exp(-CIEDE2000 / 18)`. Threshold mode awards points when the
-unrounded score meets the threshold. Closest mode splits the point pool equally
-between teams within `tieTolerance` of the best score (default `0.05`).
+Color similarity uses CIEDE2000 distance in D65 Lab with a base score of
+`10 / (1 + (distance / 25.25)^1.55)`. Hues within 25 degrees recover up to 25% of
+the remaining gap to 10; hue differences above 30 degrees incur a penalty of up
+to 15% of the base score. Both adjustments weaken for low-saturation colors.
+The result is clamped to 0–10 and rounded to two decimals, without jitter.
+Threshold mode awards points when this rounded score meets the threshold.
+Closest mode splits the point pool equally between teams within `tieTolerance`
+of the best score (default `0.05`).
 
 ## Firebase setup
 

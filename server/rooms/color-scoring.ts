@@ -1,11 +1,23 @@
 import Color from "colorjs.io";
+import { hexToHsv } from "@/lib/color";
 import { HEX_COLOR, parseColorScoring, type ColorScoring } from "@/types/color";
 import { Timestamp, type Firestore } from "firebase-admin/firestore";
 
 export function perceptionScore(answer: string, target: string) {
   if (!HEX_COLOR.test(answer) || !HEX_COLOR.test(target)) throw new Error("Invalid scoring color.");
-  const distance = new Color(answer).deltaE2000(new Color(target));
-  return { distance, perceptionScore: Math.max(0, Math.min(10, 10 * Math.exp(-distance / 18))) };
+  // Match Dialed's D65 Lab coordinates. deltaE2000 expects Lab inputs, so pass
+  // those coordinates directly rather than adapting them to its default D50.
+  const [answerLab, targetLab] = [answer, target].map((hex) => new Color("lab", new Color(hex).to("lab-d65").coords));
+  const distance = answerLab.deltaE2000(targetLab);
+  const base = 10 / (1 + (distance / 25.25) ** 1.55);
+  const answerHsv = hexToHsv(answer), targetHsv = hexToHsv(target);
+  const hueDifference = Math.abs(answerHsv.h - targetHsv.h);
+  const hueDistance = Math.min(hueDifference, 360 - hueDifference);
+  const saturation = (answerHsv.s + targetHsv.s) / 2;
+  const hueBonus = (10 - base) * Math.max(0, 1 - (hueDistance / 25) ** 1.5) * Math.min(1, saturation / 30) * 0.25;
+  const huePenalty = base * Math.max(0, (hueDistance - 30) / 150) * Math.min(1, saturation / 40) * 0.15;
+  const score = Math.max(0, Math.min(10, base + hueBonus - huePenalty));
+  return { distance, perceptionScore: Math.round(score * 100) / 100 };
 }
 
 export function awardColorPoints(scores: Record<string, number>, scoring: ColorScoring): Record<string, number> {
