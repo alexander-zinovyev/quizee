@@ -26,9 +26,11 @@ import RoundBuilderPanel, {
   type BuildRound,
 } from "@/lib/components/build/round-builder-panel";
 
+import { getMediaPath, toBuilderMedia, toPackMedia, type BuilderMedia, type PackMediaReference } from "@/lib/build/stage-media";
+
 type QuizStage = {
   text?: string;
-  media?: string;
+  media?: PackMediaReference;
 };
 
 type QuizTextRound = {
@@ -74,18 +76,19 @@ function toStage(stage?: QuizStage): {
   collapsed: boolean;
   text: string;
   mediaPath: string | null;
+  durationSeconds?: number;
 } {
   return {
     id: makeId(),
     collapsed: false,
     text: stage?.text ?? "",
-    mediaPath: stage?.media ?? null,
+    ...toBuilderMedia(stage?.media),
   };
 }
 
-function normalizeBuilderStage(stage: { text: string; mediaPath: string | null }): QuizStage | null {
+function normalizeBuilderStage(stage: { text: string } & BuilderMedia): QuizStage | null {
   const text = stage.text.trim();
-  const media = stage.mediaPath?.trim() ?? "";
+  const media = toPackMedia(stage);
   if (!text && !media) {
     return null;
   }
@@ -161,12 +164,12 @@ export function buildQuizFromBuilderState(rounds: BuildRound[], mediaFiles: Medi
             errors.push(`Round ${roundNo}, question ${qNo}, prompt stage ${stageIndex + 1}: text or media is required.`);
             return;
           }
-          if (normalized.media && !mediaByPath.has(normalized.media)) {
+          if (normalized.media && !mediaByPath.has(getMediaPath(normalized.media))) {
             errors.push(
-              `Round ${roundNo}, question ${qNo}, prompt stage ${stageIndex + 1}: media file not found (${normalized.media}).`
+              `Round ${roundNo}, question ${qNo}, prompt stage ${stageIndex + 1}: media file not found (${getMediaPath(normalized.media)}).`
             );
           } else if (normalized.media) {
-            usedMediaPaths.add(normalized.media);
+            usedMediaPaths.add(getMediaPath(normalized.media));
           }
           promptStages.push(normalized);
         });
@@ -183,12 +186,12 @@ export function buildQuizFromBuilderState(rounds: BuildRound[], mediaFiles: Medi
             errors.push(`Round ${roundNo}, question ${qNo}, answer stage ${stageIndex + 1}: text or media is required.`);
             return;
           }
-          if (normalized.media && !mediaByPath.has(normalized.media)) {
+          if (normalized.media && !mediaByPath.has(getMediaPath(normalized.media))) {
             errors.push(
-              `Round ${roundNo}, question ${qNo}, answer stage ${stageIndex + 1}: media file not found (${normalized.media}).`
+              `Round ${roundNo}, question ${qNo}, answer stage ${stageIndex + 1}: media file not found (${getMediaPath(normalized.media)}).`
             );
           } else if (normalized.media) {
-            usedMediaPaths.add(normalized.media);
+            usedMediaPaths.add(getMediaPath(normalized.media));
           }
           answerStages.push(normalized);
         });
@@ -235,10 +238,10 @@ export function buildQuizFromBuilderState(rounds: BuildRound[], mediaFiles: Medi
             errors.push(`Round ${roundNo}, question ${qNo}, step ${stageIndex + 1}: text or media is required.`);
             return;
           }
-          if (normalized.media && !mediaByPath.has(normalized.media)) {
-            errors.push(`Round ${roundNo}, question ${qNo}, step ${stageIndex + 1}: media file not found (${normalized.media}).`);
+          if (normalized.media && !mediaByPath.has(getMediaPath(normalized.media))) {
+            errors.push(`Round ${roundNo}, question ${qNo}, step ${stageIndex + 1}: media file not found (${getMediaPath(normalized.media)}).`);
           } else if (normalized.media) {
-            usedMediaPaths.add(normalized.media);
+            usedMediaPaths.add(getMediaPath(normalized.media));
           }
           steps.push(normalized);
         });
@@ -255,10 +258,10 @@ export function buildQuizFromBuilderState(rounds: BuildRound[], mediaFiles: Medi
             errors.push(`Round ${roundNo}, question ${qNo}, answer stage ${stageIndex + 1}: text or media is required.`);
             return;
           }
-          if (normalized.media && !mediaByPath.has(normalized.media)) {
-            errors.push(`Round ${roundNo}, question ${qNo}, answer stage ${stageIndex + 1}: media file not found (${normalized.media}).`);
+          if (normalized.media && !mediaByPath.has(getMediaPath(normalized.media))) {
+            errors.push(`Round ${roundNo}, question ${qNo}, answer stage ${stageIndex + 1}: media file not found (${getMediaPath(normalized.media)}).`);
           } else if (normalized.media) {
-            usedMediaPaths.add(normalized.media);
+            usedMediaPaths.add(getMediaPath(normalized.media));
           }
           answerStages.push(normalized);
         });
@@ -302,10 +305,10 @@ export function buildQuizFromBuilderState(rounds: BuildRound[], mediaFiles: Medi
       }
 
       const prompt = normalizeBuilderStage(item.answerStage);
-      if (prompt?.media && !mediaByPath.has(prompt.media)) {
-        errors.push(`Round ${roundNo}, image ${qNo}: prompt media file not found (${prompt.media}).`);
+      if (prompt?.media && !mediaByPath.has(getMediaPath(prompt.media))) {
+        errors.push(`Round ${roundNo}, image ${qNo}: prompt media file not found (${getMediaPath(prompt.media)}).`);
       } else if (prompt?.media) {
-        usedMediaPaths.add(prompt.media);
+        usedMediaPaths.add(getMediaPath(prompt.media));
       }
 
       questions.push(prompt ? { prompt, image: imagePath } : { image: imagePath });
@@ -335,10 +338,10 @@ function collectReferencedMediaPaths(rounds: QuizRound[]): Set<string> {
     if (round.type === "text") {
       round.questions.forEach((question) => {
         question.prompt.stages.forEach((stage) => {
-          if (stage.media) refs.add(stage.media);
+          if (stage.media) refs.add(getMediaPath(stage.media));
         });
         question.answer.stages.forEach((stage) => {
-          if (stage.media) refs.add(stage.media);
+          if (stage.media) refs.add(getMediaPath(stage.media));
         });
       });
       return;
@@ -347,10 +350,10 @@ function collectReferencedMediaPaths(rounds: QuizRound[]): Set<string> {
     if (round.type === "multi-step") {
       round.questions.forEach((question) => {
         question.steps.forEach((stage) => {
-          if (stage.media) refs.add(stage.media);
+          if (stage.media) refs.add(getMediaPath(stage.media));
         });
         question.answer.stages.forEach((stage) => {
-          if (stage.media) refs.add(stage.media);
+          if (stage.media) refs.add(getMediaPath(stage.media));
         });
       });
       return;
@@ -358,7 +361,7 @@ function collectReferencedMediaPaths(rounds: QuizRound[]): Set<string> {
 
     round.questions.forEach((question) => {
       refs.add(question.image);
-      if (question.prompt?.media) refs.add(question.prompt.media);
+      if (question.prompt?.media) refs.add(getMediaPath(question.prompt.media));
     });
   });
 

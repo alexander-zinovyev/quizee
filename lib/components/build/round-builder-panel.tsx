@@ -34,11 +34,14 @@ import type {
 
 type RoundType = "text" | "image" | "multi-step" | "color";
 
+import { toPreviewMedia, type BuilderMedia } from "@/lib/build/stage-media";
+
 type Stage = {
   id: string;
   collapsed: boolean;
   text: string;
   mediaPath: string | null;
+  durationSeconds?: number;
 };
 
 type TextQuestion = {
@@ -304,6 +307,33 @@ function inferMediaKind(path: string | null): { isAudio: boolean; isImage: boole
   };
 }
 
+function StageMediaEditor({ stage, mediaFiles, onChange }: {
+  stage: BuilderMedia;
+  mediaFiles: MediaTreeFile[];
+  onChange: (next: BuilderMedia) => void;
+}) {
+  return (
+    <>
+      <div className="flex items-center gap-2">
+        <p className="w-12 px-1 text-sm font-semibold text-zinc-700 dark:text-white">Media</p>
+        <div className="min-w-0 flex-1">
+          <MediaSelector value={stage.mediaPath} mediaFiles={mediaFiles}
+            onChange={(mediaPath) => onChange({ ...stage, mediaPath, durationSeconds: inferMediaKind(mediaPath).isAudio ? stage.durationSeconds : undefined })} />
+        </div>
+      </div>
+      {inferMediaKind(stage.mediaPath).isAudio ? (
+        <label className="flex flex-wrap items-center gap-2 text-sm text-zinc-700 dark:text-zinc-200">
+          Playback limit (seconds)
+          <input type="number" step="any" min="0" aria-label="Playback limit (seconds)"
+            value={stage.durationSeconds ?? ""} placeholder="Full audio"
+            onChange={(event) => onChange({ ...stage, durationSeconds: event.target.value === "" ? undefined : Number(event.target.value) })}
+            className="w-28 rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100" />
+        </label>
+      ) : null}
+    </>
+  );
+}
+
 function StageEditor({
   stage,
   mediaFiles,
@@ -360,18 +390,7 @@ function StageEditor({
               className="min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-900 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-200 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
             />
           </div>
-          <div className="flex items-center gap-2">
-            <p className={inlineLabelClass}>
-              Media
-            </p>
-            <div className="min-w-0 flex-1">
-              <MediaSelector
-                value={stage.mediaPath}
-                mediaFiles={mediaFiles}
-                onChange={(mediaPath) => onChange({ ...stage, mediaPath })}
-              />
-            </div>
-          </div>
+          <StageMediaEditor stage={stage} mediaFiles={mediaFiles} onChange={(media) => onChange({ ...stage, ...media })} />
         </>
       ) : null}
     </div>
@@ -661,33 +680,14 @@ export default function RoundBuilderPanel({
           : previewCurrentMultiStepQuestion?.steps ?? [];
       const currentStage = promptSource[boundedPreviewPromptPage];
       const stageText = currentStage?.text?.trim() ? currentStage.text.trim() : null;
-      const stageMediaPath = currentStage?.mediaPath ?? null;
-      const stageMedia: RoundQuestionMedia | null = stageMediaPath
-        ? {
-            storagePath: stageMediaPath,
-            filename: stageMediaPath.split("/").pop() ?? stageMediaPath,
-            originalPath: stageMediaPath,
-          }
-        : null;
+      const stageMedia = toPreviewMedia(currentStage);
       const promptStages: RoundQuestionStage[] = promptSource.map((stage) => ({
         text: stage.text.trim() ? stage.text.trim() : null,
-        media: stage.mediaPath
-          ? {
-              storagePath: stage.mediaPath,
-              filename: stage.mediaPath.split("/").pop() ?? stage.mediaPath,
-              originalPath: stage.mediaPath,
-            }
-          : null,
+        media: toPreviewMedia(stage),
       }));
       const answerStages: RoundQuestionStage[] = question.answerStages.map((stage) => ({
         text: stage.text.trim() ? stage.text.trim() : null,
-        media: stage.mediaPath
-          ? {
-              storagePath: stage.mediaPath,
-              filename: stage.mediaPath.split("/").pop() ?? stage.mediaPath,
-              originalPath: stage.mediaPath,
-            }
-          : null,
+        media: toPreviewMedia(stage),
       }));
 
       return {
@@ -706,14 +706,7 @@ export default function RoundBuilderPanel({
     if (!previewCurrentImageItem) return null;
     const promptStage = previewCurrentImageItem.answerStage;
     const promptText = promptStage?.text?.trim() ? promptStage.text.trim() : null;
-    const promptMediaPath = promptStage?.mediaPath ?? null;
-    const promptMedia: RoundQuestionMedia | null = promptMediaPath
-      ? {
-          storagePath: promptMediaPath,
-          filename: promptMediaPath.split("/").pop() ?? promptMediaPath,
-          originalPath: promptMediaPath,
-        }
-      : null;
+    const promptMedia = toPreviewMedia(promptStage);
 
     return {
       id: previewCurrentImageItem.id,
@@ -774,13 +767,7 @@ export default function RoundBuilderPanel({
     const question = previewRound.type === "text" ? previewCurrentTextQuestion : previewCurrentMultiStepQuestion;
     if (!question) return null;
     const stage = question.answerStages[boundedPreviewAnswerPage];
-    const mediaPath = stage?.mediaPath ?? null;
-    if (!mediaPath) return null;
-    return {
-      storagePath: mediaPath,
-      filename: mediaPath.split("/").pop() ?? mediaPath,
-      originalPath: mediaPath,
-    };
+    return toPreviewMedia(stage);
   }, [
     boundedPreviewAnswerPage,
     previewCurrentImageItem,
@@ -823,9 +810,11 @@ export default function RoundBuilderPanel({
             round: previewRoundMeta.id,
             question: isPreviewQuestionVisible && stagedPreviewQuestion ? stagedPreviewQuestion.id : null,
             withAnswer: previewWithAnswer,
+            promptPage: boundedPreviewPromptPage,
+            answerPage: boundedPreviewAnswerPage,
           }
         : null,
-    [isPreviewQuestionVisible, previewRoundMeta, previewWithAnswer, stagedPreviewQuestion]
+    [isPreviewQuestionVisible, previewRoundMeta, previewWithAnswer, stagedPreviewQuestion, boundedPreviewPromptPage, boundedPreviewAnswerPage]
   );
   const previewHasQuestion = Boolean(isPreviewQuestionVisible && stagedPreviewQuestion);
 
@@ -1645,30 +1634,12 @@ export default function RoundBuilderPanel({
                                   className="min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-900 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-200 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
                                 />
                               </div>
-                              <div className="flex items-center gap-2">
-                                <p className="w-12 px-1 text-sm font-semibold text-zinc-700 dark:text-white">
-                                  Media
-                                </p>
-                                <div className="min-w-0 flex-1">
-                                  <MediaSelector
-                                    value={item.answerStage.mediaPath}
-                                    mediaFiles={mediaFiles}
-                                    onChange={(mediaPath) =>
-                                      updateRound(round.id, (prev) => ({
-                                        ...prev,
-                                        imageItems: prev.imageItems.map((entry) =>
-                                          entry.id === item.id
-                                            ? {
-                                                ...entry,
-                                                answerStage: { ...entry.answerStage, mediaPath },
-                                              }
-                                            : entry
-                                        ),
-                                      }))
-                                    }
-                                  />
-                                </div>
-                              </div>
+                              <StageMediaEditor stage={item.answerStage} mediaFiles={mediaFiles}
+                                onChange={(media) => updateRound(round.id, (prev) => ({
+                                  ...prev,
+                                  imageItems: prev.imageItems.map((entry) => entry.id === item.id
+                                    ? { ...entry, answerStage: { ...entry.answerStage, ...media } } : entry),
+                                }))} />
                             </div>
                           </div>
                         ) : null}
@@ -1828,6 +1799,7 @@ export default function RoundBuilderPanel({
                               setPreviewAnswerPage(0);
                             }
                           }}
+                          aria-label={previewWithAnswer ? "Hide answer preview" : "Show answer preview"}
                           className={`inline-flex h-9 w-9 items-center justify-center rounded-lg text-white transition ${
                             previewWithAnswer ? "bg-red-500 hover:bg-red-400" : "bg-amber-500 hover:bg-amber-400"
                           }`}

@@ -78,3 +78,19 @@ for (const pointsPerStep of [[NaN, 1], [Infinity, 1]]) {
   const result = buildQuizFromBuilderState([{ ...round, pointsPerStep }], []);
   assert.ok(result.errors.some((error) => error.includes("finite numbers")));
 }
+
+// Export preserves different fractional limits on a shared source.
+{
+  const limited = structuredClone(round);
+  limited.multiStepQuestions[0].steps[0] = { ...limited.multiStepQuestions[0].steps[0], mediaPath: "song.mp3", durationSeconds: 0.1 };
+  limited.multiStepQuestions[0].steps[1] = { ...limited.multiStepQuestions[0].steps[1], mediaPath: "song.mp3", durationSeconds: 0.5 };
+  limited.multiStepQuestions[0].answerStages[0] = { ...limited.multiStepQuestions[0].answerStages[0], mediaPath: "song.mp3", durationSeconds: 2.75 };
+  const exported = buildQuizFromBuilderState([limited], [{ id: "audio", path: "song.mp3", name: "song.mp3", file: new File([], "song.mp3") }]);
+  assert.deepEqual(exported.errors, []);
+  const packed = exported.quizRounds[0];
+  assert.ok(packed.type === "multi-step");
+  assert.deepEqual(packed.questions[0].steps.map((stage) => stage.media), [
+    { path: "song.mp3", durationSeconds: 0.1 }, { path: "song.mp3", durationSeconds: 0.5 },
+  ]);
+  assert.deepEqual(packed.questions[0].answer.stages[0].media, { path: "song.mp3", durationSeconds: 2.75 });
+}

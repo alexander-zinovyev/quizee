@@ -9,4 +9,3 @@ export function createAudioWav() {
   for (let i = 0; i < rate; i++) bytes.writeInt16LE(Math.round(1000 * Math.sin(i * 440 * 2 * Math.PI / rate)), 44 + i * 2);
   return bytes;
 }
-

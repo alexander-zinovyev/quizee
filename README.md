@@ -137,3 +137,30 @@ Join requests are stored under `rooms/{roomSlug}/joinRequests`, so the host can 
 - `rooms/{roomId}/auth/{docId}` – password settings for the room.
 - `rooms/{roomId}/members/{uid}` – membership record with `role` (`host`/`player`), `joinedAt`, and `team` (null until assigned or host).
 - `rooms/{roomId}/teams/{teamId}` – each team has `name` and optional styling/metadata you add later. Reference the `teamId` from `members/{uid}.team`.
+
+## Audio playback
+
+Audio attachments use a shared player with a seek bar, current/total time,
+play/pause, rewind to the beginning, mute, and volume controls. An optional
+`durationSeconds` limits playback from the start, including fractional seconds:
+
+```json
+{
+  "media": {
+    "path": "song.mp3",
+    "durationSeconds": 0.5
+  }
+}
+```
+
+Use this form in text prompt/answer stages, multi-step steps/answer stages, or
+image-round prompt media. Existing string paths still play the full file. Limits
+must be finite positive numbers and are supported for MP3, WAV, OGG, and M4A
+attachments. The same source can have different limits in different stages.
+The builder preserves limits through import, export, saved state, and preview.
+Clear the playback-limit field to use the full duration.
+
+The player displays the configured limit as its total duration and schedules the
+cutoff using Web Audio. Limits longer than the decoded audio produce a playback
+error. Limits control normal client playback only: the complete original file
+is still downloaded from Storage and can be accessed outside the player.
