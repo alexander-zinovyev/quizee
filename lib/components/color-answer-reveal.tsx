@@ -18,7 +18,7 @@ export function ColorAnswerReveal({ artwork, submittedColor, targetColor }: {
       type="button"
       aria-label="Compare submitted image"
       aria-pressed={comparing}
-      className="relative block w-full cursor-pointer border-0 bg-transparent p-0 focus-visible:outline-2 focus-visible:outline-white"
+      className="relative block h-full min-h-0 w-full cursor-pointer border-0 bg-transparent p-0 focus-visible:outline-2 focus-visible:outline-white"
       onPointerEnter={(event) => { if (event.pointerType === "mouse") { setHovered(true); setRevealed(true); } }}
       onPointerLeave={() => { setHovered(false); setHeld(false); }}
       onPointerDown={(event) => { if (event.pointerType !== "mouse") { setHeld(true); setRevealed(true); } }}
@@ -35,13 +35,13 @@ export function ColorAnswerReveal({ artwork, submittedColor, targetColor }: {
       }}
       onKeyUp={() => setHeld(false)}
     >
-      <span className="relative block" aria-hidden={!comparing}>
-        <ColorImage artwork={artwork} color={submittedColor} label="Submitted answer" />
+      <span className="relative block h-full" aria-hidden={!comparing}>
+        <ColorImage artwork={artwork} color={submittedColor} label="Submitted answer" className="block h-full w-full object-contain" />
         <ColorImageIndicator version="team" hidden={!comparing} />
       </span>
       <span className="color-answer-correct-layer absolute inset-0 block" style={{ clipPath: comparing ? "inset(0 0 0 50%)" : "inset(0)" }}>
-        <span className="color-answer-transition relative block" style={{ animation: revealed ? "none" : undefined }} onAnimationEnd={() => setRevealed(true)}>
-          <ColorImage artwork={artwork} color={targetColor} label="Correct answer" />
+        <span className="color-answer-transition relative block h-full" style={{ animation: revealed ? "none" : undefined }} onAnimationEnd={() => setRevealed(true)}>
+          <ColorImage artwork={artwork} color={targetColor} label="Correct answer" className="block h-full w-full object-contain" />
           <ColorImageIndicator version="original" />
         </span>
       </span>

@@ -308,7 +308,7 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
   await expect(page.getByRole("button", { name: /^(Unl|L)ock answer$/ })).toHaveCount(0);
   if (format === "svg") {
     const bounds = (await page.getByRole("img", { name: "Red team's answer" }).boundingBox())!;
-    expect(Math.abs(bounds.height - bounds.width * 64 / 160)).toBeLessThan(1);
+    expect(bounds.height).toBeGreaterThan(0);
   }
   const labelColor = await page.getByText("Red team", { exact: true }).evaluate((element) => {
     const canvas = document.createElement("canvas");
@@ -320,10 +320,24 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
   });
   expect(labelColor.slice(0, 3).every((channel) => channel >= 230)).toBe(true);
   expect(await page.evaluate(() => (window as unknown as Harness).colorAssetReads)).toEqual(assetReads);
+  async function expectImagesFitPanel() {
+    const panel = page.locator("#color-test");
+    const bounds = (await panel.boundingBox())!;
+    expect(await panel.evaluate((element) => [...element.querySelectorAll("div")].every((child) => child.scrollHeight <= child.clientHeight + 1))).toBe(true);
+    for (const image of await panel.getByRole("img").all()) {
+      const imageBounds = (await image.boundingBox())!;
+      expect(imageBounds.height).toBeGreaterThan(0);
+      expect(imageBounds.y).toBeGreaterThanOrEqual(bounds.y);
+      expect(imageBounds.y + imageBounds.height).toBeLessThanOrEqual(bounds.y + bounds.height);
+    }
+  }
+  await page.locator("#color-test").evaluate((element) => { element.style.height = "240px"; });
+  await expectImagesFitPanel();
   await page.screenshot({ path: testInfo.outputPath(`host-${width}.png`), fullPage: true });
   await page.evaluate(() => (window as unknown as Harness).renderColor(true, "closed"));
   await expect(page.getByRole("img", { name: "Correct answer" })).toHaveCount(1);
   await expect.poll(() => pixel("Correct answer")).toEqual([66, 133, 244, 255]);
+  await expectImagesFitPanel();
   await expect(page.getByText("Original", { exact: true })).toBeVisible();
   await expect(page.getByText("Team", { exact: true })).toHaveCount(0);
   await page.evaluate(() => (window as unknown as Harness).renderColor(false, "closed"));
@@ -342,6 +356,7 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
   await page.evaluate(() => (window as unknown as Harness).gradeTeamColor("red", 8.74, 0.5));
   await expect(page.getByLabel("Question score")).toContainText("8.74 / 10");
   await expect(page.getByLabel("Question score")).toContainText("Points 0.5");
+  await expectImagesFitPanel();
   const comparison = page.getByRole("button", { name: "Compare submitted image" });
   const transition = page.locator(".color-answer-transition");
   await transition.evaluate((element) => {
