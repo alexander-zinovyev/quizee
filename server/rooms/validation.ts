@@ -79,6 +79,7 @@ export const ALLOWED_MEDIA_EXTENSIONS = new Set([
   ".wav",
   ".ogg",
   ".m4a",
+  ".aac",
   ".mp4",
   ".mov",
   ".webm",

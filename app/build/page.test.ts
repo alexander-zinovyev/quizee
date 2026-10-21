@@ -4,6 +4,7 @@ import { buildQuizFromBuilderState } from "./page";
 import type { BuildRound } from "@/lib/components/build/round-builder-panel";
 import { validateAgainstQuizSchema } from "@/lib/build/quiz-schema-validator";
 import quizSchema from "@/types/quiz.schema.json";
+import { validateQuizFile } from "@/server/rooms/validation";
 
 const round: BuildRound = {
   id: "round-1",
@@ -30,6 +31,21 @@ const round: BuildRound = {
 
 const result = buildQuizFromBuilderState([round], []);
 assert.deepEqual(validateAgainstQuizSchema(result.quizRounds, quizSchema), []);
+
+const audioPath = "music/1_1.aac";
+const audioRound: BuildRound = {
+  ...round,
+  multiStepQuestions: round.multiStepQuestions.map((question) => ({
+    ...question,
+    steps: question.steps.map((step) => ({ ...step, text: "", mediaPath: audioPath })),
+  })),
+};
+const audioResult = buildQuizFromBuilderState([audioRound], [
+  { id: audioPath, path: audioPath, name: "1_1.aac", file: new File([], "1_1.aac", { type: "audio/aac" }) },
+]);
+assert.deepEqual(audioResult.errors, []);
+assert.deepEqual(validateAgainstQuizSchema(audioResult.quizRounds, quizSchema), []);
+assert.notEqual(typeof validateQuizFile(JSON.stringify(audioResult.quizRounds)), "string");
 
 // A round with many invalid steps must report its own errors, even when
 // another round shape produces fewer errors.
