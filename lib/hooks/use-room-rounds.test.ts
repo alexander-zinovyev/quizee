@@ -63,3 +63,5 @@ assert.deepEqual(
     },
   ]
 );
+
+assert.deepEqual(parseStages([{ media: { storagePath: "song.mp3", durationSeconds: 0.1 } }])[0].media?.durationSeconds, 0.1);

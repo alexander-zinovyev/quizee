@@ -5,6 +5,7 @@ export type ValidatedStage = {
   text?: string;
   media?: {
     path: string;
+    durationSeconds?: number;
     storagePath?: string;
     contentType?: string;
     size?: number;
@@ -128,7 +129,21 @@ function validateStage(stageRaw: unknown, context: string): ValidatedStage | str
       const mediaObj = stage.media as Record<string, unknown>;
       const parsed = validateMediaPath(mediaObj.path, context);
       if (typeof parsed === "string") return parsed;
-      media = parsed;
+      if (Object.keys(mediaObj).some((key) => key !== "path" && key !== "durationSeconds")) {
+        return `${context}: unsupported media field.`;
+      }
+      if (mediaObj.durationSeconds !== undefined) {
+        const duration = mediaObj.durationSeconds;
+        if (typeof duration !== "number" || !Number.isFinite(duration) || duration <= 0) {
+          return `${context}: durationSeconds must be a finite positive number.`;
+        }
+        if (!/\.(mp3|wav|ogg|m4a)$/i.test(parsed.path)) {
+          return `${context}: durationSeconds is only supported for audio media.`;
+        }
+        media = { ...parsed, durationSeconds: duration };
+      } else {
+        media = parsed;
+      }
     } else {
       return `${context}: media must be a string path or an object with path.`;
     }

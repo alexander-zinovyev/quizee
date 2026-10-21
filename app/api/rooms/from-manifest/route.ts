@@ -11,6 +11,7 @@ import {
   validateQuizFile,
   validateRoomId,
   type ValidatedRound,
+  type ValidatedStage,
 } from "@/server/rooms/validation";
 import { collectReferencedMedia, createRoundDocumentData } from "@/server/rooms/manifest";
 import { createServerMediaProvider } from "@/lib/media/provisioning";
@@ -303,13 +304,16 @@ export async function POST(request: NextRequest) {
     };
   };
 
-  const resolveStages = async (stages: Array<{ text?: string; media?: { path: string } }>) =>
+  const resolveStages = async (stages: ValidatedStage[]) =>
     Promise.all(
       stages.map(async (stage) => {
         if (!stage.media?.path) {
           return { text: stage.text ?? null, media: null };
         }
-        const media = await resolveMedia(stage.media.path);
+        const media = {
+          ...await resolveMedia(stage.media.path),
+          ...(stage.media.durationSeconds !== undefined ? { durationSeconds: stage.media.durationSeconds } : {}),
+        };
         return {
           text: stage.text ?? null,
           media,
@@ -419,6 +423,7 @@ export async function POST(request: NextRequest) {
         let promptMedia:
           | {
               storagePath: string;
+              durationSeconds?: number;
               contentType: string;
               size: number;
               filename: string;
@@ -427,7 +432,10 @@ export async function POST(request: NextRequest) {
           | null = null;
 
         if (question.prompt?.media?.path) {
-          promptMedia = await resolveMedia(question.prompt.media.path);
+          promptMedia = {
+            ...await resolveMedia(question.prompt.media.path),
+            ...(question.prompt.media.durationSeconds !== undefined ? { durationSeconds: question.prompt.media.durationSeconds } : {}),
+          };
         }
 
         batch.set(questionRef, {

@@ -23,6 +23,7 @@ export type RoundMeta = {
 
 export type RoundQuestionMedia = {
   storagePath: string;
+  durationSeconds?: number;
   contentType?: string | null;
   size?: number | null;
   filename?: string | null;
@@ -74,6 +75,8 @@ export function parseMedia(mediaRaw: unknown): RoundQuestionMedia | null {
   const mediaObj = mediaRaw as Record<string, unknown>;
   return {
     storagePath: mediaObj.storagePath as string,
+    ...(typeof mediaObj.durationSeconds === "number" && Number.isFinite(mediaObj.durationSeconds) && mediaObj.durationSeconds > 0
+      ? { durationSeconds: mediaObj.durationSeconds } : {}),
     contentType: typeof mediaObj.contentType === "string" ? mediaObj.contentType : null,
     size: typeof mediaObj.size === "number" ? mediaObj.size : Number(mediaObj.size) || null,
     filename: typeof mediaObj.filename === "string" ? mediaObj.filename : null,

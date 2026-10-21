@@ -43,6 +43,26 @@
       "minLength": 1,
       "pattern": "^(?!/)(?!media/)(?!.*(?:^|/)\\.\\.(?:/|$)).+\\.(png|jpg|jpeg|gif|webp|svg|mp3|wav|ogg|m4a|mp4|mov|webm)$"
     },
+    "audioMediaPath": {
+      "type": "string",
+      "pattern": "^(?!/)(?!media/)(?!.*(?:^|/)\\.\\.(?:/|$)).+\\.(mp3|wav|ogg|m4a)$"
+    },
+    "mediaReference": {
+      "oneOf": [
+        { "$ref": "#/$defs/relativeMediaPath" },
+        {
+          "type": "object", "additionalProperties": false, "required": ["path"],
+          "properties": { "path": { "$ref": "#/$defs/relativeMediaPath" } }
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["path", "durationSeconds"],
+          "properties": {
+            "path": { "$ref": "#/$defs/audioMediaPath" },
+            "durationSeconds": { "type": "number", "exclusiveMinimum": 0 }
+          }
+        }
+      ]
+    },
     "stage": {
       "type": "object",
       "additionalProperties": false,
@@ -51,7 +71,7 @@
           "$ref": "#/$defs/nonEmptyText"
         },
         "media": {
-          "$ref": "#/$defs/relativeMediaPath"
+          "$ref": "#/$defs/mediaReference"
         }
       },
       "anyOf": [

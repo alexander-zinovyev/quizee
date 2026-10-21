@@ -4,6 +4,7 @@ import { getDownloadURL, getStorage, ref } from "firebase/storage";
 
 import { getClientFirestore, getFirebaseClientApp } from "@/lib/firebase/client";
 import { roomColorArtwork } from "@/lib/media/color-artwork";
+import { parseMedia } from "@/lib/hooks/use-room-rounds";
 import type {
   RoundImage,
   RoundImages,
@@ -227,30 +228,7 @@ export function usePresentingMedia({
           stage && typeof stage.text === "string" && stage.text.trim().length
             ? stage.text.trim()
             : null;
-        const stageMedia =
-          stage && stage.media && typeof stage.media === "object"
-            ? (() => {
-                const media = stage.media as Record<string, unknown>;
-                const storagePath =
-                  typeof media.storagePath === "string" && media.storagePath.length
-                    ? media.storagePath
-                    : null;
-                if (!storagePath) return null;
-                return {
-                  storagePath,
-                  contentType:
-                    typeof media.contentType === "string" ? media.contentType : null,
-                  size:
-                    typeof media.size === "number"
-                      ? media.size
-                      : Number(media.size) || null,
-                  filename:
-                    typeof media.filename === "string" ? media.filename : null,
-                  originalPath:
-                    typeof media.originalPath === "string" ? media.originalPath : null,
-                } satisfies RoundQuestionMedia;
-              })()
-            : null;
+        const stageMedia = parseMedia(stage?.media);
         const answer = hasStages ? stageText : null;
         setPresentingTextAnswer(answer && answer.trim().length ? answer : null);
         setPresentingTextAnswerMedia(stageMedia);

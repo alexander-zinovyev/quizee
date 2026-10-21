@@ -14,6 +14,7 @@ export type Question = {
    */
   media?: {
     storagePath: string;
+    durationSeconds?: number;
     contentType?: string | null;
     size?: number | null;
     filename?: string | null;
