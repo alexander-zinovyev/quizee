@@ -44,6 +44,7 @@ export default function QuizRound(props: QuizRoundData) {
         teamId={teamId}
         roundId={roundId}
         presenting={props.presenting}
+        allowWager={props.type === "text" && props.allowWager}
         allowAnswerChanges={props.type === "multi-step" ? props.allowAnswerChanges : undefined}
         onAnswer={props.type === "text" ? props.onAnswer : undefined}
       />

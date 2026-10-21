@@ -22,9 +22,12 @@ export function captureMultiStepAnswer(
     { answer, step, submittedAt, submittedBy: input.user }] };
 }
 
-export function snapshotTeamAnswer(input: TeamAnswer, roundType: string): Record<string, unknown> {
+export function snapshotTeamAnswer(input: TeamAnswer, roundType: string, allowWager = false): Record<string, unknown> {
   if (roundType !== "text" && roundType !== "multi-step") throw new Error("Unsupported answer type.");
+  if (input.wagered && (roundType !== "text" || !allowWager)) throw new Error("Wagers are not enabled for this round.");
   return roundType === "multi-step"
     ? { attempts: input.attempts }
-    : { answer: input.answer.trim(), user: input.user };
+    : { answer: input.answer.trim(), user: input.user,
+      ...(input.wagered === undefined ? {} : { wagered: input.wagered }),
+      ...(input.wagered ? { awardedPoints: -2 } : {}) };
 }

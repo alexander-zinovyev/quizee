@@ -1,13 +1,14 @@
 "use client";
 
 import type { RoundMeta, RoundQuestion } from "@/lib/hooks/use-room-rounds";
-import { getAwardedPoints, getAwardShortcut } from "@/lib/components/room/grading";
+import { allowsNegativePoints, getAwardedPoints, getAwardShortcut, getIncorrectAwardShortcut } from "@/lib/components/room/grading";
 import StageMedia from "@/lib/components/room/stage-media";
 
 type GradingAnswer = {
   answer: string;
   hint?: string;
   awardedPoints?: number;
+  wagered?: boolean;
   order: number;
   step?: number | null;
   questionId: string;
@@ -151,6 +152,7 @@ export function RoundStage({
                                 {ans.step + 1}
                               </span>
                             ) : null}
+                            {ans.wagered ? <span className="text-xs font-semibold text-amber-300">x2</span> : null}
                             <p className="text-sm text-white">{ans.answer || "—"}</p>
                           </div>
                           {ans.hint ? (
@@ -162,7 +164,7 @@ export function RoundStage({
                         <div className="flex items-center gap-2">
                           <input
                             type="number"
-                            min={presentingRoundMeta.type === "multi-step" ? undefined : 0}
+                            min={allowsNegativePoints(presentingRoundMeta) ? undefined : 0}
                             step="any"
                             value={typeof ans.awardedPoints === "number" ? ans.awardedPoints : ""}
                             onChange={(event) => {
@@ -172,7 +174,7 @@ export function RoundStage({
                               void gradeAnswer(
                                 gradingMatrix[gradingTeamIndex].teamId,
                                 ans.questionId,
-                                getAwardedPoints(next, presentingRoundMeta.type)
+                                getAwardedPoints(next, presentingRoundMeta)
                               );
                             }}
                             className="h-8 w-20 rounded-md border border-zinc-300 bg-white/95 px-2 text-xs font-semibold text-zinc-900 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-300/60"
@@ -199,13 +201,13 @@ export function RoundStage({
                               void gradeAnswer(
                                 gradingMatrix[gradingTeamIndex].teamId,
                                 ans.questionId,
-                                0
+                                getIncorrectAwardShortcut(ans, presentingRoundMeta)
                               )
                             }
                             className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-red-400 bg-red-400/20 text-red-100 hover:bg-red-400/40"
-                            title="Set 0 points"
+                            title={`Set ${getIncorrectAwardShortcut(ans, presentingRoundMeta)} points`}
                           >
-                            0
+                            {getIncorrectAwardShortcut(ans, presentingRoundMeta)}
                           </button>
                         </div>
                       </div>

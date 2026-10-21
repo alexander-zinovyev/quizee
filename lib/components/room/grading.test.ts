@@ -12,11 +12,11 @@ assert.equal(getAwardShortcut({ step: 0, eligiblePoints: 999 } as { step: number
 assert.throws(() => getAwardShortcut({ step: 4 }, round));
 assert.throws(() => getAwardShortcut({ step: -1 }, round));
 assert.throws(() => getAwardShortcut({ step: 0 }, { type: "multi-step" }));
-for (const points of [0, 0.5, -2]) assert.equal(getAwardedPoints(points, "multi-step"), points);
-assert.equal(getAwardedPoints(-2, "text"), 0);
-assert.equal(getAwardedPoints(-2, "image"), 0);
-assert.throws(() => getAwardedPoints(Infinity, "multi-step"));
-assert.throws(() => getAwardedPoints(NaN, "multi-step"));
+for (const points of [0, 0.5, -2]) assert.equal(getAwardedPoints(points, { type: "multi-step" }), points);
+assert.equal(getAwardedPoints(-2, { type: "text" }), 0);
+assert.equal(getAwardedPoints(-2, { type: "image" }), 0);
+assert.throws(() => getAwardedPoints(Infinity, { type: "multi-step" }));
+assert.throws(() => getAwardedPoints(NaN, { type: "multi-step" }));
 const colorRound = { id: "color-1", type: "color", state: "closed", gradingRequired: true };
 assert.equal(canRetryAutoGrade(colorRound, null), false);
 assert.equal(canRetryAutoGrade(colorRound, "other-round"), false);

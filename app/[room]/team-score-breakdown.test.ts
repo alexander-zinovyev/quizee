@@ -7,8 +7,8 @@ assert.deepEqual(parseBreakdownAttempts([
 ]), [{ answer: "First", step: 0 }, { answer: "Second", step: 1 }]);
 assert.deepEqual(parseBreakdownAttempts(undefined), []);
 assert.throws(() => parseBreakdownAttempts([{ answer: "", step: 0 }]));
-assert.equal(parseDraftPoints("0", "multi-step"), 0);
-assert.equal(parseDraftPoints("0.5", "multi-step"), 0.5);
-assert.equal(parseDraftPoints("-2", "multi-step"), -2);
-assert.equal(parseDraftPoints("-2", "text"), 0);
-for (const value of ["", " ", "NaN", "Infinity", "2oops"]) assert.equal(parseDraftPoints(value, "multi-step"), null);
+assert.equal(parseDraftPoints("0", { type: "multi-step" }), 0);
+assert.equal(parseDraftPoints("0.5", { type: "multi-step" }), 0.5);
+assert.equal(parseDraftPoints("-2", { type: "multi-step" }), -2);
+assert.equal(parseDraftPoints("-2", { type: "text" }), 0);
+for (const value of ["", " ", "NaN", "Infinity", "2oops"]) assert.equal(parseDraftPoints(value, { type: "multi-step" }), null);

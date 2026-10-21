@@ -137,3 +137,17 @@ Join requests are stored under `rooms/{roomSlug}/joinRequests`, so the host can 
 - `rooms/{roomId}/auth/{docId}` – password settings for the room.
 - `rooms/{roomId}/members/{uid}` – membership record with `role` (`host`/`player`), `joinedAt`, and `team` (null until assigned or host).
 - `rooms/{roomId}/teams/{teamId}` – each team has `name` and optional styling/metadata you add later. Reference the `teamId` from `members/{uid}.team`.
+
+## Double or nothing
+
+Text rounds can set `"allowWager": true` in `quiz.json`, or enable **Double or
+nothing** in the builder. The option defaults to false and is supported only on
+text rounds. Each team gets an **x2** toggle per answer in enabled rounds.
+Teammates can change it while the round is active, independently of answer text
+or locking, including for blank answers.
+
+When the host closes the round, wagered answers start at **−2** in grading. The
+correct-answer shortcut awards **+2**, and the incorrect-answer shortcut restores
+**−2**. Other answers keep the existing **+1 / 0** shortcuts. Hosts can override
+awarded points manually. Negative scores carry through round totals, standings,
+and score breakdowns.

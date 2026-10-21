@@ -51,7 +51,7 @@ export default function RoomEnded({
         const roundScore = answersSnap.docs.reduce((sum, answerDoc) => {
           const data = answerDoc.data();
           const rawPoints = typeof data.awardedPoints === "number" ? data.awardedPoints : 0;
-          return sum + getAwardedPoints(rawPoints, round.type);
+          return sum + getAwardedPoints(rawPoints, round);
         }, 0);
         return { roundId, roundScore };
       })

@@ -11,6 +11,7 @@ export type RoundDocumentData = {
   gradingRequired: false;
   pointsPerStep?: number[];
   allowAnswerChanges?: boolean;
+  allowWager?: boolean;
   scoring?: ColorScoring;
 };
 
@@ -68,6 +69,7 @@ export function createRoundDocumentData(round: ValidatedRound): RoundDocumentDat
     gradingRequired: false,
   };
 
+  if (round.type === "text" && round.allowWager !== undefined) return { ...base, allowWager: round.allowWager };
   if (round.type === "color") return { ...base, scoring: round.scoring };
   if (round.type !== "multi-step") {
     return base;

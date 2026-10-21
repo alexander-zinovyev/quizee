@@ -125,7 +125,7 @@ export default function RoomContent({
         string,
         Record<
           string,
-          { answer: string; awardedPoints?: number; step?: number | null }
+          { answer: string; wagered?: boolean; awardedPoints?: number; step?: number | null }
         >
       >
     >
@@ -241,6 +241,7 @@ export default function RoomContent({
           return {
             id: meta.id,
             type: "text",
+            allowWager: meta.allowWager,
             title: meta.title,
             roundNumber: meta.order + 1 || index + 1,
             questions: questions.map((q) => ({
@@ -420,6 +421,7 @@ export default function RoomContent({
             hint,
             awardedPoints: teamAnswer?.awardedPoints,
             step: teamAnswer?.step,
+            wagered: teamAnswer?.wagered,
           };
         });
         return {
@@ -912,7 +914,7 @@ export default function RoomContent({
 
   async function gradeAnswer(teamId: string, questionId: string, awardedPoints: number) {
     if (!isHost || !presentingRoundMeta || presentingRoundMeta.state !== "closed") return;
-    const normalizedPoints = getAwardedPoints(awardedPoints, presentingRoundMeta.type);
+    const normalizedPoints = getAwardedPoints(awardedPoints, presentingRoundMeta);
     setTeamAnswers((prev) => {
       const roundId = presentingRoundMeta.id;
       const roundEntry = prev[roundId] ?? {};
@@ -972,7 +974,7 @@ export default function RoomContent({
         const roundScore = answersSnap.docs.reduce((sum, answerDoc) => {
           const data = answerDoc.data();
           const rawPoints = typeof data.awardedPoints === "number" ? data.awardedPoints : 0;
-          return sum + getAwardedPoints(rawPoints, round.type);
+          return sum + getAwardedPoints(rawPoints, round);
         }, 0);
         return { roundId, roundScore };
       })
@@ -1002,7 +1004,7 @@ export default function RoomContent({
       Object.entries(answersForRound).map(async ([teamId, answers]) => {
         const awardedScore = Object.values(answers).reduce((sum, ans) => {
           const points = typeof ans.awardedPoints === "number" ? ans.awardedPoints : 0;
-          return sum + getAwardedPoints(points, presentingRoundMeta.type);
+          return sum + getAwardedPoints(points, presentingRoundMeta);
         }, 0);
         const scoreRef = doc(db, "rooms", roomSlug, "teams", teamId, "scores", roundId);
         const teamRef = doc(db, "rooms", roomSlug, "teams", teamId);
@@ -1236,12 +1238,13 @@ export default function RoomContent({
         const unsubAnswers = onSnapshot(answersRef, (answersSnap) => {
           const answerMap: Record<
             string,
-            { answer: string; awardedPoints?: number; step?: number | null }
+            { answer: string; wagered?: boolean; awardedPoints?: number; step?: number | null }
           > = {};
           answersSnap.forEach((ansDoc) => {
             const data = ansDoc.data();
             answerMap[ansDoc.id] = {
               ...recordedAnswer(data, presentingRoundMeta.type),
+              wagered: data.wagered === true,
               awardedPoints:
                 typeof data.awardedPoints === "number"
                   ? (data.awardedPoints as number)
