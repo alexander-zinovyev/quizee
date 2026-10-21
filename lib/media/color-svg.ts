@@ -1,6 +1,7 @@
 import { DOMParser, type Element, type Node } from "@xmldom/xmldom";
 import Color from "colorjs.io";
 import { parseRegionIds, SVG_REGION_ID } from "@/types/color";
+import { parseSvgStyle, SVG_STYLE_PROPERTIES } from "./color-svg-style";
 
 export type SvgNode = { tag: string; attributes: Record<string, string>; children: SvgNode[]; text?: string };
 export type ColorSvg = { kind: "svg"; root: SvgNode; width: number; height: number; regionIds: string[]; eligibleRegionIds: string[] };
@@ -8,7 +9,7 @@ export type ColorSvg = { kind: "svg"; root: SvgNode; width: number; height: numb
 const namespace = "http://www.w3.org/2000/svg";
 const shapes = new Set(["path", "rect", "circle", "ellipse", "polygon", "polyline"]);
 const tags = new Set(["svg", "g", "path", "rect", "circle", "ellipse", "polygon", "polyline", "line", "defs", "clipPath", "linearGradient", "radialGradient", "stop", "title", "desc"]);
-const attributes = new Set(["xmlns", "viewBox", "width", "height", "id", "version", "preserveAspectRatio", "fill", "fill-rule", "fill-opacity", "stroke", "stroke-width", "stroke-opacity", "stroke-linecap", "stroke-linejoin", "stroke-miterlimit", "stroke-dasharray", "stroke-dashoffset", "opacity", "transform", "d", "points", "x", "y", "x1", "x2", "y1", "y2", "cx", "cy", "r", "rx", "ry", "clip-path", "clip-rule", "clipPathUnits", "gradientUnits", "gradientTransform", "spreadMethod", "offset", "stop-color", "stop-opacity", "fx", "fy", "fr"]);
+const attributes = new Set(["xmlns", "viewBox", "width", "height", "id", "version", "preserveAspectRatio", ...SVG_STYLE_PROPERTIES, "transform", "d", "points", "x", "y", "x1", "x2", "y1", "y2", "cx", "cy", "r", "rx", "ry", "clipPathUnits", "gradientUnits", "gradientTransform", "spreadMethod", "offset", "fx", "fy", "fr"]);
 
 export function parseColorSvg(source: string, selectedIds?: string[]): ColorSvg {
   if (!source.trim() || new TextEncoder().encode(source).length > 1024 * 1024) throw new Error("SVG must be nonempty and at most 1 MiB.");
@@ -31,19 +32,22 @@ export function parseColorSvg(source: string, selectedIds?: string[]): ColorSvg 
     const result: SvgNode = { tag: node.tagName, attributes: {}, children: [] };
     for (let index = 0; index < node.attributes.length; index++) {
       const attr = node.attributes.item(index)!;
-      if (!attributes.has(attr.name) || attr.name === "xmlns" && attr.value !== namespace) throw new Error(`Unsupported SVG attribute: ${attr.name}. Use presentation attributes for fills.`);
+      if (attr.name !== "style" && !attributes.has(attr.name) || attr.name === "xmlns" && attr.value !== namespace) throw new Error(`Unsupported SVG attribute: ${attr.name}.`);
       if (attr.value.length > 100000) throw new Error("SVG attribute is too long.");
-      if (["fill", "stroke", "clip-path", "stop-color"].includes(attr.name)) {
-        if (attr.value.startsWith("url(")) {
-          const match = /^url\(#([A-Za-z_][A-Za-z0-9_.:-]*)\)$/.exec(attr.value);
+      if (attr.name !== "style") result.attributes[attr.name] = attr.value;
+    }
+    if (node.hasAttribute("style")) Object.assign(result.attributes, parseSvgStyle(node.getAttribute("style")!));
+    for (const [name, value] of Object.entries(result.attributes)) {
+      if (["fill", "stroke", "clip-path", "stop-color"].includes(name)) {
+        if (value.startsWith("url(")) {
+          const match = /^url\(#([A-Za-z_][A-Za-z0-9_.:-]*)\)$/.exec(value);
           if (!match) throw new Error("SVG paint and clipping references must be local IDs.");
-          if (attr.name === "stop-color") throw new Error("SVG gradient stops require literal colors.");
-          references.push({ id: match[1], attribute: attr.name });
-        } else if (attr.value !== "none" && attr.value !== "inherit") {
-          try { new Color(attr.value); } catch { throw new Error("Unsupported SVG paint value."); }
+          if (name === "stop-color") throw new Error("SVG gradient stops require literal colors.");
+          references.push({ id: match[1], attribute: name });
+        } else if (value !== "none" && value !== "inherit") {
+          try { new Color(value); } catch { throw new Error("Unsupported SVG paint value."); }
         }
       }
-      result.attributes[attr.name] = attr.value;
     }
     const id = result.attributes.id;
     if (id) {

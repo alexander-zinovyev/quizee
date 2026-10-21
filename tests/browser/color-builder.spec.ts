@@ -46,7 +46,7 @@ test("builder refuses masks with mismatched dimensions", async ({ page }) => {
 });
 
 async function svgPack(regionIds = ["left", "right"], extra = "") {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 60"><rect width="100" height="60" fill="#FFFFFF"/><rect id="left" x="10" y="10" width="20" height="40" fill="#4285F4"/><rect id="right" x="60" y="10" width="20" height="40" fill="#4285F4"/>${extra}</svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 60"><rect width="100" height="60" style="fill:#FFFFFF"/><rect id="left" x="10" y="10" width="20" height="40" fill="red" style="fill:#4285F4!important;fill:blue;stroke:none"/><rect id="right" x="60" y="10" width="20" height="40" style="fill:#4285F4"/>${extra}</svg>`;
   return Buffer.from(createTarGz([
     { name: "quiz.json", data: new TextEncoder().encode(JSON.stringify([{ type: "color", title: "Vector Colors", scoring: { mode: "threshold" }, questions: [{ image: "logo.svg", regionIds, initialColor: "#83C547", targetColor: "#4285F4" }] }])) },
     { name: "media/logo.svg", data: new TextEncoder().encode(svg) },
@@ -66,6 +66,7 @@ for (const width of [1440, 390]) test(`builder edits SVG regions and exports at 
   const preview = page.getByRole("img", { name: "Question preview" });
   await expect(preview.locator('rect[id$="-left"]')).toHaveAttribute("fill", "#83C547");
   await expect(preview.locator('rect[id$="-right"]')).toHaveAttribute("fill", "#83C547");
+  await expect(preview.locator('rect[style]')).toHaveCount(0);
   const bounds = (await preview.boundingBox())!;
   expect(Math.abs(bounds.height - bounds.width * 60 / 100)).toBeLessThan(1);
   await page.getByRole("button", { name: "Remove region 2", exact: true }).click();
@@ -104,4 +105,8 @@ test("builder refuses unknown SVG regions and active content", async ({ page }) 
   await expect(page.getByText(/must identify a visible flat-fill/)).toBeVisible();
   await input.setInputFiles({ name: "script.tar.gz", mimeType: "application/gzip", buffer: await svgPack(["left"], "<script>alert(1)</script>") });
   await expect(page.getByText(/Unsupported SVG element: script/)).toBeVisible();
+  await input.setInputFiles({ name: "external-style.tar.gz", mimeType: "application/gzip", buffer: await svgPack(["left"], '<rect style="fill:url(https://example.com/paint)"/>') });
+  await expect(page.getByText(/references must be local IDs/)).toBeVisible();
+  await input.setInputFiles({ name: "unsupported-style.tar.gz", mimeType: "application/gzip", buffer: await svgPack(["left"], '<rect style="filter:blur(2px)"/>') });
+  await expect(page.getByText(/Unsupported SVG inline style property: filter/)).toBeVisible();
 });

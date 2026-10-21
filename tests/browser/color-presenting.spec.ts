@@ -116,7 +116,7 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
       } else setTeamLocked(body.teamId, body.locked);
       return new Response("{}", { status: 200 });
     };
-  }, { image: format === "svg" ? `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 64"><rect width="160" height="64" fill="#4285F4"/><rect id="left" x="16" width="64" height="64" fill="#4285F4"/><rect id="right" x="80" width="80" height="64" fill="#4285F4"/></svg>')}` : `data:image/png;base64,${image.toString("base64")}`, mask: `data:image/png;base64,${mask.toString("base64")}` });
+  }, { image: format === "svg" ? `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 64"><rect width="160" height="64" style="fill:#4285F4"/><rect id="left" x="16" width="64" height="64" fill="red" style="fill:#4285F4!important"/><rect id="right" x="80" width="80" height="64" style="fill:#4285F4"/></svg>')}` : `data:image/png;base64,${image.toString("base64")}`, mask: `data:image/png;base64,${mask.toString("base64")}` });
   await page.addScriptTag({ content: await bundle(format) });
   const assetReads = format === "svg" ? ["image"] : ["image", "mask"];
   const pixel = (label: string, x = 120) => page.getByRole("img", { name: label, exact: true }).evaluate(async (element, x) => {

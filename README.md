@@ -79,9 +79,15 @@ of a mask:
 The builder provides editable dropdown rows with add/remove controls and previews all selected regions
 with the same color. Existing raster packs remain supported. SVGs require a valid
 `viewBox` and static shapes or groups with flat, opaque fills for selected regions.
-Use presentation attributes such as `fill` and `stroke`; convert visible text to
-paths. Static local gradients and clipping paths are supported outside editable
-regions. CSS styles, scripts, animation, embedded images, external references, and
+Presentation attributes and inline `style` declarations support `fill`, `fill-rule`,
+`fill-opacity`, `stroke`, `stroke-width`, `stroke-opacity`, `stroke-linecap`,
+`stroke-linejoin`, `stroke-miterlimit`, `stroke-dasharray`, `stroke-dashoffset`,
+`opacity`, `clip-path`, `clip-rule`, `stop-color`, and `stop-opacity`. Inline styles
+are normalized to attributes, preserving declaration order and `!important`
+precedence, so region recoloring still works. Unsupported style properties and
+malformed values are refused. Convert visible text to paths. Static local gradients
+and clipping paths are supported outside editable regions. Embedded `<style>`
+blocks, CSS variables, scripts, animation, embedded images, external references, and
 document types are refused. IDs must start with a letter or underscore and contain
 only letters, digits, underscores, dots, colons, and hyphens. SVG files are limited
 to 1 MiB, 5,000 elements, and a nesting depth of 64.
