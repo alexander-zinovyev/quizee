@@ -6,13 +6,17 @@ export type AnswerAttempt = {
 };
 
 export type TeamAnswer = {
+  wagered?: boolean;
   answer: string;
   locked: boolean;
   user: string | null;
   attempts: AnswerAttempt[];
 };
 
-export type AnswerMutation = { answer: string; locked?: never } | { locked: boolean; answer?: never };
+export type AnswerMutation =
+  | { answer: string; locked?: never; wagered?: never }
+  | { locked: boolean; answer?: never; wagered?: never }
+  | { wagered: boolean; answer?: never; locked?: never };
 
 export function parseAttempts(raw: unknown): AnswerAttempt[] {
   if (raw === undefined) return [];
@@ -35,7 +39,8 @@ export function parseAttempts(raw: unknown): AnswerAttempt[] {
 export function parseTeamAnswer(data: Record<string, unknown>): TeamAnswer {
   if (typeof data.answer !== "string" || typeof data.locked !== "boolean" ||
       (data.user !== null && typeof data.user !== "string")) throw new Error("Invalid team answer.");
-  return { answer: data.answer, locked: data.locked, user: data.user, attempts: parseAttempts(data.attempts) };
+  if (data.wagered !== undefined && typeof data.wagered !== "boolean") throw new Error("Invalid wager.");
+  return { ...(data.wagered === undefined ? {} : { wagered: data.wagered }), answer: data.answer, locked: data.locked, user: data.user, attempts: parseAttempts(data.attempts) };
 }
 
 export function latestAttempt(attempts: AnswerAttempt[]): AnswerAttempt | undefined {

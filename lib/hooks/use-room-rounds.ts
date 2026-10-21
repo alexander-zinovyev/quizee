@@ -19,6 +19,7 @@ export type RoundMeta = {
   gradingRequired?: boolean;
   pointsPerStep?: number[];
   allowAnswerChanges?: boolean;
+  allowWager?: boolean;
 };
 
 export type RoundQuestionMedia = {
@@ -137,6 +138,11 @@ export function parseRoundMeta(id: string, data: Record<string, unknown>, index:
     state,
     gradingRequired: data.gradingRequired as boolean | undefined,
   };
+
+  if (data.allowWager !== undefined && (type !== "text" || typeof data.allowWager !== "boolean")) {
+    throw new Error("Invalid wager configuration.");
+  }
+  if (type === "text") meta.allowWager = data.allowWager === true;
 
   if (type === "multi-step") {
     meta.pointsPerStep = parsePointsPerStep(data.pointsPerStep);

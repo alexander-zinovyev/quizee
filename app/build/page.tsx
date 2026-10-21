@@ -32,6 +32,7 @@ type QuizStage = {
 };
 
 type QuizTextRound = {
+  allowWager?: boolean;
   type: "text";
   title: string;
   questions: Array<{
@@ -204,6 +205,7 @@ export function buildQuizFromBuilderState(rounds: BuildRound[], mediaFiles: Medi
 
       quizRounds.push({
         type: "text",
+        ...(round.allowWager ? { allowWager: true } : {}),
         title: title || `Round ${roundNo}`,
         questions,
       });
@@ -377,6 +379,7 @@ function mapQuizRoundsToBuildRounds(rounds: QuizRound[]): BuildRound[] {
         collapsed: false,
         name: round.title,
         type: "text",
+        allowWager: round.allowWager ?? false,
         textQuestions: round.questions.map((question) => ({
           id: makeId(),
           collapsed: false,

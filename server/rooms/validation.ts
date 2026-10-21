@@ -33,6 +33,7 @@ export type ValidatedMultiStepQuestion = {
 };
 
 export type ValidatedTextRound = {
+  allowWager?: boolean;
   order: number;
   type: "text";
   title: string;
@@ -262,6 +263,10 @@ export function validateQuizFile(content: string): ValidatedRound[] | string {
       return `Round ${roundIndex + 1}: questions array is required and cannot be empty.`;
     }
 
+    if ("allowWager" in round && (type !== "text" || typeof round.allowWager !== "boolean")) {
+      return `Round ${roundIndex + 1}: allowWager must be a boolean on text rounds only.`;
+    }
+
     if (type === "color") {
       let scoring: ColorScoring;
       try { scoring = parseColorScoring(round.scoring); }
@@ -313,6 +318,7 @@ export function validateQuizFile(content: string): ValidatedRound[] | string {
         type,
         title,
         questions: validatedQuestions,
+        ...(round.allowWager === undefined ? {} : { allowWager: round.allowWager as boolean }),
       });
       continue;
     }
@@ -361,6 +367,7 @@ export function validateQuizFile(content: string): ValidatedRound[] | string {
         pointsPerStep,
         allowAnswerChanges: round.allowAnswerChanges,
         questions: validatedQuestions,
+        ...(round.allowWager === undefined ? {} : { allowWager: round.allowWager as boolean }),
       });
       continue;
     }

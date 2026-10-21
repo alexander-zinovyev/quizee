@@ -1,6 +1,6 @@
 import type { AnswerMutation } from "./answers";
 
-export type PendingAnswer = { answer?: string; locked?: boolean };
+export type PendingAnswer = { answer?: string; locked?: boolean; wagered?: boolean };
 type Job = { mutation: AnswerMutation; expectedStep?: number };
 
 export class AnswerWriteQueue {

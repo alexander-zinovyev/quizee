@@ -36,3 +36,16 @@ assert.deepEqual(disabled(render("multi-step", { q1: committed }, { step: 1, all
 assert.deepEqual(disabled(render("multi-step", {}, { finalizedStep: 0 })), [true, true]);
 assert.deepEqual(disabled(render("multi-step", {}, { finalizedStep: 0, step: 1 })), [false, true]);
 assert.deepEqual(disabled(render("multi-step", {}, { withAnswer: true })), [true, true]);
+
+for (const locked of [true, false]) {
+  const html = renderToStaticMarkup(<AnswerInputs type="text" roundId="r1" questions={questions}
+    allowWager answers={{ q1: { ...saved, answer: "", locked, wagered: true } }} pending={{}}
+    enabled error={null} onChange={() => {}} />);
+  const wagerButtons = html.match(/<button[^>]*aria-label="Double or nothing[^>]*>/g) ?? [];
+  assert.equal(wagerButtons.length, 2);
+  assert.ok(wagerButtons[0].includes('aria-pressed="true"'));
+  assert.ok(wagerButtons[1].includes('aria-pressed="false"'));
+  assert.ok(wagerButtons.every((button) => !button.includes('disabled=""')));
+}
+assert.ok(!render("text").includes("Double or nothing"));
+assert.ok(!render("multi-step").includes("Double or nothing"));

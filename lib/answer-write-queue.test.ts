@@ -19,6 +19,25 @@ async function main() {
       pending: (value) => { if (value === null) done.resolve(); },
       error: (error) => { throw error; },
     });
+    queue.enqueue({ answer: "A" });
+    queue.enqueue({ wagered: true });
+    queue.enqueue({ locked: true });
+    queue.enqueue({ wagered: false });
+    queue.enqueue({ wagered: true });
+    first.resolve();
+    await done.promise;
+    assert.deepEqual(writes, [{ answer: "A" }, { wagered: true }, { locked: true }, { wagered: false }, { wagered: true }]);
+  }
+  {
+    const first = deferred();
+    const done = deferred();
+    const writes: AnswerMutation[] = [];
+    const queue = new AnswerWriteQueue({
+      write: async (mutation) => { writes.push(mutation); if (writes.length === 1) await first.promise; },
+      synchronize: async () => {},
+      pending: (value) => { if (value === null) done.resolve(); },
+      error: (error) => { throw error; },
+    });
     queue.enqueue({ answer: "A" }, 0);
     queue.enqueue({ answer: "AB" }, 0);
     queue.enqueue({ answer: "ABC" }, 0);

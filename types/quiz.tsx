@@ -59,6 +59,7 @@ type RoundData = {
 };
 
 export type TextRoundData = RoundData & {
+  allowWager?: boolean;
   type: "text";
   /**
    * List of text questions in the round

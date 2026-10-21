@@ -169,6 +169,7 @@
         "title": {
           "$ref": "#/$defs/nonEmptyText"
         },
+        "allowWager": { "type": "boolean" },
         "questions": {
           "type": "array",
           "minItems": 1,

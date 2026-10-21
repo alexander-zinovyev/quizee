@@ -16,11 +16,12 @@ type AnswerRoundProps = {
   teamId?: string;
   presenting?: QuizRoundData["presenting"];
   allowAnswerChanges?: boolean;
+  allowWager?: boolean;
   onAnswer?: (question: Question, answer: string) => void;
 };
 
 export function AnswerInputs({
-  questions, type, presenting, roundId, allowAnswerChanges, answers, pending, enabled, error, onChange,
+  questions, type, presenting, roundId, allowAnswerChanges, allowWager, answers, pending, enabled, error, onChange,
 }: AnswerRoundProps & {
   answers: Record<string, TeamAnswer>;
   pending: Record<string, PendingAnswer>;
@@ -36,7 +37,7 @@ export function AnswerInputs({
         {questions.map((question, index) => {
           const key = String(question.id ?? `question-${index}`);
           const saved = answers[key];
-          const value = { answer: saved?.answer ?? question.answer ?? "", locked: saved?.locked ?? false, ...pending[key] };
+          const value = { answer: saved?.answer ?? question.answer ?? "", locked: saved?.locked ?? false, wagered: saved?.wagered ?? false, ...pending[key] };
           const attempts = saved?.attempts ?? [];
           const latest = latestAttempt(attempts);
           const isMultiStep = type === "multi-step";
@@ -63,6 +64,15 @@ export function AnswerInputs({
                 placeholder="Answer goes here"
                 className="min-w-0 flex-1 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-950 dark:text-white dark:placeholder:text-zinc-500 dark:focus:border-blue-400 dark:focus:ring-blue-400/30"
               />
+              {type === "text" && allowWager ? (
+                <button type="button" aria-label={`Double or nothing for answer ${index + 1}`}
+                  aria-pressed={value.wagered} title="Double or nothing: correct +2, wrong −2"
+                  disabled={!enabled || pending[key]?.wagered !== undefined}
+                  onClick={() => onChange(key, { wagered: !value.wagered })}
+                  className={`h-8 shrink-0 rounded-md border px-2 text-sm font-semibold disabled:opacity-60 ${value.wagered ? "border-amber-500 bg-amber-500 text-black" : "border-zinc-400 text-zinc-600 dark:text-zinc-300"}`}>
+                  x2
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={() => onChange(key, { locked: !value.locked }, isMultiStep ? step : undefined)}

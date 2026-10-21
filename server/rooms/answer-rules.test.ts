@@ -132,6 +132,34 @@ async function main() {
       await transitionPresentation(admin, roomId, "host", presentation, { ...presentation, withAnswer: true });
       assert.equal((await getDocFromServer(doc(a.db, `${path}/rounds/r1/answers/q1`))).data()?.answer, "#FFFFFF");
     }
+    {
+      const roomId = "rules-text", path = `rooms/${roomId}`;
+      const [a, b, outsider, hostClient] = apps;
+      const presentation = { round: "r1", question: "q1", promptPage: 0, answerPage: 0, withAnswer: false };
+      const answerPath = `${path}/teams/red/rounds/r1/answers/q1`;
+      const gradedPath = `${path}/rounds/r1/teamAnswers/red/answers/q1`;
+      await admin.doc(path).update({ presenting: presentation });
+      await admin.doc(`${path}/rounds/r1`).update({ state: "active", allowWager: true });
+      const save = (uid: string, wagered: boolean) => saveTeamAnswer(admin, roomId, "r1", "q1", uid,
+        parseAnswerSave({ teamId: "red", wagered }));
+      await saveTeamAnswer(admin, roomId, "r1", "q1", "a", parseAnswerSave({ teamId: "red", locked: true }));
+      await save("a", true);
+      assert.equal((await getDocFromServer(doc(b.db, answerPath))).data()?.wagered, true);
+      await save("b", false);
+      assert.equal((await getDocFromServer(doc(a.db, answerPath))).data()?.wagered, false);
+      await save("a", true);
+      await denied(updateDoc(doc(a.db, answerPath), { wagered: false }));
+      await denied(updateDoc(doc(outsider.db, answerPath), { wagered: false }));
+      await assert.rejects(save("outsider", false), /Team changed/);
+      await transitionPresentation(admin, roomId, "host", presentation, { ...presentation, question: null }, { closeRound: "r1" });
+      const graded = (await getDocFromServer(doc(hostClient.db, gradedPath))).data()!;
+      assert.equal(graded.wagered, true);
+      assert.equal(graded.awardedPoints, -2);
+      await assert.rejects(save("a", false), /Round/);
+      await denied(updateDoc(doc(a.db, gradedPath), { awardedPoints: 2 }));
+      await updateDoc(doc(hostClient.db, gradedPath), { awardedPoints: 2 });
+      assert.equal((await getDocFromServer(doc(a.db, gradedPath))).data()?.awardedPoints, 2);
+    }
     const roomPath = "rooms/rules-multi-step";
     await admin.doc(`${roomPath}/rounds/r1`).update({ state: "active", allowAnswerChanges: false });
     await admin.doc(roomPath).update({ presenting: { round: "r1", question: "q1", promptPage: 1, answerPage: 0, withAnswer: false } });

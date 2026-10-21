@@ -74,6 +74,7 @@ export type BuildRound = {
   multiStepQuestions: MultiStepQuestion[];
   pointsPerStep: number[];
   allowAnswerChanges: boolean;
+  allowWager?: boolean;
   colorQuestions?: BuildColorQuestion[];
   scoring?: ColorScoring;
 };
@@ -509,6 +510,7 @@ export default function RoundBuilderPanel({
   }
 
   function resetRoundByType(round: BuildRound, type: RoundType): BuildRound {
+    round = { ...round, allowWager: false };
     if (type === "color") return { ...round, type, textQuestions: [], imageItems: [], multiStepQuestions: [], colorQuestions: [createColorQuestion()], scoring: { mode: "threshold", points: 1, threshold: 8.5 } };
     if (type === "text") {
       return {
@@ -948,6 +950,12 @@ export default function RoundBuilderPanel({
                     onScoringChange={(scoring) => updateRound(round.id, (prev) => ({ ...prev, scoring }))} />
                 ) : round.type === "text" ? (
                   <div className="space-y-3">
+                    <label className="flex items-center gap-2 text-sm">
+                      <input type="checkbox" checked={round.allowWager ?? false}
+                        onChange={(event) => updateRound(round.id, (prev) => ({ ...prev, allowWager: event.target.checked }))} />
+                      Double or nothing
+                    </label>
+                    <p className="text-xs text-zinc-500">Teams can wager on each answer: +2 if correct, −2 if wrong.</p>
                     <div className="flex items-center justify-between">
                       <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">Questions</p>
                       <button

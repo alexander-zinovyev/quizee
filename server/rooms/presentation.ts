@@ -127,7 +127,7 @@ export async function transitionPresentation(
           for (const answer of answers.docs) {
             const input = current.round === options.closeRound && answer.id === current.question && captured
               ? captured : parseTeamAnswer(answer.data());
-            const committed = snapshotTeamAnswer(input, rounds.get(options.closeRound)!.type);
+            const committed = snapshotTeamAnswer(input, rounds.get(options.closeRound)!.type, rounds.get(options.closeRound)!.allowWager === true);
             writes.push({ ref: target.collection("answers").doc(answer.id), data: committed, merge: false });
           }
         }

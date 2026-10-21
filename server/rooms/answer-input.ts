@@ -10,18 +10,21 @@ export type AnswerSave = { teamId: string; expectedStep?: number; mutation: Answ
 export function parseAnswerSave(raw: unknown): AnswerSave {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Invalid answer request.");
   const data = raw as Record<string, unknown>;
-  if (Object.keys(data).some((key) => !["teamId", "expectedStep", "answer", "locked"].includes(key)) ||
+  if (Object.keys(data).some((key) => !["teamId", "expectedStep", "answer", "locked", "wagered"].includes(key)) ||
       typeof data.teamId !== "string" || !data.teamId || data.teamId.includes("/") ||
       (data.expectedStep !== undefined && (!Number.isInteger(data.expectedStep) || (data.expectedStep as number) < 0))) {
     throw new Error("Invalid answer request.");
   }
   const changesAnswer = "answer" in data;
   const changesLock = "locked" in data;
-  if (changesAnswer === changesLock ||
+  const changesWager = "wagered" in data;
+  if (Number(changesAnswer) + Number(changesLock) + Number(changesWager) !== 1 ||
+      (changesWager && typeof data.wagered !== "boolean") ||
       (changesAnswer && (typeof data.answer !== "string" || data.answer.length > 10000)) ||
       (changesLock && typeof data.locked !== "boolean")) throw new Error("Invalid answer request.");
   return { teamId: data.teamId, expectedStep: data.expectedStep as number | undefined,
-    mutation: changesAnswer ? { answer: data.answer as string } : { locked: data.locked as boolean } };
+    mutation: changesAnswer ? { answer: data.answer as string }
+      : changesWager ? { wagered: data.wagered as boolean } : { locked: data.locked as boolean } };
 }
 
 export async function saveTeamAnswer(
@@ -43,6 +46,9 @@ export async function saveTeamAnswer(
     const roundData = round.data()!;
     if (room.data()?.state !== "playing" || roundData.state !== "active") throw new RoomOperationError("Round is not accepting answers.");
     if (roundData.type !== "text" && roundData.type !== "multi-step" && roundData.type !== "color") throw new RoomOperationError("Unsupported answer type.", 400);
+    if ("wagered" in save.mutation && (roundData.type !== "text" || roundData.allowWager !== true)) {
+      throw new RoomOperationError("Wagers are not enabled for this round.", 400);
+    }
     if (roundData.type === "color") {
       const current = parsePresentation(room.data()?.presenting);
       if (current.round !== roundId || current.question !== questionId || current.withAnswer) throw new RoomOperationError("Question is not accepting colors.");
@@ -74,7 +80,9 @@ export async function saveTeamAnswer(
       ? { answer: save.mutation.answer.toUpperCase() } : save.mutation;
     const updated = { ...input, ...mutation, user: uid };
     tx.set(answerRef, { answer: updated.answer, locked: updated.locked, user: uid,
+      ...(updated.wagered === undefined ? {} : { wagered: updated.wagered }),
       ...(roundData.type === "multi-step" ? { attempts: input.attempts } : {}) });
-    return { answer: updated.answer, locked: updated.locked, user: uid };
+    return { answer: updated.answer, locked: updated.locked, user: uid,
+      ...(updated.wagered === undefined ? {} : { wagered: updated.wagered }) };
   });
 }

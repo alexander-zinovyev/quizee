@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { collection, getDocs, setDoc, doc, serverTimestamp } from "firebase/firestore";
 
 import { getClientFirestore } from "@/lib/firebase/client";
-import { getAwardedPoints } from "@/lib/components/room/grading";
+import { allowsNegativePoints, getAwardedPoints } from "@/lib/components/room/grading";
 import { recordedAnswer } from "@/lib/answers";
 import { parseBreakdownAttempts, parseDraftPoints, type BreakdownAttempt } from "./team-score-breakdown";
 import type { RoundMeta, RoundQuestion } from "@/lib/hooks/use-room-rounds";
@@ -27,6 +27,7 @@ type BreakdownQuestion = {
   prompt: string;
   answer: string;
   awardedPoints: number | null;
+  wagered?: boolean;
   step: number | null;
   attempts: BreakdownAttempt[];
   perceptionScore: number | null;
@@ -35,6 +36,7 @@ type BreakdownQuestion = {
 type BreakdownRound = {
   roundId: string;
   type: RoundMeta["type"];
+  allowWager?: boolean;
   title: string;
   order: number;
   questions: BreakdownQuestion[];
@@ -87,14 +89,15 @@ export default function TeamScoreBreakdownDialog({
             );
             const answersByQuestion = new Map<
               string,
-              { answer: string; awardedPoints: number | null; step: number | null; attempts: BreakdownAttempt[]; perceptionScore: number | null }
+              { answer: string; wagered?: boolean; awardedPoints: number | null; step: number | null; attempts: BreakdownAttempt[]; perceptionScore: number | null }
             >();
             answersSnap.forEach((snap) => {
               const data = snap.data();
               answersByQuestion.set(snap.id, {
                 ...recordedAnswer(data, round.type),
+                wagered: data.wagered === true,
                 awardedPoints:
-                  typeof data.awardedPoints === "number" ? getAwardedPoints(data.awardedPoints, round.type) : null,
+                  typeof data.awardedPoints === "number" ? getAwardedPoints(data.awardedPoints, round) : null,
                 attempts: parseBreakdownAttempts(data.attempts),
                 perceptionScore: typeof data.perceptionScore === "number" ? data.perceptionScore : null,
               });
@@ -110,6 +113,7 @@ export default function TeamScoreBreakdownDialog({
                   order: question.order ?? idx,
                   prompt: question.displayPrompt || question.prompt || `Question ${idx + 1}`,
                   answer: answer?.answer ?? "",
+                  wagered: answer?.wagered,
                   awardedPoints: answer?.awardedPoints ?? null,
                   step: answer?.step ?? null,
                   attempts: answer?.attempts ?? [],
@@ -120,6 +124,7 @@ export default function TeamScoreBreakdownDialog({
             return {
               roundId: round.id,
               type: round.type,
+              allowWager: round.allowWager,
               title: round.title,
               order: round.order,
               questions,
@@ -183,7 +188,7 @@ export default function TeamScoreBreakdownDialog({
     if (!isHost || !teamId) return;
     const round = rows.find((entry) => entry.roundId === roundId);
     if (!round) return;
-    const normalizedPoints = getAwardedPoints(points, round.type);
+    const normalizedPoints = getAwardedPoints(points, round);
     const key = `${roundId}:${questionId}`;
     setSavingKey(key);
     setRows((prev) =>
@@ -301,6 +306,7 @@ export default function TeamScoreBreakdownDialog({
                                   </span>
                                 ) : null}
                                 <p className="text-sm text-zinc-100">{question.answer || "—"}</p>
+                                {question.wagered ? <span className="text-xs font-semibold text-amber-300">x2</span> : null}
                                 {round.type === "color" && question.perceptionScore !== null ? <span className="text-xs text-zinc-300">{question.perceptionScore.toFixed(2)} / 10</span> : null}
                               </div>
                               {question.attempts.length > 1 ? (
@@ -322,7 +328,7 @@ export default function TeamScoreBreakdownDialog({
                             <div className="flex items-center gap-2">
                               {(() => {
                                 const draftValue = draftPoints[saveId] ?? "";
-                                const parsedDraft = parseDraftPoints(draftValue, round.type);
+                                const parsedDraft = parseDraftPoints(draftValue, round);
                                 const persistedPoints = question.awardedPoints;
                                 const hasChanges =
                                   parsedDraft !== null && parsedDraft !== persistedPoints;
@@ -330,7 +336,7 @@ export default function TeamScoreBreakdownDialog({
                                   <>
                               <input
                                 type="number"
-                                min={round.type === "multi-step" ? undefined : 0}
+                                min={allowsNegativePoints(round) ? undefined : 0}
                                 step="any"
                                 disabled={!isHost}
                                 value={draftValue}
