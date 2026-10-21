@@ -14,6 +14,7 @@ import {
 } from "@/server/rooms/validation";
 import { collectReferencedMedia, createRoundDocumentData } from "@/server/rooms/manifest";
 import { createServerMediaProvider } from "@/lib/media/provisioning";
+import { hostingResponse } from "@/server/rooms/hosting-response";
 
 const SESSION_COOKIE_NAME = "__session";
 
@@ -76,6 +77,10 @@ function normalizeMediaPath(path: string): string | null {
 }
 
 export async function POST(request: NextRequest) {
+  return hostingResponse("Finalizing quiz", () => createRoom(request));
+}
+
+async function createRoom(request: NextRequest) {
   const authResult = await authenticateRequest(request);
   if (!("uid" in authResult)) {
     return authResult;

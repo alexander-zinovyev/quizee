@@ -8,6 +8,7 @@ import { gunzipSync } from "fflate";
 
 import { getClientFirestore, getFirebaseClientApp } from "@/lib/firebase/client";
 import { useFirebaseAuth } from "@/app/providers/firebase-auth-provider";
+import { readJsonResponse } from "@/lib/api-response";
 
 type SlugStatus = "idle" | "checking" | "available" | "unavailable" | "error";
 const ROOM_ID_REGEX = /^[a-z0-9-]{3,50}$/;
@@ -166,14 +167,7 @@ export default function HostPage() {
         },
         body: JSON.stringify({ roomId: trimmedRoomId }),
       });
-      const sessionPayload = (await sessionResponse.json()) as UploadSession & {
-        message?: string;
-      };
-      if (!sessionResponse.ok) {
-        setStatusMessage(sessionPayload.message ?? "Unable to prepare upload.");
-        setSlugStatus("error");
-        return;
-      }
+      const sessionPayload = await readJsonResponse<UploadSession>(sessionResponse, "Preparing quiz upload");
 
       setUploadPhase("Unpacking quiz pack...");
       setUploadPercent(10);
@@ -323,12 +317,7 @@ export default function HostPage() {
           sessionId: sessionPayload.sessionId,
         }),
       });
-      const createPayload = (await createResponse.json()) as { message?: string; id?: string };
-      if (!createResponse.ok) {
-        setStatusMessage(createPayload.message ?? "Unable to create room.");
-        setSlugStatus("error");
-        return;
-      }
+      const createPayload = await readJsonResponse<{ id: string }>(createResponse, "Finalizing quiz");
 
       setUploadPercent(100);
       const createdId = createPayload.id ?? trimmedRoomId;
