@@ -12,7 +12,7 @@ export type QuestionMaximum = {
 };
 
 export type StatsOutcome = "win" | "tie" | "loss" | "unavailable";
-export type StatsTeam = { id: string; name: string; score: number | null };
+export type StatsTeam = { id: string; name: string | null; score: number | null };
 export type StatsTeamResult = StatsTeam & { outcome: StatsOutcome; rank: number | null };
 
 /** Asset IDs are resolved through the selected snapshot's private asset allowlist. */
@@ -24,25 +24,30 @@ export type StatsRecordedAnswer = {
   correctness: boolean | null;
   awardedPoints: number | null;
   perceptionScore: number | null;
+  assetId: string | null;
 };
 
 export type StatsQuestion = {
   id: string;
+  order: number;
   prompt: StatsStage[];
   acceptedAnswer: StatsStage[];
+  color: { initialColor: string | null; targetColor: string | null; maskAssetId: string | null; regionIds: string[] | null } | null;
   answers: Record<string, StatsRecordedAnswer>;
 };
 
 export type StatsRound = {
   id: string;
+  order: number;
   title: string;
   scoring: StatsRoundScoring;
   gradingIncomplete: boolean | null;
+  questionCount: number | null;
   teamScores: Record<string, number | null>;
   questions: StatsQuestion[];
 };
 
-export type StatsAppearance = { id: string; alias: string; teamId: string | null };
+export type StatsAppearance = { id: string; alias: string | null; teamId: string | null };
 
 /** Private normalized source contract. Never serialize a snapshot directly to the public. */
 export type StatsSnapshot = {
@@ -55,7 +60,7 @@ export type StatsSnapshot = {
   completedAt: string | null;
   packLabel: string | null;
   title: string;
-  host: { appearanceId: string; alias: string } | null;
+  host: { appearanceId: string; alias: string | null } | null;
   appearances: StatsAppearance[];
   teams: StatsTeam[];
   rounds: StatsRound[];
@@ -144,7 +149,7 @@ export type PublicStatsGame = {
   publishedAt: string;
   completedAt: string | null;
   packLabel: string | null;
-  host: { personId: string | null; alias: string } | null;
+  host: { personId: string | null; alias: string | null } | null;
   teams: StatsTeamResult[];
   unresolvedAppearances: number;
   provisional: boolean;
