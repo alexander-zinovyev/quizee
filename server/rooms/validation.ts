@@ -66,7 +66,8 @@ export type ValidatedColorRound = {
 
 export type ValidatedRound = ValidatedTextRound | ValidatedImageRound | ValidatedMultiStepRound | ValidatedColorRound;
 
-export const ROOM_ID_REGEX = /^[a-z0-9-]{3,50}$/;
+export { ROOM_ID_REGEX } from "@/lib/room-id";
+import { RESERVED_ROOM_IDS, ROOM_ID_REGEX } from "@/lib/room-id";
 
 export const ALLOWED_MEDIA_EXTENSIONS = new Set([
   ".png",
@@ -225,8 +226,8 @@ export function validateRoomId(id: string | undefined): string | null {
   if (!ROOM_ID_REGEX.test(id)) {
     return "Room id must be 3-50 chars, lowercase letters, numbers, or dashes.";
   }
-  if (id === "host") {
-    return 'Room id cannot be "host".';
+  if (RESERVED_ROOM_IDS.includes(id)) {
+    return `Room id cannot be "${id}".`;
   }
   return null;
 }

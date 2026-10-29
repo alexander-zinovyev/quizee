@@ -1,7 +1,7 @@
 "use client";
 
 import type { FirebaseApp, FirebaseOptions } from "firebase/app";
-import { getApp, getApps, initializeApp } from "firebase/app";
+import { getApps, initializeApp } from "firebase/app";
 import type { Firestore } from "firebase/firestore";
 import { getFirestore } from "firebase/firestore";
 
@@ -13,8 +13,6 @@ const firebaseClientConfig: FirebaseOptions = {
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
-
-let cachedClientApp: FirebaseApp | undefined;
 
 function ensureClientConfig() {
   const required = [
@@ -35,15 +33,9 @@ function ensureClientConfig() {
   }
 }
 
-export function getFirebaseClientApp(): FirebaseApp {
-  if (cachedClientApp) {
-    return cachedClientApp;
-  }
-
+export function getFirebaseClientApp(name = "[DEFAULT]"): FirebaseApp {
   ensureClientConfig();
-
-  cachedClientApp = getApps().length ? getApp() : initializeApp(firebaseClientConfig);
-  return cachedClientApp;
+  return getApps().find((app) => app.name === name) ?? initializeApp(firebaseClientConfig, name);
 }
 
 export function getClientFirestore(): Firestore {
