@@ -133,6 +133,31 @@ export type StatsHistoryResult = {
   provisional: boolean;
 };
 
+export type StatsGameWarning = { code: string; roundId?: string; questionId?: string; teamId?: string; difference?: number };
+export type StatsRoundMetrics = {
+  id: string;
+  title: string;
+  type: string;
+  closestPool: boolean | null;
+  teams: Record<string, { score: number | null; percentage: StatsPercentage;
+    reconciliation: { status: "reconciled" | "mismatch" | "unavailable"; difference: number | null };
+    answers: { recorded: number; unanswered: number; knownCorrectness: number; incorrect: number; total: number } }>;
+};
+export type StatsGameMetrics = {
+  results: StatsTeamResult[];
+  percentage: StatsPercentage;
+  poolPercentage: StatsPercentage;
+  difficulty: StatsPercentage;
+  rounds: StatsRoundMetrics[];
+  warnings: StatsGameWarning[];
+  comparisons: {
+    closestRounds: string[];
+    largestSwings: Array<{ roundId: string; teams: [string, string]; change: number }>;
+    highestRoundTeams: Array<{ roundId: string; teamId: string; score: number }>;
+    lowestRoundTeams: Array<{ roundId: string; teamId: string; score: number }>;
+  };
+};
+
 /** Public summaries are explicit allowlists, independent of private source/account records. */
 export type PublicStatsPerson = {
   id: string;

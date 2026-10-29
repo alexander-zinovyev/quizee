@@ -107,7 +107,7 @@ export async function prepareSnapshot(db: Firestore, gameId: string, actorId: st
     const game = await tx.get(ref);
     const previous = game.data() as StatsGameRecord | undefined;
     expectedGame(previous, expectedVersion);
-    const mappings = await tx.get(ref.collection("mappings"));
+    const [mappings, overrides] = await Promise.all([tx.get(ref.collection("mappings")), tx.get(ref.collection("questionOverrides"))]);
     const oldSnapshot = previous ? await loadSnapshot(tx, db, gameId, previous.snapshotId) : null;
     const changed = new Set(oldSnapshot?.appearances.filter((old) => !snapshot.appearances.some((next) =>
       next.id === old.id && next.alias === old.alias && next.teamId === old.teamId)).map((old) => old.id));
@@ -130,9 +130,16 @@ export async function prepareSnapshot(db: Firestore, gameId: string, actorId: st
       summary: { sort: gameSortValues({ ...review, host: snapshot.host ? { personId: review.hostPersonId, alias: snapshot.host.alias } : null, teams: calculateOutcomes(snapshot.teams) }),
         unresolvedAppearances: snapshot.appearances.filter((appearance) => !mappings.docs.some((mapping) => mapping.id === appearance.id && mapping.data().personId && !reset.includes(mapping))).length,
         provisional: snapshot.rounds.some((round) => round.gradingIncomplete === true) } } satisfies StatsGameRecord);
-    reset.forEach((mapping) => tx.set(mapping.ref, { personId: null, duplicateOf: null, needsReview: true }));
+    reset.forEach((mapping) => {
+      if (!snapshot.appearances.some((appearance) => appearance.id === mapping.id)) tx.delete(mapping.ref);
+      else tx.set(mapping.ref, { personId: null, duplicateOf: null, needsReview: true });
+    });
+    overrides.docs.forEach((override) => {
+      const data = override.data();
+      if (!snapshot.rounds.some((round) => round.id === data.roundId && round.questions.some((question) => question.id === data.questionId))) tx.delete(override.ref);
+    });
     people.forEach(({ person, count }) => tx.update(person.ref, { mappingCount: person.data()!.mappingCount - count, version: person.data()!.version + 1 }));
-    tx.create(auditRef, { actorId, action: "snapshot", gameId, snapshotId: snapshot.id, version: expectedVersion + 1, at: new Date().toISOString() });
+    tx.create(auditRef, { actorId, action: "snapshot", gameId, snapshotId: snapshot.id, resetAppearances: reset.map((mapping) => mapping.id), version: expectedVersion + 1, at: new Date().toISOString() });
   });
   return { snapshotId: snapshot.id, digest: snapshot.digest, version: expectedVersion + 1 };
 }

@@ -70,12 +70,12 @@ export function reconcileScore(recorded: number | null, components: Array<number
   return { status: Math.abs(difference) <= RECONCILIATION_TOLERANCE ? "reconciled" as const : "mismatch" as const, difference };
 }
 
-function exclusion(component: PercentageComponent, difficulty: boolean): PercentageExclusion | null {
+function exclusion(component: PercentageComponent, excludeClosest: boolean): PercentageExclusion | null {
   if (component.earned !== null) finite(component.earned, "Award");
   if (finite(component.maximum.points, "Maximum") < 0) throw new Error("Maximum must be nonnegative.");
   if (!["configured", "admin", "default-unverified"].includes(component.maximum.provenance)) throw new Error("Invalid maximum provenance.");
-  if (difficulty && component.closestPool === true) return "closest-pool";
-  if (difficulty && component.closestPool === null) return "unknown-scoring";
+  if (excludeClosest && component.closestPool === true) return "closest-pool";
+  if (excludeClosest && component.closestPool === null) return "unknown-scoring";
   if (component.earned === null) return "missing-award";
   if (component.maximum.provenance === "default-unverified") return "unverified-maximum";
   if (component.maximum.points === 0) return "zero-maximum";
@@ -85,13 +85,13 @@ function exclusion(component: PercentageComponent, difficulty: boolean): Percent
 }
 
 /** Values are ratios, not rounded display percentages. Negative earned points remain negative. */
-export function calculatePercentage(components: PercentageComponent[], difficulty = false): StatsPercentage {
+export function calculatePercentage(components: PercentageComponent[], mode: "ordinary" | "comparable" | "difficulty" = "ordinary"): StatsPercentage {
   const keys = components.map((part) => JSON.stringify([part.gameId, part.roundId, part.questionId, part.teamId]));
   if (new Set(keys).size !== keys.length) throw new Error("Duplicate team/question percentage input.");
-  const reasons = components.map((part) => exclusion(part, difficulty));
+  const reasons = components.map((part) => exclusion(part, mode !== "ordinary"));
   // A host comparison requires the complete non-closest question set for every participating team.
   const incompleteGames = new Set(components.filter((part, index) =>
-    difficulty && reasons[index] !== null && reasons[index] !== "closest-pool").map((part) => part.gameId));
+    mode === "difficulty" && reasons[index] !== null && reasons[index] !== "closest-pool").map((part) => part.gameId));
   const included: PercentageComponent[] = [];
   const excluded: Partial<Record<PercentageExclusion, number>> = {};
   components.forEach((part, index) => {

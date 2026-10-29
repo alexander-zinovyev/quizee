@@ -123,5 +123,10 @@ export function statisticsIndexes() {
     collectionGroup, queryScope: "COLLECTION_GROUP",
     fields: [{ fieldPath: "namespace", order: "ASCENDING" }, { fieldPath: "aliasesNormalized", arrayConfig: "CONTAINS" }],
   });
+  indexes.push({ collectionGroup: "people", queryScope: "COLLECTION", fields: [
+    { fieldPath: "archived", order: "ASCENDING" }, { fieldPath: "searchName", order: "ASCENDING" }, { fieldPath: "__name__", order: "ASCENDING" },
+  ] }, { collectionGroup: "people", queryScope: "COLLECTION", fields: [
+    { fieldPath: "archived", order: "ASCENDING" }, { fieldPath: "helperAliasesNormalized", arrayConfig: "CONTAINS" },
+  ] });
   return { indexes, fieldOverrides: [] };
 }
