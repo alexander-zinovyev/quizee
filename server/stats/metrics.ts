@@ -163,7 +163,7 @@ export function canonicalPlayerMappings(appearances: StatsAppearance[], mappings
     if (appearance.teamId === null) continue;
     result.push({ personId: mapping.personId, appearanceId: appearance.id, teamId: appearance.teamId,
       aliases: [...new Set(appearances.filter((other) => other.id === appearance.id ||
-        mappings[other.id]?.duplicateOf === appearance.id).map((other) => other.alias))] });
+        mappings[other.id]?.duplicateOf === appearance.id).map((other) => other.alias).filter((alias): alias is string => alias !== null))] });
   }
   return result;
 }

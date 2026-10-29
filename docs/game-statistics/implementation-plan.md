@@ -9,6 +9,8 @@ The identifiers below are planning references, not existing Jira keys. Each stor
 ## Implementation progress
 
 - Foundation: shared snapshot/review/public types, core scoring and identity calculations, indexed query plans, bound cursors, and checked-in indexes are implemented. Unit tests and emulator pagination/isolation coverage run in CI.
+- Snapshot services: consistent read-only ended-room import, all four layout adapters, deterministic digests, create-only bounded storage, ready-manifest checks, and versioned unpublished refresh are implemented. Refresh clears changed roster mappings and updates private mapping counts atomically; these services have no browser/API entrypoint yet.
+- Snapshot measurements: the representative 90-question fixture uses 328 documents and 47,689 JSON data bytes, largest document 515 JSON bytes, excluding media payloads. An 11-round emulator fixture verifies ordering, immutable scores, stale versions, revoked roles, roster refresh, and interrupted copying. JSON size and local emulator time do not establish production capacity or latency guarantees.
 - GS-01/02 remain open for source-adapter integration, complete contribution/aggregate contracts, and measured publication/history workloads. This foundation does not expose statistics pages or publish games.
 - Representative sizing input from the maintainer: usually 2 teams, 3 players per team, 8-9 rounds, and 8-10 questions per round. Use 2 teams, 6 players, and 90 questions as the representative fixture, with larger stress fixtures; this is not a product limit.
 - Proposed routes, collection names, and refresh-on-navigation/focus behavior are the implementation baseline. No production latency target, retention policy, or analytics destination has been chosen.
