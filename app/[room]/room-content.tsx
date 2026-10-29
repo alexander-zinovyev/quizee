@@ -32,6 +32,7 @@ import RoomRoundsPanel from "./room-rounds-panel";
 import RoomHostRoundsPanel from "./room-host-rounds-panel";
 import TeamScoreBreakdownDialog from "./team-score-breakdown-dialog";
 import type { HostRound } from "./host-rounds";
+import { getAudioIsolatedRound } from "./round-audio";
 import type { RoomRosterTeam } from "./room-layout-types";
 import type { TeamMember } from "@/lib/components/team";
 import type { SubscriptionPolicy } from "@/lib/media/transport";
@@ -146,7 +147,7 @@ export default function RoomContent({
   const [gradingTeamIndex, setGradingTeamIndex] = useState(0);
   const [activeEavesdropTeamId, setActiveEavesdropTeamId] = useState<string | null>(null);
   const [scoreBreakdownTeamId, setScoreBreakdownTeamId] = useState<string | null>(null);
-  const activeTextRoundIdRef = useRef<string | null>(null);
+  const audioIsolatedRoundIdRef = useRef<string | null>(null);
 
   const {
     gradingRequiredRounds,
@@ -321,11 +322,11 @@ export default function RoomContent({
     return mapped.filter((round): round is QuizRoundData => Boolean(round));
   }, [getCachedMediaUrl, mediaCacheVersion, presenting, roundImages, roundQuestions, roundsMeta]);
 
-  const activeTextRoundMeta = useMemo(() => {
-    return roundsMeta.find((meta) => meta.state === "active" && meta.type === "text") ?? null;
+  const audioIsolatedRoundMeta = useMemo(() => {
+    return getAudioIsolatedRound(roundsMeta);
   }, [roundsMeta]);
 
-  const isActiveTextRound = Boolean(activeTextRoundMeta);
+  const isTeamAudioIsolated = Boolean(audioIsolatedRoundMeta);
 
   const displayRoundMeta = useMemo(() => {
     if (presentingRoundMeta) return presentingRoundMeta;
@@ -448,27 +449,27 @@ export default function RoomContent({
 
   useEffect(() => {
     if (!isHost) return;
-    const currentTextRoundId = activeTextRoundMeta?.id ?? null;
-    if (activeTextRoundIdRef.current !== currentTextRoundId) {
-      activeTextRoundIdRef.current = currentTextRoundId;
+    const currentIsolatedRoundId = audioIsolatedRoundMeta?.id ?? null;
+    if (audioIsolatedRoundIdRef.current !== currentIsolatedRoundId) {
+      audioIsolatedRoundIdRef.current = currentIsolatedRoundId;
       setActiveEavesdropTeamId(null);
     }
-    if (!currentTextRoundId) {
+    if (!currentIsolatedRoundId) {
       setActiveEavesdropTeamId(null);
     }
-  }, [activeTextRoundMeta?.id, isHost]);
+  }, [audioIsolatedRoundMeta?.id, isHost]);
 
   useEffect(() => {
     if (!onMediaPolicyChange) return;
     if (!isHost) {
-      const audioPolicy: SubscriptionPolicy = isActiveTextRound
+      const audioPolicy: SubscriptionPolicy = isTeamAudioIsolated
         ? { audio: "team-only", video: "all" }
         : { audio: "all", video: "all" };
       onMediaPolicyChange(audioPolicy, { isHost: false });
       return;
     }
     onMediaPolicyChange({ audio: "all", video: "all" }, { isHost: true });
-  }, [isActiveTextRound, isHost, onMediaPolicyChange]);
+  }, [isTeamAudioIsolated, isHost, onMediaPolicyChange]);
 
   const currentQuestionIndex = useMemo(() => {
     if (!activeRoundForControls || !presentingQuestion) return -1;
@@ -1059,7 +1060,7 @@ export default function RoomContent({
         let forcePlaybackMuted = false;
         let onHandClick: (() => void) | undefined;
 
-        if (isActiveTextRound) {
+        if (isTeamAudioIsolated) {
           if (isHost) {
             const allowAudio = isEavesdropTeam;
             playbackControlsDisabled = !allowAudio;
@@ -1094,7 +1095,7 @@ export default function RoomContent({
   }, [
     activeEavesdropTeamId,
     hostMember?.id,
-    isActiveTextRound,
+    isTeamAudioIsolated,
     isHost,
     lowerHand,
     teams,
@@ -1700,7 +1701,7 @@ export default function RoomContent({
                       {countdownIsActive ? "Stop" : "Start"}
                     </button>
                   </div>
-                  {isActiveTextRound && teams?.length ? (
+                  {isTeamAudioIsolated && teams?.length ? (
                     <div className="flex flex-wrap items-center justify-center gap-2">
                       {teams.map((team) => {
                         const isActive = activeEavesdropTeamId === team.id;
