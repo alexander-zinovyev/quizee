@@ -1,7 +1,7 @@
 import type { RoomSource, SourceDocument, SourceRound } from "./source";
 
 /** Maintainer's usual upper range: two teams, six players, nine rounds, ten questions each. */
-export function roomSourceFixture(roundCount = 9, questionCount = 10): RoomSource {
+export function roomSourceFixture(roundCount = 9, questionCount = 10, gameId = "demo"): RoomSource {
   const teams = ["red", "blue"].map((id) => ({ id, data: { name: id, scoreTotal: 0 }, scores: [] as SourceDocument[] }));
   const members: SourceDocument[] = ["red", "blue"].flatMap((team) => Array.from({ length: 3 }, (_, index) => ({
     id: `${team}-uid-${index}`, data: { name: `${team} player ${index}`, role: "player", team },
@@ -17,7 +17,7 @@ export function roomSourceFixture(roundCount = 9, questionCount = 10): RoomSourc
     const totals: Record<string, number> = { red: 0, blue: 0 };
     for (let index = 0; index < questionCount; index++) {
       const questionId = `question-${index + 1}`;
-      const media = { storagePath: `rooms/demo/media/${id}/${questionId}.png`, contentType: "image/png" };
+      const media = { storagePath: `rooms/${gameId}/media/${id}/${questionId}.png`, contentType: "image/png" };
       questions.push({ id: questionId, data: { order: index,
         ...(type === "image" ? { text: `Match ${index}` } : type === "color" ? { media, initialColor: "#123456", mask: media }
           : { stages: [{ text: `Prompt ${index}` }] }) } });
@@ -40,6 +40,21 @@ export function roomSourceFixture(roundCount = 9, questionCount = 10): RoomSourc
     return { id, data: { title: `Round ${roundIndex + 1}`, order: roundIndex, type, state: "closed", gradingRequired: false, questionCount,
       ...(type === "multi-step" ? { pointsPerStep: [5, 3, -2] } : type === "color" ? { scoring: colorScoring } : {}) }, questions, answers, images, teamAnswers };
   });
-  return { room: { id: "demo", data: { title: "Test quiz", state: "ended", createdAt: "2026-01-01T00:00:00.000Z" } },
+  return { room: { id: gameId, data: { title: "Test quiz", state: "ended", createdAt: "2026-01-01T00:00:00.000Z" } },
     readAt: "2026-10-29T12:00:00.000Z", members, teams, rounds };
+}
+
+export function sourceFixtureDocuments(source: RoomSource) {
+  const root = `rooms/${source.room.id}`;
+  return [{ path: root, data: source.room.data },
+    ...source.members.map(({ id, data }) => ({ path: `${root}/members/${id}`, data })),
+    ...source.teams.flatMap(({ id, data, scores }) => [{ path: `${root}/teams/${id}`, data },
+      ...scores.map((score) => ({ path: `${root}/teams/${id}/scores/${score.id}`, data: score.data }))]),
+    ...source.rounds.flatMap((round) => [{ path: `${root}/rounds/${round.id}`, data: round.data },
+      ...["questions", "answers", "images"].flatMap((collection) => round[collection as "questions" | "answers" | "images"].map(({ id, data }) => ({ path: `${root}/rounds/${round.id}/${collection}/${id}`, data }))),
+      ...Object.entries(round.teamAnswers).flatMap(([teamId, { metadata, answers }]) => [
+        { path: `${root}/rounds/${round.id}/teamAnswers/${teamId}`, data: metadata! },
+        ...answers.map(({ id, data }) => ({ path: `${root}/rounds/${round.id}/teamAnswers/${teamId}/answers/${id}`, data })),
+      ])]),
+  ];
 }

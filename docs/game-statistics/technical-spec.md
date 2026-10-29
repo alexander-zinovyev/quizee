@@ -297,6 +297,8 @@ Use shared server query/command services for route handlers and server-rendered 
 
 List responses contain `items`, `nextCursor`, active sort/direction, and completeness fields. Updates carry `expectedVersion`; create-person commands also carry the stable creation UUID described above. Use transaction/no-op checks for duplicate commands rather than generic operation records. Errors use a consistent `{ code, message, details? }` shape: `400` malformed input, `401` unauthenticated, `403` unauthorized, `404` unavailable/publicly hidden resource, `409` stale/conflicting state, `422` domain-invalid operation. Do not log private notes or full submitted answer bodies in error telemetry.
 
+Published correction confirmation uses the review data already loaded by the administrator UI and shared pure calculations. It does not add a separate preview API or a dry-run update mode. The normal versioned review update saves the confirmed correction.
+
 ### Sorting and pagination
 
 - Games: date, recorded host alias, top score, total score, top-two score margin, pack label. A shared first has margin 0; fewer than two known team totals makes margin unavailable.

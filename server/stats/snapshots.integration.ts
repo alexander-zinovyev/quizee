@@ -4,7 +4,7 @@ import { getFirestore } from "firebase-admin/firestore";
 import { StatsError } from "./error";
 import { statsPaths, STATS_ROOT } from "./model";
 import { normalizeRoomSource, readEndedRoom } from "./source";
-import { roomSourceFixture } from "./source.fixtures";
+import { roomSourceFixture, sourceFixtureDocuments } from "./source.fixtures";
 import { loadSnapshot, prepareSnapshot, saveSnapshot, snapshotDocuments } from "./snapshots";
 
 async function main() {
@@ -14,17 +14,7 @@ async function main() {
   const room = db.doc("rooms/demo"), admin = db.doc("roles/stats-snapshot-admin");
   const game = db.doc(statsPaths.game("demo")), person = db.doc(statsPaths.person("snapshot-person"));
   const source = roomSourceFixture(11);
-  const sourceDocuments = [{ path: room.path, data: source.room.data },
-    ...source.members.map(({ id, data }) => ({ path: `${room.path}/members/${id}`, data })),
-    ...source.teams.flatMap(({ id, data, scores }) => [{ path: `${room.path}/teams/${id}`, data },
-      ...scores.map((score) => ({ path: `${room.path}/teams/${id}/scores/${score.id}`, data: score.data }))]),
-    ...source.rounds.flatMap((round) => [{ path: `${room.path}/rounds/${round.id}`, data: round.data },
-      ...["questions", "answers", "images"].flatMap((collection) => round[collection as "questions" | "answers" | "images"].map(({ id, data }) => ({ path: `${room.path}/rounds/${round.id}/${collection}/${id}`, data }))),
-      ...Object.entries(round.teamAnswers).flatMap(([teamId, { metadata, answers }]) => [
-        { path: `${room.path}/rounds/${round.id}/teamAnswers/${teamId}`, data: metadata! },
-        ...answers.map(({ id, data }) => ({ path: `${room.path}/rounds/${round.id}/teamAnswers/${teamId}/answers/${id}`, data })),
-      ])]),
-  ];
+  const sourceDocuments = sourceFixtureDocuments(source);
   try {
     for (let offset = 0; offset < sourceDocuments.length; offset += 200) {
       const batch = db.batch();
@@ -70,10 +60,23 @@ async function main() {
     assert.deepEqual((await game.collection("mappings").doc(appearance.id).get()).data(), { personId: null, duplicateOf: null, needsReview: true });
     assert.equal((await readSaved()).appearances.find((entry) => entry.id === appearance.id)!.alias, appearance.alias);
 
+    // Removed source entries must not leave invalid mapping or maximum references in a new review.
+    const removedAppearance = saved.appearances.find((entry) => saved.sourceMembers[entry.id] === "blue-uid-0")!;
+    await person.update({ mappingCount: 1 });
+    await game.collection("mappings").doc(removedAppearance.id).set({ personId: person.id, duplicateOf: null });
+    const removedOverride = game.collection("questionOverrides").doc("removed-question");
+    await removedOverride.set({ roundId: "round-1", questionId: "question-2", points: 2 });
+    await db.doc("rooms/demo/members/blue-uid-0").delete();
+    await db.doc("rooms/demo/rounds/round-1/questions/question-2").delete();
+    await prepareSnapshot(db, "demo", "stats-snapshot-admin", 2);
+    assert.equal((await game.collection("mappings").doc(removedAppearance.id).get()).exists, false);
+    assert.equal((await removedOverride.get()).exists, false);
+    assert.equal((await person.get()).data()!.mappingCount, 0);
+
     await game.update({ published: true });
-    await rejectsCode(prepareSnapshot(db, "demo", "stats-snapshot-admin", 2), "already-published");
+    await rejectsCode(prepareSnapshot(db, "demo", "stats-snapshot-admin", 3), "already-published");
     await admin.update({ admin: false });
-    await rejectsCode(prepareSnapshot(db, "demo", "stats-snapshot-admin", 2), "forbidden");
+    await rejectsCode(prepareSnapshot(db, "demo", "stats-snapshot-admin", 3), "forbidden");
 
     // A failure after the first copy batch must never make a partial snapshot usable.
     const interrupted = normalizeRoomSource(source, "interrupted");

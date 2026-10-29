@@ -81,15 +81,15 @@ test("host difficulty excludes closest pools and rejects an incomplete game's co
     component({ questionId: "color", earned: 0.5, closestPool: true }),
     component({ questionId: "color", teamId: "blue", earned: 0.5, closestPool: true }),
   ];
-  const difficulty = calculatePercentage(parts, true);
+  const difficulty = calculatePercentage(parts, "difficulty");
   assert.equal(difficulty.value, 0.25);
   assert.equal(difficulty.coverage.excluded["closest-pool"], 2);
   assert.equal(calculatePercentage(parts).value, 0.375);
-  const incomplete = calculatePercentage([...parts, component({ questionId: "missing", earned: null })], true);
+  const incomplete = calculatePercentage([...parts, component({ questionId: "missing", earned: null })], "difficulty");
   assert.equal(incomplete.value, null);
   assert.equal(incomplete.coverage.excluded["incomplete-game"], 2);
-  assert.equal(calculatePercentage([...parts, component({ gameId: "other", earned: null })], true).value, 0.25);
-  const missingMode = calculatePercentage([component({ closestPool: null })], true);
+  assert.equal(calculatePercentage([...parts, component({ gameId: "other", earned: null })], "difficulty").value, 0.25);
+  const missingMode = calculatePercentage([component({ closestPool: null })], "difficulty");
   assert.equal(missingMode.value, null);
   assert.equal(missingMode.coverage.excluded["unknown-scoring"], 1);
 });

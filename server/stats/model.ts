@@ -1,4 +1,4 @@
-import type { PublicStatsGame, StatsHistoryResult, StatsPercentage, StatsReview } from "@/types/stats";
+import type { PublicStatsGame, StatsGameMetrics, StatsHistoryResult, StatsPercentage, StatsReview } from "@/types/stats";
 
 export const STATS_NAMESPACE = "global";
 export const STATS_ROOT = `stats/${STATS_NAMESPACE}`;
@@ -6,7 +6,7 @@ export const STATS_SCHEMA_VERSION = 1;
 
 export function statsId(id: string): string {
   if (typeof id !== "string" || !id || id === "." || id === ".." || id.includes("/") ||
-      /^__.*__$/.test(id) || Buffer.byteLength(id, "utf8") > 1500) throw new Error("Invalid statistics document ID.");
+      /^__.*__$/.test(id) || new TextEncoder().encode(id).length > 1500) throw new Error("Invalid statistics document ID.");
   return id;
 }
 
@@ -53,7 +53,7 @@ export type StatsGameRecord = {
   publishedAt: string | null;
   /** Host/metadata fields only. Mappings and overrides use their own child documents. */
   review: Pick<StatsReview, "hostPersonId" | "completedAt" | "packLabel">;
-  summary: { sort: StatsSortMap; unresolvedAppearances: number; provisional: boolean };
+  summary: { sort: StatsSortMap; unresolvedAppearances: number; provisional: boolean; metrics?: StatsGameMetrics };
 };
 
 export type StatsSnapshotRecord = {
@@ -76,6 +76,8 @@ export type StatsPlayerContribution = StatsHistoryResult & {
   aliasesNormalized: string[];
   roster: Array<{ personId: string; teamId: string }>;
   percentage: StatsPercentage;
+  poolPercentage: StatsPercentage;
+  byRoundType: Record<string, { percentage: StatsPercentage; poolPercentage: StatsPercentage }>;
   sort: StatsSortMap;
 };
 
@@ -85,9 +87,10 @@ export type StatsHostContribution = {
   gameId: string;
   gameVersion: number;
   completedAt: string | null;
-  alias: string;
+  alias: string | null;
   aliasesNormalized: string[];
   difficulty: StatsPercentage;
+  teamPercentages: number[];
   uniqueWinningScore: number | null;
   provisional: boolean;
   sort: StatsSortMap;
@@ -99,13 +102,18 @@ export type StatsPersonRecord = {
   displayName: string;
   searchName: string;
   helperAliasesNormalized: string[];
+  helperAliases: string[];
   notes: string;
   mappingCount: number;
   archived: boolean;
   hasPlayerHistory: boolean;
   hasHostHistory: boolean;
-  player: { sort: StatsSortMap };
-  host: { sort: StatsSortMap };
+  player: { sort: StatsSortMap; counters: Record<string, number> };
+  host: { sort: StatsSortMap; counters: Record<string, number> };
+  createdBy: string;
+  creationFingerprint: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export function gameSortValues(game: Pick<PublicStatsGame, "completedAt" | "host" | "packLabel" | "teams">): StatsSortMap {
