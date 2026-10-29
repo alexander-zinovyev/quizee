@@ -9,9 +9,9 @@ import { gunzipSync } from "fflate";
 import { getClientFirestore, getFirebaseClientApp } from "@/lib/firebase/client";
 import { useFirebaseAuth } from "@/app/providers/firebase-auth-provider";
 import { readJsonResponse } from "@/lib/api-response";
+import { RESERVED_ROOM_IDS, ROOM_ID_REGEX } from "@/lib/room-id";
 
 type SlugStatus = "idle" | "checking" | "available" | "unavailable" | "error";
-const ROOM_ID_REGEX = /^[a-z0-9-]{3,50}$/;
 const MAX_TAR_SIZE_BYTES = 250 * 1024 * 1024;
 const ALLOWED_MEDIA_EXTENSIONS = new Set([
   ".png",
@@ -66,8 +66,7 @@ export default function HostPage() {
         return;
       }
 
-      const reservedRoomNames = ["host", "build"];
-      if (reservedRoomNames.includes(trimmedRoomId)) {
+      if (RESERVED_ROOM_IDS.includes(trimmedRoomId)) {
         setSlugStatus("unavailable");
         setStatusMessage(`Room id "${trimmedRoomId}" is reserved.`);
         return;

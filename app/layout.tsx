@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { FirebaseAuthProvider } from "./providers/firebase-auth-provider";
 
 export const metadata: Metadata = {
   title: "Quizee",
@@ -15,7 +14,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased">
-        <FirebaseAuthProvider>{children}</FirebaseAuthProvider>
+        {children}
       </body>
     </html>
   );

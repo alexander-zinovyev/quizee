@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 
-import { validateQuizFile } from "./validation";
+import { validateQuizFile, validateRoomId } from "./validation";
+
+for (const reserved of ["host", "build", "stats", "login", "api"]) assert.notEqual(validateRoomId(reserved), null);
+assert.equal(validateRoomId("quiz-night"), null);
 
 function parseQuiz(round: unknown) {
   return validateQuizFile(JSON.stringify([round]));
