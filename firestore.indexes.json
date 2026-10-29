@@ -1,0 +1,1069 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "games",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "published",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.date.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.date.value",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "games",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "published",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.date.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.date.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "games",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "published",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.host.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.host.value",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.date.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.date.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "games",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "published",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.host.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.host.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.date.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.date.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "games",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "published",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.topScore.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.topScore.value",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.date.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.date.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "games",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "published",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.topScore.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.topScore.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.date.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.date.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "games",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "published",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.totalScore.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.totalScore.value",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.date.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.date.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "games",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "published",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.totalScore.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.totalScore.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.date.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.date.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "games",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "published",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.margin.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.margin.value",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.date.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.date.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "games",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "published",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.margin.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.margin.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.date.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.date.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "games",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "published",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.pack.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.pack.value",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.date.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.date.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "games",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "published",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.pack.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.pack.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.date.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "summary.sort.date.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "people",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "hasPlayerHistory",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "player.sort.gamesPlayed.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "player.sort.gamesPlayed.value",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "people",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "hasPlayerHistory",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "player.sort.gamesPlayed.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "player.sort.gamesPlayed.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "people",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "hasPlayerHistory",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "player.sort.wins.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "player.sort.wins.value",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "people",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "hasPlayerHistory",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "player.sort.wins.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "player.sort.wins.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "people",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "hasPlayerHistory",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "player.sort.winRate.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "player.sort.winRate.value",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "people",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "hasPlayerHistory",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "player.sort.winRate.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "player.sort.winRate.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "people",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "hasPlayerHistory",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "player.sort.ties.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "player.sort.ties.value",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "people",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "hasPlayerHistory",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "player.sort.ties.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "player.sort.ties.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "people",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "hasPlayerHistory",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "player.sort.losses.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "player.sort.losses.value",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "people",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "hasPlayerHistory",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "player.sort.losses.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "player.sort.losses.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "people",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "hasPlayerHistory",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "player.sort.teamPoints.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "player.sort.teamPoints.value",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "people",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "hasPlayerHistory",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "player.sort.teamPoints.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "player.sort.teamPoints.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "people",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "hasPlayerHistory",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "player.sort.pointPercentage.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "player.sort.pointPercentage.value",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "people",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "hasPlayerHistory",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "player.sort.pointPercentage.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "player.sort.pointPercentage.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "playerGames",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "sort.date.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sort.date.value",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "playerGames",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "sort.date.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sort.date.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "playerGames",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "sort.teamPoints.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sort.teamPoints.value",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sort.date.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sort.date.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "playerGames",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "sort.teamPoints.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sort.teamPoints.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "sort.date.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sort.date.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "playerGames",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "sort.result.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sort.result.value",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sort.date.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sort.date.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "playerGames",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "sort.result.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sort.result.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "sort.date.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sort.date.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "playerGames",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "sort.pointPercentage.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sort.pointPercentage.value",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sort.date.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sort.date.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "playerGames",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "sort.pointPercentage.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sort.pointPercentage.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "sort.date.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sort.date.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "hostedGames",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "sort.date.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sort.date.value",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "hostedGames",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "sort.date.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sort.date.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "hostedGames",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "sort.pointPercentage.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sort.pointPercentage.value",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sort.date.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sort.date.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "hostedGames",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "sort.pointPercentage.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sort.pointPercentage.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "sort.date.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sort.date.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "hostedGames",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "sort.topScore.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sort.topScore.value",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sort.date.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sort.date.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "hostedGames",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "sort.topScore.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sort.topScore.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "sort.date.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sort.date.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "hostedGames",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "sort.totalScore.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sort.totalScore.value",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sort.date.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sort.date.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "hostedGames",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "sort.totalScore.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sort.totalScore.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "sort.date.availability",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sort.date.value",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "playerGames",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "namespace",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "aliasesNormalized",
+          "arrayConfig": "CONTAINS"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "hostedGames",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "namespace",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "aliasesNormalized",
+          "arrayConfig": "CONTAINS"
+        }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
