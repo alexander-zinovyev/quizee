@@ -1,4 +1,4 @@
-import { getServerFirestore } from "@/server/database";
+import { getStatsFirestore } from "@/server/stats/web-database";
 import { requestStatsAdmin, statsJson, statsResponse, statsVersion } from "@/server/stats/http";
 import { setAdminRole } from "@/server/stats/roles";
 import { assertSameOrigin } from "@/server/stats/sessions";
@@ -9,7 +9,7 @@ function change(request: Request, context: Context, enabled: boolean) {
     assertSameOrigin(request);
     const actor = await requestStatsAdmin(request), { uid } = await context.params;
     const body = await statsJson(request, ["expectedVersion"]);
-    return Response.json(await setAdminRole(getServerFirestore(), actor, uid, enabled, statsVersion(body.expectedVersion)));
+    return Response.json(await setAdminRole(getStatsFirestore(), actor, uid, enabled, statsVersion(body.expectedVersion)));
   });
 }
 export function PUT(request: Request, context: Context) { return change(request, context, true); }

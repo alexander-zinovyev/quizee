@@ -46,6 +46,19 @@ test("review, partial identity mapping, provisional publication, public views, a
   await page.goto(`/stats/admin/games/${gameId}`);
   await page.getByRole("button", { name: "Create snapshot", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Player identities" })).toBeVisible();
+  await page.waitForLoadState("networkidle");
+  const reviewReads: string[] = [];
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (request.method() === "GET" && (path === `/stats/admin/games/${gameId}` || path === `/api/stats/admin/games/${gameId}`)) reviewReads.push(path);
+  });
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await page.waitForLoadState("networkidle");
+  expect(reviewReads, "Focusing a statistics tab must not reload its data").toEqual([]);
+  await page.getByRole("button", { name: "Reload review", exact: true }).click();
+  await page.waitForLoadState("networkidle");
+  expect(reviewReads, "Explicit reload must fetch the review once, without another server-page refresh").toEqual([`/api/stats/admin/games/${gameId}`]);
+
   await page.getByLabel("Completion date (UTC)", { exact: true }).fill("2026-10-29");
   await page.getByLabel("Pack label", { exact: true }).fill("Autumn quiz");
   await page.getByRole("button", { name: "Link red player 0", exact: true }).click();

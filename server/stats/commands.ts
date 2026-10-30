@@ -7,7 +7,7 @@ import { statsPaths, type StatsGameRecord, type StatsPersonRecord } from "./mode
 import { newStatsPerson } from "./people";
 import { gameQueueTags, projectGame } from "./projection";
 import { loadReview, mappingCounts, patchReview, questionOverrideId, sameReview, type ReviewPatch } from "./reviews";
-import { loadSnapshot, prepareSnapshot, saveSnapshot } from "./snapshots";
+import { loadSnapshot, prepareSnapshot } from "./snapshots";
 import { normalizeRoomSource, readEndedRoom } from "./source";
 import { stableJson } from "@/lib/stats/value";
 import { assertWriteBudget } from "./write-budget";
@@ -37,7 +37,7 @@ async function changeGameReviewCommand(db: Firestore, actorId: string, gameId: s
     const document = await tx.get(ref);
     if (!document.exists) throw new StatsError("game-not-found", "Create an ended-room snapshot before reviewing this game.", 404);
     const game = document.data() as StatsGameRecord;
-    const snapshot = await loadSnapshot(tx, db, gameId, game.snapshotId);
+    const snapshot = await loadSnapshot(tx, db, gameId, game.snapshotId, { cache: true });
     const previous = await loadReview(tx, db, gameId, game), next = patchReview(snapshot, previous, patch);
     const references = mappingCounts(next);
     for (const id of creations.keys()) if (!references.has(id)) throw new StatsError("unlinked-creation", "People created in a review must be linked in that same review.", 422);
@@ -110,12 +110,11 @@ async function publishStatsGameCommand(db: Firestore, actorId: string, gameId: s
     return game;
   }, { readOnly: true });
   if (initial.published) return { version: initial.version, snapshotId: initial.snapshotId, publishedAt: initial.publishedAt, reviewDurationMs: initial.reviewDurationMs ?? null };
-  const publicationSnapshot = normalizeRoomSource(await readEndedRoom(db, gameId), randomUUID());
-  if (publicationSnapshot.digest !== input.approvedDigest) {
+  const verifiedSource = normalizeRoomSource(await readEndedRoom(db, gameId), initial.snapshotId);
+  if (verifiedSource.digest !== input.approvedDigest) {
     const refreshed = await prepareSnapshot(db, gameId, actorId, input.expectedVersion);
     throw new StatsError("source-changed", "Room results changed after review. Review the refreshed snapshot before publishing.", 409, refreshed);
   }
-  await saveSnapshot(db, publicationSnapshot);
   const audit = db.doc(statsPaths.audit(randomUUID()));
   return db.runTransaction(async (tx) => {
     await assertStatsAdmin(tx, db, actorId);
@@ -127,7 +126,8 @@ async function publishStatsGameCommand(db: Firestore, actorId: string, gameId: s
     if (current.snapshotId !== initial.snapshotId) throw new StatsError("stale-preview", "The selected snapshot changed.", 409);
     const room = await tx.get(db.collection("rooms").doc(gameId));
     if (room.data()?.state !== "ended") throw new StatsError("room-not-ended", "Only a currently ended room can be published.", 422);
-    const frozen = await loadSnapshot(tx, db, gameId, publicationSnapshot.id);
+    const frozen = await loadSnapshot(tx, db, gameId, current.snapshotId, { cache: true });
+    if (frozen.digest !== input.approvedDigest) throw new StatsError("stale-preview", "The approved snapshot changed.", 409);
     const review = await loadReview(tx, db, gameId, current);
     const projection = projectGame(frozen, review, current.version + 1);
     if (projection.summary.provisional && input.acknowledgeIncompleteGrading !== true) throw new StatsError("grading-acknowledgement-required", "Acknowledge that incomplete grading and its recorded scores will remain frozen.", 422);

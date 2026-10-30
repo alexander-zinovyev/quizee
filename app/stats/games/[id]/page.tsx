@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getServerFirestore } from "@/server/database";
+import { getStatsFirestore } from "@/server/stats/web-database";
 import { getPublicGame } from "@/server/stats/public-queries";
 import { StatsError } from "@/server/stats/error";
 import { statsDate, statsNumber } from "@/lib/stats/value";
@@ -13,7 +13,7 @@ import RoundComparisons from "@/lib/components/stats/round-comparisons";
 export const dynamic = "force-dynamic";
 export default async function GamePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const game = await getPublicGame(getServerFirestore(), id).catch((error) => { if (error instanceof StatsError && error.status === 404) notFound(); throw error; });
+  const game = await getPublicGame(getStatsFirestore(), id).catch((error) => { if (error instanceof StatsError && error.status === 404) notFound(); throw error; });
   const known = game.teams.flatMap((team) => team.score === null ? [] : [team.score]), minimum = Math.min(0, ...known), maximum = Math.max(0, ...known), span = maximum - minimum || 1;
   const roundName = (id: string) => game.metrics.rounds.find((round) => round.id === id)?.title || "Round";
   return <main className="mx-auto max-w-6xl space-y-8 px-6 py-10"><header className="space-y-3"><Link className="text-sm text-emerald-700 underline" href="/stats">All statistics</Link><h1 className="text-4xl font-semibold">{game.title || "Quiz result"}</h1><p>{statsDate(game.completedAt)} · {game.packLabel ?? "Pack unavailable"}</p><p>Host: {game.host?.personId ? <Link className="underline" href={`/stats/hosts/${game.host.personId}`}>{game.host.displayName || game.host.alias || "Host"}</Link> : `${game.host?.alias || "Not recorded"} (unresolved)`}</p><p className="text-xs text-zinc-500">Snapshot: {new Date(game.snapshotAt).toISOString()} · Published: {new Date(game.publishedAt).toISOString()}</p></header>

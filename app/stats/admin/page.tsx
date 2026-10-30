@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getServerFirestore } from "@/server/database";
+import { getStatsFirestore } from "@/server/stats/web-database";
 import { listAdminGames } from "@/server/stats/admin-queries";
 import { pageStatsAdmin } from "@/server/stats/http";
 import { pageValue, type StatsPageSearch } from "@/server/stats/page-options";
@@ -8,7 +8,7 @@ import { PageLinks } from "@/lib/components/stats/table-navigation";
 
 export default async function AdministrationPage({ searchParams }: { searchParams: Promise<StatsPageSearch> }) {
   const params = await searchParams, actor = await pageStatsAdmin();
-  const data = await listAdminGames(getServerFirestore(), actor, { tab: pageValue(params, "tab"), roomCursor: pageValue(params, "roomCursor"), reviewCursor: pageValue(params, "reviewCursor") });
+  const data = await listAdminGames(getStatsFirestore(), actor, { tab: pageValue(params, "tab"), roomCursor: pageValue(params, "roomCursor"), reviewCursor: pageValue(params, "reviewCursor") });
   return <section className="space-y-8"><header className="space-y-3"><h1 className="text-3xl font-semibold">Game review</h1><p>Review ended games, link identities, and publish their saved results. Published score baselines stay frozen.</p></header>
     <section className="space-y-4"><h2 className="text-xl font-semibold">Saved reviews</h2><nav aria-label="Review filters" className="flex flex-wrap gap-3">{[["unpublished", "Unpublished"], ["unresolved", "Unresolved identities"], ["needs-review", "Needs review"], ["all", "All saved games"]].map(([tab, label]) => <Link className={`rounded-lg border px-3 py-2 text-sm ${data.tab === tab ? "border-emerald-600 bg-emerald-600 text-white" : ""}`} aria-current={data.tab === tab ? "page" : undefined} href={`/stats/admin?tab=${tab}`} key={tab}>{label}</Link>)}</nav>
       <div className="overflow-x-auto rounded-xl border"><table className="w-full text-sm"><thead><tr>{["Game", "Completion date (UTC)", "Publication", "Identities / review"].map((label) => <th className="p-3 text-left" scope="col" key={label}>{label}</th>)}</tr></thead><tbody>{data.saved.items.map((game) => <tr className="border-t" key={game.id}><td className="p-3"><Link className="font-semibold text-emerald-700 underline" href={`/stats/admin/games/${game.id}`}>{game.title || game.id}</Link></td><td className="p-3">{statsDate(game.completedAt)}</td><td className="p-3">{game.published ? "Published" : "Unpublished"}{game.provisional && <small className="block text-amber-700">Incomplete grading recorded</small>}</td><td className="p-3">{game.unresolvedAppearances} unresolved roster entries{game.tags.includes("unresolved") && <small className="block">Player or host identity review needed</small>}{game.warnings.length > 0 && <small className="block">{game.warnings.length} recorded coverage/reconciliation warning(s)</small>}</td></tr>)}</tbody></table>{!data.saved.items.length && <p className="p-6 text-zinc-500">No saved reviews on this page. You can start one from an ended room below.</p>}</div><PageLinks prefix="review" nextCursor={data.saved.nextCursor} />
