@@ -27,6 +27,8 @@ Bootstrap refuses to run after initialization. Later grants and revocations use 
 
 Before deployment, check for historical rooms with IDs `login` or `stats`; these names now belong to static application routes. New room creation reserves them using the same validation on client and server.
 
+Public statistics remain disabled until `QUIZEE_STATISTICS_PUBLIC_ENABLED=true` is explicitly configured and deployed. Complete the index and selected-game checks in the [operations runbook](operations.md) before enabling it. Administrator access remains available while public access is disabled.
+
 ## Local verification
 
 ```sh

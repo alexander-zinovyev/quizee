@@ -1,4 +1,7 @@
 import Link from "next/link";
+import { statsPublicEnabled } from "@/server/stats/public-access";
+
+export const dynamic = "force-dynamic";
 
 export default function Home() {
   return (
@@ -20,9 +23,9 @@ export default function Home() {
           >
             Host quiz
           </Link>
-          <Link href="/stats" className="rounded-xl border border-zinc-300 px-5 py-2.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-800">
+          {statsPublicEnabled() && <Link href="/stats" className="rounded-xl border border-zinc-300 px-5 py-2.5 text-sm font-semibold text-zinc-900 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-800">
             Game statistics
-          </Link>
+          </Link>}
         </div>
       </main>
     </div>

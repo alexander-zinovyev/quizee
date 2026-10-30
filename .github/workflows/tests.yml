@@ -5,6 +5,7 @@ on:
   pull_request:
   schedule:
     - cron: "0 3 * * *"
+  workflow_dispatch:
 
 jobs:
   tests:
@@ -29,3 +30,22 @@ jobs:
       - run: npx next typegen
       - run: npx tsc --noEmit
       - run: npx --yes firebase-tools@14.12.0 emulators:exec --only firestore,auth --project demo-quizee-drafts "npm run test:rules && npm run test:stats:firestore && npm run test:stats:auth && npm run test:stats:browser"
+
+  statistics-load:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+      - run: npx --yes firebase-tools@14.12.0 emulators:exec --only firestore --project demo-quizee-drafts "npm run test:stats:load"
+        env:
+          JAVA_TOOL_OPTIONS: -Xmx2g

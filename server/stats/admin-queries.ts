@@ -84,6 +84,7 @@ export async function listStatsAudit(db: Firestore, actorId: string, cursor?: st
       return { id: document.id, at: String(data.at), actorId: String(data.actorId), action: String(data.action),
         gameId: typeof data.gameId === "string" ? data.gameId : null, personId: typeof data.personId === "string" ? data.personId : null,
         snapshotId: typeof data.snapshotId === "string" ? data.snapshotId : null,
+        targetUid: typeof data.targetUid === "string" ? data.targetUid : null,
         version: typeof data.version === "number" ? data.version : null,
         changedFields: Array.isArray(data.changedFields) ? data.changedFields.filter((field): field is string => typeof field === "string") : [] };
     }), nextCursor: result.size > 25 && last ? encodeBoundCursor("admin-audit", [last.data().at, last.id]) : null };

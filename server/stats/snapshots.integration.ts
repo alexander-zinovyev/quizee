@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { initializeApp, deleteApp } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
+import { getFirestore, type Transaction } from "firebase-admin/firestore";
 import { StatsError } from "./error";
 import { statsPaths, STATS_ROOT } from "./model";
 import { normalizeRoomSource, readEndedRoom } from "./source";
@@ -85,6 +85,40 @@ async function main() {
     await assert.rejects(saveSnapshot(db, interrupted));
     assert.equal((await db.doc(statsPaths.snapshot("demo", "interrupted")).get()).data()!.ready, false);
     await rejectsCode(db.runTransaction((tx) => loadSnapshot(tx, db, "demo", "interrupted"), { readOnly: true }), "snapshot-not-ready");
+
+    // A completed copy claimed just before selection must not become the selected baseline.
+    await admin.update({ admin: true }); await game.update({ published: false });
+    const previousSelection = (await game.get()).data()!.snapshotId;
+    const knownCopies = new Set((await game.collection("snapshots").get()).docs.map((document) => document.id));
+    const beforeSelection = new Proxy(db, { get(target, property) {
+      if (property === "runTransaction") return async (work: (tx: Transaction) => Promise<unknown>, options?: FirebaseFirestore.ReadOnlyTransactionOptions | FirebaseFirestore.ReadWriteTransactionOptions) => {
+        if (!options?.readOnly) {
+          const ready = await game.collection("snapshots").where("ready", "==", true).get();
+          for (const candidate of ready.docs) if (!knownCopies.has(candidate.id)) await candidate.ref.update({ deleting: true, ready: false });
+        }
+        return target.runTransaction(work, options ?? {});
+      };
+      const value = Reflect.get(target, property); return typeof value === "function" ? value.bind(target) : value;
+    } });
+    await rejectsCode(prepareSnapshot(beforeSelection, "demo", "stats-snapshot-admin", 3), "snapshot-not-ready");
+    assert.equal((await game.get()).data()!.snapshotId, previousSelection);
+
+    // Cleanup may claim an unselected copy between chunks. No later chunk or finalizer may revive it.
+    const collecting = normalizeRoomSource(source, "cleanup-race"), collectingRef = db.doc(statsPaths.snapshot("demo", collecting.id));
+    let copyCommits = 0;
+    const afterCommit = async () => { if (++copyCommits === 1) await collectingRef.update({ deleting: true, ready: false }); };
+    const duringCleanup = new Proxy(db, { get(target, property) {
+      if (property === "batch") return () => { const batch = target.batch(); return new Proxy(batch, { get(original, key) {
+        if (key === "commit") return async () => { const result = await original.commit(); await afterCommit(); return result; };
+        const value = Reflect.get(original, key); return typeof value === "function" ? value.bind(original) : value;
+      } }); };
+      if (property === "runTransaction") return async (work: (tx: Transaction) => Promise<unknown>) => {
+        const result = await target.runTransaction(work); await afterCommit(); return result;
+      };
+      const value = Reflect.get(target, property); return typeof value === "function" ? value.bind(target) : value;
+    } });
+    await rejectsCode(saveSnapshot(duringCleanup, collecting), "snapshot-not-ready");
+    assert.equal((await collectingRef.get()).data()!.ready, false);
 
     console.log(`Snapshot integration verified: ${sourceDocuments.length} source documents, ordered immutable copy, refresh/conflict/revocation/partial-copy paths; ${Math.round(performance.now() - started)} ms local emulator elapsed (not a production latency target).`);
   } finally {

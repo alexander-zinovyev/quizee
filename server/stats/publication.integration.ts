@@ -14,6 +14,7 @@ import { getAdminGame, listAdminGames, listStatsAudit } from "./admin-queries";
 import { getPublicGame, getPublicHost, getPublicPlayer, getPublicRound, getPublishedAsset, listPublicGames, listPublicHistory, listPublicPlayers } from "./public-queries";
 
 async function main() {
+  process.env.QUIZEE_STATISTICS_PUBLIC_ENABLED = "true";
   if (!process.env.FIRESTORE_EMULATOR_HOST) throw new Error("Publication tests require the Firestore emulator.");
   const app = initializeApp({ projectId: "demo-quizee-drafts" }, "stats-publication"), db = getFirestore(app);
   const actor = "publication-admin", gameId = "publication", source = roomSourceFixture(9, 10, gameId);

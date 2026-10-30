@@ -9,6 +9,8 @@ import { inferQuestionMaximum, median } from "./metrics";
 import { statsId, statsPaths, type StatsGameRecord, type StatsHostContribution, type StatsPersonRecord, type StatsPlayerContribution, type StatsSortMap } from "./model";
 import { buildStatsQuery, encodeStatsCursor, planStatsQuery, type StatsQueryOptions, type StatsQueryPlan, type StatsQueryScope } from "./queries";
 import { percentageFromCounters, publicMetrics, publicPercentage, publicPerson, publicQuestion } from "./serializers";
+import { assertStatsPublicEnabled } from "./public-access";
+import { statsOperation } from "./telemetry";
 
 const hidden = () => new StatsError("not-found", "Statistics are unavailable.", 404);
 const inconsistent = () => new StatsError("statistics-inconsistent", "Statistics changed or need reconciliation. Reload before continuing.", 409);
@@ -66,6 +68,7 @@ function nextListCursor(plan: StatsQueryPlan, documents: FirebaseFirestore.Query
 }
 
 export async function listPublicGames(db: Firestore, options: StatsQueryOptions = {}): Promise<StatsList<PublicStatsGame>> {
+  assertStatsPublicEnabled();
   const plan = publicQueryPlan({ kind: "games" }, options);
   return db.runTransaction(async (tx) => {
     const result = await tx.get(buildStatsQuery(db, plan)), page = result.docs.slice(0, plan.limit);
@@ -75,6 +78,7 @@ export async function listPublicGames(db: Firestore, options: StatsQueryOptions 
 }
 
 export async function listPublicPlayers(db: Firestore, options: StatsQueryOptions = {}) {
+  assertStatsPublicEnabled();
   const plan = publicQueryPlan({ kind: "players" }, options);
   return db.runTransaction(async (tx) => {
     const result = await tx.get(buildStatsQuery(db, plan)), page = result.docs.slice(0, plan.limit);
@@ -86,7 +90,11 @@ export async function listPublicPlayers(db: Firestore, options: StatsQueryOption
   }, { readOnly: true });
 }
 
-export async function getPublicGame(db: Firestore, gameId: string): Promise<PublicStatsGameDetail> {
+export function getPublicGame(db: Firestore, gameId: string): Promise<PublicStatsGameDetail> {
+  return statsOperation("public-game-detail", { gameId }, () => readPublicGame(db, gameId));
+}
+async function readPublicGame(db: Firestore, gameId: string): Promise<PublicStatsGameDetail> {
+  assertStatsPublicEnabled();
   return db.runTransaction(async (tx) => {
     const { game } = await publishedGame(tx, db, gameId);
     return { ...await gameHeader(tx, db, gameId), roster: await roster(tx, db, gameId, game), metrics: publicMetrics(game.summary.metrics!) };
@@ -94,6 +102,7 @@ export async function getPublicGame(db: Firestore, gameId: string): Promise<Publ
 }
 
 export async function getPublicRound(db: Firestore, gameId: string, roundId: string, version: number, options: { limit?: number; cursor?: string | null } = {}): Promise<PublicStatsQuestionPage> {
+  assertStatsPublicEnabled();
   const limit = options.limit ?? 25;
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new StatsError("invalid-query", "Page size must be between 1 and 100.", 400);
   statsId(roundId);
@@ -149,7 +158,11 @@ async function profile(tx: Transaction, db: Firestore, id: string, role: "player
   return { ref, person };
 }
 
-export async function getPublicPlayer(db: Firestore, id: string): Promise<PublicStatsPlayer> {
+export function getPublicPlayer(db: Firestore, id: string): Promise<PublicStatsPlayer> {
+  return statsOperation("public-player-detail", { personId: id }, () => readPublicPlayer(db, id));
+}
+async function readPublicPlayer(db: Firestore, id: string): Promise<PublicStatsPlayer> {
+  assertStatsPublicEnabled();
   return db.runTransaction(async (tx) => {
     const { ref, person } = await profile(tx, db, id, "player");
     const records = await tx.get(ref.collection("playerGames"));
@@ -183,7 +196,11 @@ export async function getPublicPlayer(db: Firestore, id: string): Promise<Public
   }, { readOnly: true });
 }
 
-export async function getPublicHost(db: Firestore, id: string): Promise<PublicStatsHost> {
+export function getPublicHost(db: Firestore, id: string): Promise<PublicStatsHost> {
+  return statsOperation("public-host-detail", { personId: id }, () => readPublicHost(db, id));
+}
+async function readPublicHost(db: Firestore, id: string): Promise<PublicStatsHost> {
+  assertStatsPublicEnabled();
   return db.runTransaction(async (tx) => {
     const { ref, person } = await profile(tx, db, id, "host");
     const records = await tx.get(ref.collection("hostedGames")), rows = records.docs.map((document) => document.data() as StatsHostContribution);
@@ -196,6 +213,7 @@ export async function getPublicHost(db: Firestore, id: string): Promise<PublicSt
 }
 
 export async function listPublicHistory(db: Firestore, id: string, role: "player" | "host", options: StatsQueryOptions = {}) {
+  assertStatsPublicEnabled();
   const plan = publicQueryPlan({ kind: role === "player" ? "playerGames" : "hostedGames", personId: id }, options);
   return db.runTransaction(async (tx) => {
     await profile(tx, db, id, role);
@@ -212,6 +230,7 @@ export async function listPublicHistory(db: Firestore, id: string, role: "player
 
 /** Returns a server-only allowlisted asset after publication checks; routes never accept Storage paths. */
 export async function getPublishedAsset(db: Firestore, gameId: string, assetId: string) {
+  assertStatsPublicEnabled();
   if (!/^[0-9a-f]{64}$/.test(assetId)) throw hidden();
   return db.runTransaction(async (tx) => {
     const { game } = await publishedGame(tx, db, gameId);

@@ -1111,5 +1111,122 @@
       ]
     }
   ],
-  "fieldOverrides": []
+  "fieldOverrides": [
+    {
+      "collectionGroup": "mappings",
+      "fieldPath": "personId",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "DESCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "snapshots",
+      "fieldPath": "snapshotAt",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "DESCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "games",
+      "fieldPath": "summary.metrics",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "people",
+      "fieldPath": "player.counters",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "people",
+      "fieldPath": "host.counters",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "people",
+      "fieldPath": "notes",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "people",
+      "fieldPath": "helperAliases",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "people",
+      "fieldPath": "creationFingerprint",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "playerGames",
+      "fieldPath": "byRoundType",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "playerGames",
+      "fieldPath": "percentage",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "playerGames",
+      "fieldPath": "poolPercentage",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "playerGames",
+      "fieldPath": "roster",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "playerGames",
+      "fieldPath": "rosterCoverage",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "playerGames",
+      "fieldPath": "aliases",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "hostedGames",
+      "fieldPath": "difficulty",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "hostedGames",
+      "fieldPath": "teamPercentages",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "appearances",
+      "fieldPath": "sourceUid",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "snapshots",
+      "fieldPath": "sourceMembers",
+      "indexes": []
+    }
+  ]
 }
