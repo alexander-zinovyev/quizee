@@ -1,0 +1,21 @@
+import type { PublicStatsGame, PublicStatsPerson, QuestionMaximum, StatsGameMetrics, StatsQuestion } from "./stats";
+import type { hostSummary, playerSummary } from "@/server/stats/aggregates";
+import type { StatsPercentage } from "./stats";
+
+export type PublicStatsRosterEntry = { appearanceId: string; alias: string | null; teamId: string | null;
+  personId: string | null; displayName: string | null; duplicateOf: string | null; profile: "player" | "host" | null };
+export type PublicStatsGameDetail = PublicStatsGame & { roster: PublicStatsRosterEntry[]; metrics: StatsGameMetrics };
+export type PublicStatsQuestionPage = { gameId: string; version: number; roundId: string; items: Array<StatsQuestion & { maximum: QuestionMaximum }>;
+  assets: Record<string, { filename: string }>; nextCursor: string | null };
+export type PublicStatsPlayer = PublicStatsPerson & { version: number; aliases: string[]; summary: ReturnType<typeof playerSummary>;
+  percentage: StatsPercentage; poolPercentage: StatsPercentage;
+  byRoundType: Record<string, { percentage: StatsPercentage; poolPercentage: StatsPercentage }>;
+  streaks: { currentWins: number | null; longestWins: number | null; currentLosses: number | null; longestLosses: number | null;
+    gamesWithDates: number; gamesWithKnownOutcomes: number; totalGames: number };
+  teammates: Array<{ personId: string; displayName: string; games: number }>;
+  opponents: Array<{ personId: string; displayName: string; games: number }>;
+  rosterCoverage: { mapped: number; total: number };
+  bestPoints: Array<{ gameId: string; value: number }>; worstPoints: Array<{ gameId: string; value: number }>;
+  bestPercentage: Array<{ gameId: string; value: number }>; worstPercentage: Array<{ gameId: string; value: number }>; };
+export type PublicStatsHost = PublicStatsPerson & { version: number; aliases: string[]; summary: ReturnType<typeof hostSummary>;
+  difficulty: StatsPercentage; medianTeamPercentage: number | null; medianTeamSampleSize: number };

@@ -37,6 +37,14 @@ test("normalization is deterministic across read timestamps and document return 
   assert.notEqual(normalizeRoomSource(source, "third").digest, first.digest);
 });
 
+test("accepted answer hints survive independently of staged explanations", () => {
+  const source = roomSourceFixture();
+  source.rounds[0].answers[0].data.hint = "Paris";
+  source.rounds[0].answers[0].data.stages = [{ text: "The explanation of the answer" }];
+  const snapshot = normalizeRoomSource(source, "hint");
+  assert.equal(snapshot.rounds[0].questions[0].answerHint, "Paris");
+});
+
 test("absent records differ from explicitly blank frozen answers", () => {
   const source = roomSourceFixture();
   source.rounds[0].teamAnswers.red.answers[0].data = { answer: "", awardedPoints: 0 };

@@ -32,6 +32,7 @@ export type StatsQuestion = {
   order: number;
   prompt: StatsStage[];
   acceptedAnswer: StatsStage[];
+  answerHint: string | null;
   color: { initialColor: string | null; targetColor: string | null; maskAssetId: string | null; regionIds: string[] | null } | null;
   answers: Record<string, StatsRecordedAnswer>;
 };
@@ -174,7 +175,7 @@ export type PublicStatsGame = {
   publishedAt: string;
   completedAt: string | null;
   packLabel: string | null;
-  host: { personId: string | null; alias: string | null } | null;
+  host: { personId: string | null; alias: string | null; displayName?: string | null } | null;
   teams: StatsTeamResult[];
   unresolvedAppearances: number;
   provisional: boolean;

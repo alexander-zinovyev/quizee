@@ -5,6 +5,7 @@ import { StatsError } from "./error";
 import { canonicalPlayerMappings, inferQuestionMaximum } from "./metrics";
 import { completionTime, statsId, statsPaths, type StatsGameRecord } from "./model";
 import type { CreateStatsPerson } from "./people";
+import { stableJson } from "@/lib/stats/value";
 
 export type ReviewPatch = {
   expectedVersion: number;
@@ -93,9 +94,7 @@ export function patchReview(snapshot: StatsSnapshot, previous: StatsReview, patc
 }
 
 export function sameReview(a: StatsReview, b: StatsReview): boolean {
-  const stable = (value: unknown): unknown => Array.isArray(value) ? value.map(stable) : value && typeof value === "object"
-    ? Object.fromEntries(Object.entries(value).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0).map(([key, entry]) => [key, stable(entry)])) : value;
-  return JSON.stringify(stable(a)) === JSON.stringify(stable(b));
+  return stableJson(a) === stableJson(b);
 }
 
 export function mappingCounts(review: StatsReview): Map<string, number> {

@@ -30,7 +30,9 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts",
     ".next-color/types/**/*.ts",
-    ".next-color/dev/types/**/*.ts"
+    ".next-color/dev/types/**/*.ts",
+    ".next-stats/types/**/*.ts",
+    ".next-stats/dev/types/**/*.ts"
   ],
   "exclude": ["node_modules"]
 }

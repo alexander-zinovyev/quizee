@@ -5,10 +5,11 @@ import { applyContributionPlan, planContributionReplacement } from "./contributi
 import { StatsError } from "./error";
 import { statsPaths, type StatsGameRecord, type StatsPersonRecord } from "./model";
 import { newStatsPerson } from "./people";
-import { projectGame } from "./projection";
+import { gameQueueTags, projectGame } from "./projection";
 import { loadReview, mappingCounts, patchReview, questionOverrideId, sameReview, type ReviewPatch } from "./reviews";
 import { loadSnapshot, prepareSnapshot, saveSnapshot } from "./snapshots";
 import { normalizeRoomSource, readEndedRoom } from "./source";
+import { stableJson } from "@/lib/stats/value";
 
 function versionMatches(game: StatsGameRecord, version: number) {
   if (game.version !== version) throw new StatsError("stale-version", "This game review changed. Reload before continuing.", 409);
@@ -47,7 +48,8 @@ export async function changeGameReview(db: Firestore, actorId: string, gameId: s
     const projection = projectGame(snapshot, next, game.version + (changed ? 1 : 0));
     const plan = await planContributionReplacement(tx, db, gameId, previous, next, game.published, projection, creations);
     const mutations: Array<{ ref: FirebaseFirestore.DocumentReference; data: FirebaseFirestore.DocumentData | null }> = [
-      { ref, data: { review: { hostPersonId: next.hostPersonId, completedAt: next.completedAt, packLabel: next.packLabel }, summary: projection.summary, version: game.version + 1 } },
+      { ref, data: { review: { hostPersonId: next.hostPersonId, completedAt: next.completedAt, packLabel: next.packLabel }, summary: projection.summary,
+        queueTags: gameQueueTags(snapshot, next, projection.summary, game.published), version: game.version + 1 } },
       ...plan.writes,
     ];
     if (!changed) return { version: game.version, nextVersion: game.version, changed,
@@ -67,8 +69,11 @@ export async function changeGameReview(db: Firestore, actorId: string, gameId: s
         mutations.push({ ref: override, data: after === undefined ? null : { roundId, questionId, points: after } });
       }
     }
+    const changedFields = (["mappings", "maxima", "hostPersonId", "completedAt", "packLabel"] as const).filter((key) => stableJson(previous[key]) !== stableJson(next[key]));
+    const mappingChanges = [...new Set([...Object.keys(previous.mappings), ...Object.keys(next.mappings)])].filter((id) => stableJson(previous.mappings[id] ?? null) !== stableJson(next.mappings[id] ?? null))
+      .map((appearanceId) => ({ appearanceId, fromPersonId: previous.mappings[appearanceId]?.personId ?? null, toPersonId: next.mappings[appearanceId]?.personId ?? null }));
     const event = { actorId, action: "edit-review", gameId, snapshotId: game.snapshotId, version: game.version + 1, at,
-      changedFields: Object.keys(patch).filter((key) => !["expectedVersion", "confirmedImpact"].includes(key)), createdPersonIds: [...creations.keys()] };
+      changedFields, mappingChanges, createdPersonIds: plan.createdPersonIds, questionChanges: patch.maxima?.filter((override) => previous.maxima[override.roundId]?.[override.questionId] !== next.maxima[override.roundId]?.[override.questionId]).map(({ roundId, questionId }) => ({ roundId, questionId })) ?? [] };
     const workload = assertWriteBudget([...mutations, { ref: audit, data: event }]);
     // Root review writes merge with the existing publication/snapshot selection fields.
     for (const mutation of mutations) {
@@ -125,7 +130,8 @@ export async function publishStatsGame(db: Firestore, actorId: string, gameId: s
     assertWriteBudget([{ ref, data: projection.summary }, ...plan.writes]);
     const publishedAt = new Date().toISOString();
     applyContributionPlan(tx, plan);
-    tx.update(ref, { published: true, publishedAt, snapshotId: frozen.id, summary: projection.summary, version: current.version + 1 });
+    tx.update(ref, { published: true, publishedAt, snapshotId: frozen.id, summary: projection.summary,
+      queueTags: gameQueueTags(frozen, review, projection.summary, true), version: current.version + 1 });
     tx.create(audit, { actorId, action: "publish", gameId, snapshotId: frozen.id, approvedDigest: input.approvedDigest,
       warningAcknowledgements: projection.summary.provisional ? ["grading-incomplete"] : [], version: current.version + 1, at: publishedAt });
     return { version: current.version + 1, snapshotId: frozen.id, publishedAt };

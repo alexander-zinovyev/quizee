@@ -35,6 +35,7 @@ export default function StageMedia({
   videoClassName,
   fitImageToParent = false,
   playbackActive = true,
+  onError,
 }: {
   url: string;
   kind?: MediaKind;
@@ -50,6 +51,7 @@ export default function StageMedia({
   videoClassName?: string;
   fitImageToParent?: boolean;
   playbackActive?: boolean;
+  onError?: () => void;
 }) {
   const mediaElementRef = useRef<HTMLMediaElement | null>(null);
   const resolvedKind =
@@ -78,6 +80,7 @@ export default function StageMedia({
         imageClassName={imageClassName}
         zoomLabel={zoomLabel}
         fitToParent={fitImageToParent}
+        onError={onError}
       />
     );
   }
@@ -91,6 +94,7 @@ export default function StageMedia({
         src={url}
         className={videoClassName ?? mediaClassName}
         controls
+        onError={onError}
         playsInline
         autoPlay={playbackActive}
         onLoadedMetadata={(event) => {
@@ -113,6 +117,7 @@ export default function StageMedia({
         src={url}
         className={audioClassName ?? "w-full"}
         controls
+        onError={onError}
         autoPlay={playbackActive}
         onLoadedMetadata={(event) => {
           event.currentTarget.volume = mediaVolume;

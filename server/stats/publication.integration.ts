@@ -10,6 +10,8 @@ import { statsPaths, STATS_ROOT } from "./model";
 import { createStatsPerson, editStatsPerson, searchStatsPeople } from "./people";
 import { loadSnapshot, prepareSnapshot } from "./snapshots";
 import { roomSourceFixture, sourceFixtureDocuments } from "./source.fixtures";
+import { getAdminGame, listAdminGames, listStatsAudit } from "./admin-queries";
+import { getPublicGame, getPublicHost, getPublicPlayer, getPublicRound, getPublishedAsset, listPublicGames, listPublicHistory, listPublicPlayers } from "./public-queries";
 
 async function main() {
   if (!process.env.FIRESTORE_EMULATOR_HOST) throw new Error("Publication tests require the Firestore emulator.");
@@ -48,6 +50,13 @@ async function main() {
     await roleRef.update({ admin: true });
     let prepared = await prepareSnapshot(db, gameId, actor, 0);
     const snapshot = await db.runTransaction((tx) => loadSnapshot(tx, db, gameId, prepared.snapshotId), { readOnly: true });
+    await rejectsCode(getPublicGame(db, gameId), "not-found");
+    await rejectsCode(getPublicRound(db, gameId, "round-1", 1), "not-found");
+    const assetId = Object.keys(snapshot.assets)[0];
+    await rejectsCode(getPublishedAsset(db, gameId, assetId), "not-found");
+    assert.equal((await getAdminGame(db, actor, gameId)).snapshot?.id, prepared.snapshotId);
+    assert.ok((await listAdminGames(db, actor, { tab: "unpublished" })).saved.items.some((game) => game.id === gameId));
+    assert.equal((await listPublicGames(db)).items.length, 0);
     const hostId = randomUUID(); people.add(hostId);
     const mappings: Record<string, StatsMapping> = {};
     const createPeople = snapshot.appearances.map((appearance) => {
@@ -95,6 +104,19 @@ async function main() {
     assert.equal((await historyRef.get()).data()!.teamPoints, 300);
     assert.equal((await historyRef.get()).data()!.provisional, true);
     assert.equal((await db.doc(statsPaths.hostedGame(hostId, gameId)).get()).exists, true);
+    assert.equal((await listPublicGames(db)).items.length, 1);
+    assert.equal((await listPublicPlayers(db)).items.length, 6);
+    const publicGame = await getPublicGame(db, gameId), publicPlayer = await getPublicPlayer(db, redId), publicHost = await getPublicHost(db, hostId);
+    assert.equal(publicPlayer.summary.gamesPlayed, 1);
+    assert.equal(publicHost.summary.gamesHosted, 1);
+    assert.equal(publicPlayer.summary.teamPoints, 300);
+    assert.equal(publicHost.medianTeamPercentage, null);
+    const publicQuestions = await getPublicRound(db, gameId, "round-1", 5, { limit: 3 });
+    assert.equal(publicQuestions.items.length, 3);
+    assert.ok(publicQuestions.nextCursor);
+    assert.equal((await getPublicRound(db, gameId, "round-1", 5, { limit: 3, cursor: publicQuestions.nextCursor })).items[0].order, 3);
+    const payload = JSON.stringify([publicGame, publicPlayer, publicHost, publicQuestions]);
+    for (const privateValue of ["private matching evidence", "red-uid-0", "host-uid", "sourceMembers", `rooms/${gameId}/media/`, "aliasesNormalized", "creationFingerprint"]) assert.equal(payload.includes(privateValue), false, privateValue);
     count = await auditCount();
     await db.doc(`rooms/${gameId}/teams/red`).update({ scoreTotal: -9999 });
     await db.doc(`rooms/${gameId}/rounds/round-1/teamAnswers/red/answers/question-1`).update({ awardedPoints: 9999 });
@@ -113,6 +135,10 @@ async function main() {
     const corrected = await changeGameReview(db, actor, gameId, { expectedVersion: 5, confirmedImpact: true,
       mappings: { [redAppearance.id]: { personId: replacementId, duplicateOf: null } }, maxima: [{ roundId: "round-1", questionId: "question-1", points: 5 }] });
     assert.equal(corrected.version, 6);
+    await rejectsCode(getPublicRound(db, gameId, "round-1", 5, { cursor: publicQuestions.nextCursor }), "stale-version");
+    assert.equal((await getPublicGame(db, gameId)).teams.find((team) => team.id === "red")!.score, 300);
+    assert.equal((await getPublicPlayer(db, replacementId)).summary.teamPoints, 300);
+    assert.equal((await listPublicHistory(db, replacementId, "player")).items[0].game.version, 6);
     assert.equal((await historyRef.get()).exists, false);
     const correctedHistory = (await db.doc(statsPaths.playerGame(replacementId, gameId)).get()).data()!;
     assert.equal(correctedHistory.teamPoints, 300);
@@ -127,6 +153,7 @@ async function main() {
     assert.equal(playerSummary(previousPerson.player.counters).gamesPlayed, 0);
     await editStatsPerson(db, actor, redId, { expectedVersion: previousPerson.version, archived: true });
     assert.equal((await db.doc(statsPaths.person(redId)).get()).data()!.archived, true);
+    await rejectsCode(getPublicPlayer(db, redId), "person-archived");
     await rejectsCode(changeGameReview(db, actor, gameId, { expectedVersion: 6, confirmedImpact: true, mappings: { [redAppearance.id]: { personId: redId, duplicateOf: null } } }), "person-archived");
     await rejectsCode(changeGameReview(db, actor, gameId, { expectedVersion: 5, confirmedImpact: true, packLabel: "Stale" }), "stale-version");
     assert.ok((await searchStatsPeople(db, actor, redAppearance.alias!)).some((person) => person.id === replacementId));
@@ -147,6 +174,11 @@ async function main() {
     const finalSnapshot = await db.runTransaction((tx) => loadSnapshot(tx, db, gameId, (published.snapshotId)), { readOnly: true });
     assert.equal(finalSnapshot.rounds[0].questions[0].answers.red.awardedPoints, 1);
     assert.equal(finalSnapshot.teams.find((team) => team.id === "red")!.score, 300);
+    const events = await listStatsAudit(db, actor);
+    assert.ok(events.items.some((event) => event.action === "publish" && event.gameId === gameId));
+    assert.ok(events.items.some((event) => event.action === "edit-review"));
+    assert.ok(!JSON.stringify(events).includes("PRIVATE"));
+    await rejectsCode(listStatsAudit(db, "not-an-admin"), "forbidden");
     console.log(`Publication/corrections verified: ${linked.workload.documents} review documents / ${linked.workload.jsonBytes} JSON bytes, private create-and-link, frozen baseline, concurrent publication, provisional warnings, identity/maxima replacement, competing edits, and archive races.`);
   } finally {
     await db.recursiveDelete(db.doc(`rooms/${eligibilityId}`)); await db.recursiveDelete(db.doc(statsPaths.game(eligibilityId)));

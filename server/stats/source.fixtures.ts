@@ -30,7 +30,7 @@ export function roomSourceFixture(roundCount = 9, questionCount = 10, gameId = "
         const answer = type === "image" ? `image-${index}` : type === "color" ? "#ABCDEF" : "An answer";
         teamAnswers[team.id].answers.push({ id: questionId, data: { awardedPoints: points,
           ...(type === "multi-step" ? { attempts: [{ answer, step: 0, submittedBy: `${team.id}-uid-0`, submittedAt: null }] } : { answer }),
-          ...(type === "color" ? { perceptionScore: team.id === "red" ? 10 : 8 } : {}) } });
+          ...(type === "color" ? { perceptionScore: colorScoring.mode === "closest" || team.id === "red" ? 10 : 8 } : {}) } });
       }
     }
     teams.forEach((team) => {
