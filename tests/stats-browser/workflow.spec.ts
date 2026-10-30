@@ -68,9 +68,13 @@ test("review, partial identity mapping, provisional publication, public views, a
   const publicResponse = await page.request.get(`/api/stats/games/${gameId}`); expect(publicResponse.ok()).toBeTruthy();
   const publicGame = await publicResponse.json(); expect(JSON.stringify(publicGame)).not.toContain("PRIVATE");
   await page.goto("/stats"); await expect(page.getByRole("heading", { name: "Game statistics", exact: true })).toBeVisible();
-  await expect(page.getByRole("figure", { name: "Top scores by game", exact: true })).toBeVisible();
+  const playersChart = page.getByRole("figure", { name: "Player win rates", exact: true });
+  await expect(playersChart).toBeVisible();
+  await expect(playersChart.getByRole("link", { name: "Alice", exact: true })).toHaveAttribute("href", `/stats/players/${aliceId}`);
+  await expect(playersChart.getByText("1 win · 1 game played · 1 provisional game", { exact: true })).toBeVisible();
+  await expect(playersChart.getByText("100%", { exact: true })).toBeVisible();
   await page.screenshot({ path: "test-results/stats-global-desktop.png", fullPage: true });
-  await expect(page.getByRole("link", { name: "Alice", exact: true })).toBeVisible();
+  await expect(page.getByRole("table", { name: "Mapped player statistics", exact: true }).getByRole("link", { name: "Alice", exact: true })).toBeVisible();
   await page.goto("/stats?playersSort=wins&playersDirection=asc");
   const dateHeading = page.getByRole("columnheader", { name: /Date \(UTC\)/ });
   await dateHeading.getByRole("link").focus(); await page.keyboard.press("Enter");
