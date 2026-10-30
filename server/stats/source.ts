@@ -8,10 +8,12 @@ import { completionTime, statsId } from "./model";
 import { inferQuestionMaximum } from "./metrics";
 import { ALLOWED_MEDIA_EXTENSIONS } from "@/server/rooms/validation";
 import { stableJson } from "@/lib/stats/value";
+import { legacyOnePointAwards, sourceQuestions } from "./source-layouts";
 
 export type SourceDocument = { id: string; data: Record<string, unknown> };
 export type SourceRound = SourceDocument & {
   questions: SourceDocument[];
+  prompts?: SourceDocument[];
   answers: SourceDocument[];
   images: SourceDocument[];
   teamAnswers: Record<string, { metadata: Record<string, unknown> | null; answers: SourceDocument[] }>;
@@ -86,13 +88,15 @@ export async function readEndedRoom(db: Firestore, gameId: string): Promise<Room
       scores: (await tx.get(team.ref.collection("scores"))).docs.map((score) => ({ id: score.id, data: score.data() })),
     })));
     const sourceRounds = await Promise.all(rounds.docs.map(async (round) => {
-      const [questions, answers, images] = await Promise.all([tx.get(round.ref.collection("questions")), tx.get(round.ref.collection("answers")), tx.get(round.ref.collection("images"))]);
+      const [questions, answers, images, prompts] = await Promise.all([tx.get(round.ref.collection("questions")), tx.get(round.ref.collection("answers")), tx.get(round.ref.collection("images")),
+        round.data().type === "image" ? tx.get(round.ref.collection("prompts")) : null]);
       const teamAnswers = await Promise.all(teams.docs.map(async (team) => {
         const ref = round.ref.collection("teamAnswers").doc(team.id);
         const [metadata, answers] = await Promise.all([tx.get(ref), tx.get(ref.collection("answers"))]);
         return [team.id, { metadata: metadata.data() ?? null, answers: answers.docs.map((answer) => ({ id: answer.id, data: answer.data() })) }] as const;
       }));
       return { id: round.id, data: round.data(), questions: questions.docs.map((doc) => ({ id: doc.id, data: doc.data() })),
+        prompts: prompts?.docs.map((doc) => ({ id: doc.id, data: doc.data() })),
         answers: answers.docs.map((doc) => ({ id: doc.id, data: doc.data() })), images: images.docs.map((doc) => ({ id: doc.id, data: doc.data() })),
         teamAnswers: Object.fromEntries(teamAnswers) };
     }));
@@ -114,7 +118,7 @@ function normalizeSource(source: RoomSource, snapshotId: string): StatsSnapshot 
     assets[id] = { storagePath: path, contentType: text(media.contentType, "media content type") };
     return id;
   };
-  const stages = (data: Record<string, unknown> | undefined): StatsStage[] => {
+  const stages = (data: Record<string, unknown> | undefined, field: "prompt" | "answer" = "answer"): StatsStage[] => {
     if (!data) return [];
     if (data.stages !== null && data.stages !== undefined) {
       if (!Array.isArray(data.stages)) malformed("stages");
@@ -123,7 +127,7 @@ function normalizeSource(source: RoomSource, snapshotId: string): StatsSnapshot 
         return { text: text(stage.text, "stage text"), assetId: asset(stage.media) };
       });
     }
-    const stage = { text: text(data.text ?? data.answer, "answer/prompt text"), assetId: asset(data.media) };
+    const stage = { text: text(data.text ?? data[field], "answer/prompt text"), assetId: asset(data.media) };
     return stage.text !== null || stage.assetId !== null ? [stage] : [];
   };
   const appearanceId = (uid: string) => createHash("sha256").update(JSON.stringify([source.room.id, uid])).digest("hex");
@@ -150,7 +154,13 @@ function normalizeSource(source: RoomSource, snapshotId: string): StatsSnapshot 
     const gradingIncomplete = required === true || teamGrading.includes(false) ? true
       : required === false && teamGrading.every((graded) => graded === true) ? false : null;
     const imageIds = new Map(round.images.map((image) => [image.id, asset(image.data.media)]));
-    const questions = ordered(round.questions).map((question, order) => {
+    const questionCount = numeric(round.data.questionCount, "question count");
+    if (questionCount !== null && (!Number.isSafeInteger(questionCount) || questionCount < 0)) malformed("question count");
+    const teamScores = Object.fromEntries(source.teams.map((team) => [team.id, numeric(team.scores.find((score) => score.id === round.id)?.data.score, "round score")]));
+    const questionDocuments = ordered(sourceQuestions(round));
+    const legacyAwards = Object.fromEntries(teams.map((team) => [team.id,
+      legacyOnePointAwards(round, questionDocuments, scoring, team.id, teamScores[team.id], questionCount)]));
+    const questions = questionDocuments.map((question, order) => {
       const accepted = round.answers.find((answer) => answer.id === question.id)?.data;
       const imageId = scoring.type === "image" ? text(accepted?.answer, "accepted image ID") : null;
       const answerStages = scoring.type === "image" ? imageId && imageIds.get(imageId) ? [{ text: null, assetId: imageIds.get(imageId)! }] : [] : stages(accepted);
@@ -163,7 +173,8 @@ function normalizeSource(source: RoomSource, snapshotId: string): StatsSnapshot 
           if (scoring.type === "multi-step") answer = raw.attempts === undefined ? null : recordedAnswer(raw, scoring.type).answer;
           else answer = text(raw.answer, "submitted answer");
         }
-        const awardedPoints = numeric(raw?.awardedPoints, "awarded points");
+        const legacyAward = legacyAwards[team.id].get(question.id);
+        const awardedPoints = numeric(raw?.awardedPoints, "awarded points") ?? legacyAward ?? null;
         const perceptionScore = numeric(raw?.perceptionScore, "perception score");
         if (perceptionScore !== null && (perceptionScore < 0 || perceptionScore > 10)) malformed("perception score");
         if (scoring.type === "color" && answer !== null && answer !== "" && !HEX_COLOR.test(answer)) malformed("submitted color");
@@ -172,6 +183,7 @@ function normalizeSource(source: RoomSource, snapshotId: string): StatsSnapshot 
         if (scoring.type === "color" && scoring.scoring?.mode === "threshold" && perceptionScore !== null) correctness = perceptionScore >= scoring.scoring.threshold;
         if (scoring.type === "color" && scoring.scoring?.mode === "closest") correctness = null;
         answers[team.id] = { answer, attempts, correctness, awardedPoints, perceptionScore,
+          ...(legacyAward !== undefined ? { awardedPointsProvenance: "legacy-correctness" as const } : {}),
           assetId: scoring.type === "image" && answer !== null ? imageIds.get(answer) ?? null : null };
       }
       const colorValue = (value: unknown, label: string) => {
@@ -179,15 +191,13 @@ function normalizeSource(source: RoomSource, snapshotId: string): StatsSnapshot 
         if (color !== null && !HEX_COLOR.test(color)) malformed(label);
         return color;
       };
-      return { id: question.id, order, prompt: stages(question.data), acceptedAnswer: answerStages, answerHint: text(accepted?.hint, "accepted answer hint"), answers,
+      return { id: question.id, order, prompt: stages(question.data, "prompt"), acceptedAnswer: answerStages, answerHint: text(accepted?.hint, "accepted answer hint"), answers,
         color: scoring.type === "color" ? { initialColor: colorValue(question.data.initialColor, "initial color"),
           targetColor: colorValue(accepted?.answer, "target color"), maskAssetId: asset(question.data.mask),
           regionIds: question.data.regionIds === undefined ? null : parseRegionIds(question.data.regionIds) } : null };
     });
-    const questionCount = numeric(round.data.questionCount, "question count");
-    if (questionCount !== null && (!Number.isSafeInteger(questionCount) || questionCount < 0)) malformed("question count");
     return { id: round.id, order: roundOrder, title: text(round.data.title, "round title") ?? "", scoring, gradingIncomplete, questionCount, questions,
-      teamScores: Object.fromEntries(source.teams.map((team) => [team.id, numeric(team.scores.find((score) => score.id === round.id)?.data.score, "round score")])) };
+      teamScores };
   });
   const completed = source.room.data.completedAt;
   const completedAt = completed === null || completed === undefined ? null : typeof completed === "string" ? completed

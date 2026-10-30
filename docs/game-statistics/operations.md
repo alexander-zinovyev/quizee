@@ -47,6 +47,10 @@ The maintainer will add past games manually after implementation. There is no bu
 
 Opening an existing review preserves its mappings, overrides, metadata, person IDs, and snapshot selection. An unpublished review can be explicitly refreshed. A published snapshot cannot be refreshed from current room data. Unsupported or malformed source data produces a clear error without creating a selected review; no scores, identities, or missing history are invented.
 
+Older rooms are supported without migrating their data: image rounds can store scored questions in `prompts`, and flat `prompt` / `answer` text is preserved alongside media. The pre-stages boolean grader's one-point awards are recovered only for ordinary text/image rounds with complete question, accepted-answer and frozen-answer sets, finalized grading, and a matching recorded team-round score. Recovered awards carry private `legacy-correctness` provenance. Explicit point awards are always preserved; modern, mixed, wager, incomplete or unreconciled records do not receive inferred awards and retain unavailable coverage. Image-only distractors are not scored questions. Conflicting `questions` and `prompts` collections are refused.
+
+After deploying reader compatibility changes, use **Refresh saved room results** on an affected unpublished review to capture recovered detail. Valid roster mappings, maxima and reviewed metadata are preserved. Review the new completeness and reconciliation results before publishing. Existing selected snapshots do not change automatically, and published baselines remain frozen.
+
 ## Rebuild and integrity
 
 Rebuild a game only from its selected snapshot and current review:

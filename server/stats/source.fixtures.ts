@@ -51,10 +51,35 @@ export function sourceFixtureDocuments(source: RoomSource) {
     ...source.teams.flatMap(({ id, data, scores }) => [{ path: `${root}/teams/${id}`, data },
       ...scores.map((score) => ({ path: `${root}/teams/${id}/scores/${score.id}`, data: score.data }))]),
     ...source.rounds.flatMap((round) => [{ path: `${root}/rounds/${round.id}`, data: round.data },
-      ...["questions", "answers", "images"].flatMap((collection) => round[collection as "questions" | "answers" | "images"].map(({ id, data }) => ({ path: `${root}/rounds/${round.id}/${collection}/${id}`, data }))),
+      ...(["questions", "prompts", "answers", "images"] as const).flatMap((collection) => (round[collection] ?? []).map(({ id, data }) => ({ path: `${root}/rounds/${round.id}/${collection}/${id}`, data }))),
       ...Object.entries(round.teamAnswers).flatMap(([teamId, { metadata, answers }]) => [
         { path: `${root}/rounds/${round.id}/teamAnswers/${teamId}`, data: metadata! },
         ...answers.map(({ id, data }) => ({ path: `${root}/rounds/${round.id}/teamAnswers/${teamId}/answers/${id}`, data })),
       ])]),
   ];
+}
+
+/** Synthetic pre-stages/pre-awardedPoints layout, including image-only distractors. */
+export function legacyRoomSourceFixture(gameId = "legacy-demo"): RoomSource {
+  const source = roomSourceFixture(2, 3, gameId);
+  for (const round of source.rounds) {
+    round.questions.forEach((question, index) => { question.data = { order: index, prompt: `Legacy prompt ${index}`, media: null }; });
+    if (round.data.type === "image") {
+      round.prompts = round.questions;
+      round.questions = [];
+      round.images.push({ id: "distractor", data: { media: { storagePath: `rooms/${gameId}/media/distractor.png` } } });
+      round.data.questionCount = 4;
+    } else {
+      round.questions.at(-1)!.data = { order: 2, prompt: null, media: { storagePath: `rooms/${gameId}/media/media-only.png` } };
+      round.answers.forEach((answer, index) => { answer.data = { answer: `Legacy answer ${index}` }; });
+    }
+    for (const [teamId, frozen] of Object.entries(round.teamAnswers)) {
+      frozen.answers.forEach((answer) => {
+        const correct = teamId === "red";
+        answer.data = { answer: round.data.type === "image" && !correct ? "distractor" : answer.data.answer,
+          correct, locked: true, user: `${teamId}-uid-0` };
+      });
+    }
+  }
+  return source;
 }

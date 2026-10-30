@@ -1,11 +1,70 @@
 import assert from "node:assert/strict";
 import { initializeApp, deleteApp } from "firebase-admin/app";
-import { getFirestore, type Transaction } from "firebase-admin/firestore";
+import { getFirestore, type Firestore, type Transaction } from "firebase-admin/firestore";
 import { StatsError } from "./error";
 import { statsPaths, STATS_ROOT } from "./model";
 import { normalizeRoomSource, readEndedRoom } from "./source";
-import { roomSourceFixture, sourceFixtureDocuments } from "./source.fixtures";
+import { legacyRoomSourceFixture, roomSourceFixture, sourceFixtureDocuments } from "./source.fixtures";
 import { loadSnapshot, prepareSnapshot, saveSnapshot, snapshotDocuments } from "./snapshots";
+
+async function verifyLegacyRefresh(db: Firestore) {
+  const source = legacyRoomSourceFixture();
+  const documents = sourceFixtureDocuments(source);
+  const game = db.doc(statsPaths.game(source.room.id));
+  const person = db.doc(statsPaths.person("legacy-person"));
+  const seed = async (legacyVisible: boolean) => {
+    const batch = db.batch();
+    for (const document of documents) {
+      if (!legacyVisible && document.path.includes("/prompts/")) continue;
+      const data = { ...document.data };
+      if (!legacyVisible && document.path.includes("/questions/")) delete data.prompt;
+      batch.set(db.doc(document.path), data);
+    }
+    await batch.commit();
+  };
+  const read = (snapshotId: string) => db.runTransaction((tx) => loadSnapshot(tx, db, source.room.id, snapshotId), { readOnly: true });
+  try {
+    // Represent an existing review copied before the reader could see legacy fields.
+    await seed(false);
+    const first = await prepareSnapshot(db, source.room.id, "stats-snapshot-admin", 0);
+    const old = await read(first.snapshotId);
+    assert.equal(old.rounds[1].questions.length, 0);
+    const appearance = old.appearances[0];
+    await person.set({ version: 1, mappingCount: 1 });
+    const mapping = { personId: person.id, duplicateOf: null };
+    await game.collection("mappings").doc(appearance.id).set(mapping);
+    const override = { roundId: "round-1", questionId: "question-1", points: 2 };
+    await game.collection("questionOverrides").doc("legacy-maximum").set(override);
+    const review = { hostPersonId: "legacy-host", completedAt: "2026-02-06T20:00:00.000Z", packLabel: "Reviewed pack" };
+    await game.update({ review });
+    await seed(true);
+    const before = await db.getAll(...documents.map(({ path }) => db.doc(path)));
+    const refreshed = await prepareSnapshot(db, source.room.id, "stats-snapshot-admin", 1);
+    const saved = await read(refreshed.snapshotId);
+    assert.notEqual(refreshed.digest, first.digest);
+    assert.equal(refreshed.version, 2);
+    assert.deepEqual(saved.rounds.map((round) => round.questions.length), [3, 3]);
+    assert.equal(saved.rounds[1].questions[0].prompt[0].text, "Legacy prompt 0");
+    assert.equal(saved.rounds[1].questions[0].answers.red.awardedPoints, 1);
+    assert.equal(saved.rounds[1].questions[0].answers.blue.awardedPoints, 0);
+    assert.equal(saved.rounds[1].questions[0].answers.red.awardedPointsProvenance, "legacy-correctness");
+    assert.deepEqual((await game.get()).data()!.review, review);
+    assert.deepEqual((await game.collection("mappings").doc(appearance.id).get()).data(), mapping);
+    assert.deepEqual((await game.collection("questionOverrides").doc("legacy-maximum").get()).data(), override);
+    assert.equal((await person.get()).data()!.mappingCount, 1);
+    assert.deepEqual(await read(first.snapshotId), old, "Refresh must not rewrite the old snapshot.");
+    const after = await db.getAll(...documents.map(({ path }) => db.doc(path)));
+    assert.deepEqual(after.map((doc) => doc.updateTime), before.map((doc) => doc.updateTime), "Snapshotting must never write source rooms.");
+    await game.update({ published: true });
+    await assert.rejects(prepareSnapshot(db, source.room.id, "stats-snapshot-admin", 2), { code: "already-published" });
+    assert.deepEqual(await read(refreshed.snapshotId), saved);
+    console.log("Legacy snapshot refresh verified: image prompts, persisted one-point provenance, preserved review decisions, immutable source and published baseline.");
+  } finally {
+    await db.recursiveDelete(db.doc(`rooms/${source.room.id}`));
+    await db.recursiveDelete(game);
+    await person.delete();
+  }
+}
 
 async function main() {
   if (!process.env.FIRESTORE_EMULATOR_HOST) throw new Error("Snapshot integration tests require the Firestore emulator.");
@@ -22,6 +81,7 @@ async function main() {
       await batch.commit();
     }
     await admin.set({ admin: true });
+    await verifyLegacyRefresh(db);
     const rejectsCode = (promise: Promise<unknown>, code: string) => assert.rejects(promise, (error: unknown) => error instanceof StatsError && error.code === code);
     await rejectsCode(prepareSnapshot(db, "demo", "not-admin", 0), "forbidden");
     await room.update({ state: "playing" });

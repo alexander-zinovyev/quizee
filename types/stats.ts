@@ -23,6 +23,8 @@ export type StatsRecordedAnswer = {
   attempts: Array<{ answer: string; step: number }>;
   correctness: boolean | null;
   awardedPoints: number | null;
+  /** Present only when a private snapshot recovered the pre-stages boolean grading layout. */
+  awardedPointsProvenance?: "legacy-correctness";
   perceptionScore: number | null;
   assetId: string | null;
 };
