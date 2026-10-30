@@ -267,7 +267,7 @@ Exchange the admin ID token for an HTTP-only secure session cookie named separat
 
 | Route | Required content and behavior |
 | --- | --- |
-| `/stats` | Games newest first, winner/shared first, scores, host, pack, mapping/provisional labels, expandable rosters; player table with counts and rates; independent URL sort/pagination state; empty states; top-score bars for games on the current page. |
+| `/stats` | Games newest first, winner/shared first, scores, host, pack, mapping/provisional labels, expandable rosters; player table with counts and rates; independent URL sort/pagination state; empty states; player win-rate comparison bars for the current player page, with win/game counts and profile links. |
 | `/stats/games/[gameId]` | Published snapshot plus current mappings/maxima and game summary, final/round scores, available-point shares, comparison cards, interactive round-score lines, question/answer matrix, reconciliation, and source completeness. Load question detail by round/page. |
 | `/stats/players/[personId]` | Public name/appearance aliases, games and known/provisional outcomes, team participation points and coverage, result breakdown chart, team-score bars for the current history page, history sorts, supported supplementary metrics. Link to host profile when hosted history exists. |
 | `/stats/hosts/[personId]` | Hosted history, weighted points percentage labeled “Points teams earned,” median team percentage labeled “Typical team score,” average winner's points, scoring bars for the current history page, required sorts. Explain weighting, the middle-result calculation, and exclusions alongside the metrics. Link to player profile when played history exists. |

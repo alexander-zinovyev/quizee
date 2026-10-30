@@ -1,7 +1,6 @@
-import type { PublicStatsGame } from "@/types/stats";
-import type { listPublicHistory } from "@/server/stats/public-queries";
+import type { listPublicHistory, listPublicPlayers } from "@/server/stats/public-queries";
 
-export type ChartBar = { id: string; label: string; value: number | null; href?: string };
+export type ChartBar = { id: string; label: string; value: number | null; href?: string; detail?: string };
 
 export function scoreRange(values: Array<number | null>, percentage = false) {
   const known = values.filter((value): value is number => value !== null);
@@ -9,9 +8,9 @@ export function scoreRange(values: Array<number | null>, percentage = false) {
   return { minimum, maximum, span: maximum - minimum || 1 };
 }
 
-export function gameScoreBars(games: PublicStatsGame[]): ChartBar[] {
-  return games.map((game) => ({ id: game.id, label: game.title || game.id, href: `/stats/games/${game.id}`,
-    value: game.teams.length && game.teams.every((team) => team.score !== null) ? Math.max(...game.teams.map((team) => team.score!)) : null }));
+export function playerWinRateBars(players: Awaited<ReturnType<typeof listPublicPlayers>>["items"]): ChartBar[] {
+  return players.map((person) => ({ id: person.id, label: person.displayName, href: `/stats/players/${person.id}`,
+    value: person.summary.winRate, detail: `${person.summary.wins} win${person.summary.wins === 1 ? "" : "s"} · ${person.summary.gamesPlayed} game${person.summary.gamesPlayed === 1 ? "" : "s"} played${person.summary.provisionalGames > 0 ? ` · ${person.summary.provisionalGames} provisional game${person.summary.provisionalGames === 1 ? "" : "s"}` : ""}` }));
 }
 
 export function historyScoreBars(history: Awaited<ReturnType<typeof listPublicHistory>>, role: "player" | "host"): ChartBar[] {
