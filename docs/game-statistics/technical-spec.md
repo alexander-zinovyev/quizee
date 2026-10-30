@@ -226,18 +226,18 @@ Percentage calculations use paired earned/available inputs from the same questio
 | Host median team percentage | Median of eligible team-per-game percentages using the same difficulty eligibility rules. |
 | Host average winning score | Mean recorded score of unique winning teams; report the number of games contributing. Tied-first games remain visible but do not supply a unique winning score. |
 | Closest round | Smallest spread between highest and lowest known team round scores, for rounds with complete team score coverage. |
-| Largest score swing | Largest absolute change in a pair of teams' cumulative score difference during one round; identify the round and pair. |
+| Biggest round gap | Largest absolute difference between two teams' recorded scores in one round; identify the round and pair. |
 | Highest/lowest round-team result | Maximum/minimum known round score, preserving negatives and ties. |
 | Frequent teammates/opponents | Count shared published games with other mapped people, deduplicated per person/game. Expose mapped-roster coverage. |
 | Best/worst game | Extremes by known team total and, separately, eligible point percentage. Do not compare raw score and percentage as the same metric. |
 
-Closest-color results remain in raw scores and team/player participation measures. Their ordinary point share is labeled as a share of a competitive pool and is not reused as difficulty evidence.
+Closest-color results remain in raw scores and team/player participation measures. Pool-share calculations remain separate internally and are not presented in the statistics UI or reused as difficulty evidence. These rounds retain recorded points and answers, without percentage or pool-share panels.
 
 Every percentage response carries numerator, denominator, eligible question/game/team counts, total relevant counts, and excluded reasons. Display the weighted formula in metric help. No cross-host comparative claim is made when there is no positive comparable denominator. Provisional inputs are included only with explicit provisional coverage labels.
 
 For host difficulty aggregates and median comparisons, a game's included non-closest question set must have verified maxima and recorded earned points for every participating team. Exclude a game with unknown maxima, missing awards, or unexplained scoring differences from that comparison population; its detail page may still show a labeled partial percentage. A fully recorded but unfinished grading state can contribute provisionally after admin publication, with that status counted explicitly.
 
-Player round-performance breakdowns group by supported round type using matching earned/available inputs and coverage stored in game contributions. Keep closest-mode pool results separate from comparable percentages. Do not group unrelated questions into a category merely because round titles match.
+Player round-performance breakdowns group by supported round type using matching earned/available inputs and coverage stored in game contributions. Show only types with usable comparable percentages; keep closest-mode pool results separate internally. Do not group unrelated questions into a category merely because round titles match.
 
 ### Answers and reconciliation
 
@@ -267,10 +267,10 @@ Exchange the admin ID token for an HTTP-only secure session cookie named separat
 
 | Route | Required content and behavior |
 | --- | --- |
-| `/stats` | Games newest first, winner/shared first, scores, host, pack, mapping/provisional labels, expandable rosters; player table with counts and rates; independent URL sort/pagination state; empty states. |
-| `/stats/games/[gameId]` | Published snapshot plus current mappings/maxima and game summary, final/round scores, available-point shares, score comparisons, question/answer matrix, reconciliation, and source completeness. Load question detail by round/page. |
-| `/stats/players/[personId]` | Public name/appearance aliases, games and known/provisional outcomes, team participation points and coverage, history sorts, supported supplementary metrics. Link to host profile when hosted history exists. |
-| `/stats/hosts/[personId]` | Hosted history, pooled difficulty proxy and coverage, median team percentages, average winning score, required sorts. Link to player profile when played history exists. |
+| `/stats` | Games newest first, winner/shared first, scores, host, pack, mapping/provisional labels, expandable rosters; player table with counts and rates; independent URL sort/pagination state; empty states; top-score bars for games on the current page. |
+| `/stats/games/[gameId]` | Published snapshot plus current mappings/maxima and game summary, final/round scores, available-point shares, comparison cards, interactive round-score lines, question/answer matrix, reconciliation, and source completeness. Load question detail by round/page. |
+| `/stats/players/[personId]` | Public name/appearance aliases, games and known/provisional outcomes, team participation points and coverage, result breakdown chart, team-score bars for the current history page, history sorts, supported supplementary metrics. Link to host profile when hosted history exists. |
+| `/stats/hosts/[personId]` | Hosted history, weighted points percentage labeled “Points teams earned,” median team percentage labeled “Typical team score,” average winner's points, scoring bars for the current history page, required sorts. Explain weighting, the middle-result calculation, and exclusions alongside the metrics. Link to player profile when played history exists. |
 
 Games with `published == false` return `404` from all public game, round, answer, and media endpoints, even if the caller knows a valid snapshot ID. Global and person queries include only published games/contributions. Public reads use the selected saved snapshot and never re-evaluate scores or status from the current room. Partial or unselected snapshot copies are not publicly addressable.
 
@@ -318,6 +318,8 @@ Use indexed `playerGames`/`hostedGames` subcollections for profile histories. Ad
 Resolve text, image, audio/video, and color assets from the published snapshot's asset allowlist. Reuse existing safe rendering and SVG/color utilities; do not expose unrestricted bucket access or reimplement rendering branches. Existing source Storage URLs must not be assumed to be publicly accessible. Missing historical media gets an unavailable state, not a broken whole page. Signed URL lifetime or server-proxy cache policy must respect publication visibility.
 
 Use semantic tables, `aria-sort`, keyboard-operable expansion, visible text values for charts, and reduced-motion support. On mobile, keep roster and answer sections expandable with readable labels and deliberate horizontal scrolling for the team/question matrix. Public pages use explicit uncached/dynamic reads initially so a successful correction is not masked by a stale server or CDN cache.
+
+Charts use data already loaded by the page, without additional Firestore reads. Paginated charts explicitly describe their current-page scope and follow the corresponding table order. Signed scores retain a zero baseline; missing scores are unavailable, not zero. Round lines break at missing values, offer keyboard-operable points and team toggles, and include a text table. Bar charts initially show six entries with an explicit expansion control.
 
 ## 8. Admin review workflow
 
