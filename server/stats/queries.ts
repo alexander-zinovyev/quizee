@@ -127,5 +127,16 @@ export function statisticsIndexes() {
   indexes.push({ collectionGroup: "audit", queryScope: "COLLECTION", fields: [
     { fieldPath: "at", order: "DESCENDING" }, { fieldPath: "__name__", order: "ASCENDING" },
   ] });
-  return { indexes, fieldOverrides: [] };
+  return { indexes, fieldOverrides: [
+    { collectionGroup: "mappings", fieldPath: "personId", indexes: [
+      { order: "ASCENDING", queryScope: "COLLECTION" }, { order: "DESCENDING", queryScope: "COLLECTION" }, { order: "ASCENDING", queryScope: "COLLECTION_GROUP" },
+    ] },
+    { collectionGroup: "snapshots", fieldPath: "snapshotAt", indexes: [
+      { order: "ASCENDING", queryScope: "COLLECTION" }, { order: "DESCENDING", queryScope: "COLLECTION" }, { order: "ASCENDING", queryScope: "COLLECTION_GROUP" },
+    ] },
+    ...Object.entries({ games: ["summary.metrics"], people: ["player.counters", "host.counters", "notes", "helperAliases", "creationFingerprint"],
+      playerGames: ["byRoundType", "percentage", "poolPercentage", "roster", "rosterCoverage", "aliases"],
+      hostedGames: ["difficulty", "teamPercentages"], appearances: ["sourceUid"], snapshots: ["sourceMembers"],
+    }).flatMap(([collectionGroup, fields]) => fields.map((fieldPath) => ({ collectionGroup, fieldPath, indexes: [] }))),
+  ] };
 }

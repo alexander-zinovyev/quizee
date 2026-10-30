@@ -51,6 +51,8 @@ export type StatsGameRecord = {
   version: number;
   published: boolean;
   publishedAt: string | null;
+  reviewStartedAt?: string;
+  reviewDurationMs?: number;
   queueTags: string[];
   /** Host/metadata fields only. Mappings and overrides use their own child documents. */
   review: Pick<StatsReview, "hostPersonId" | "completedAt" | "packLabel">;

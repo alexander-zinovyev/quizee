@@ -69,11 +69,25 @@ test("review, partial identity mapping, provisional publication, public views, a
   const publicGame = await publicResponse.json(); expect(JSON.stringify(publicGame)).not.toContain("PRIVATE");
   await page.goto("/stats"); await expect(page.getByRole("heading", { name: "Game statistics", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Alice", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "View roster", exact: true }).click();
+  await page.goto("/stats?playersSort=wins&playersDirection=asc");
+  const dateHeading = page.getByRole("columnheader", { name: /Date \(UTC\)/ });
+  await dateHeading.getByRole("link").focus(); await page.keyboard.press("Enter");
+  await expect(dateHeading).toHaveAttribute("aria-sort", "ascending");
+  expect(new URL(page.url()).searchParams.get("playersSort")).toBe("wins");
+  const rosterButton = page.getByRole("button", { name: "View roster", exact: true });
+  await rosterButton.focus(); await page.keyboard.press("Enter");
+  await expect(page.getByRole("button", { name: "Hide roster", exact: true })).toHaveAttribute("aria-expanded", "true");
   await expect(page.getByText("red player 1 (unresolved)", { exact: false })).toBeVisible();
   await page.goto(`/stats/games/${gameId}`); await expect(page.getByText(/Grading was incomplete when these scores were published/)).toBeVisible();
   await page.getByRole("button", { name: "Show questions and answers", exact: true }).first().click();
   await expect(page.getByText("Correctness unavailable", { exact: true }).first()).toBeVisible();
+  for (let index = 1; index < 4; index++) {
+    const round = page.getByRole("article").filter({ has: page.getByRole("heading", { name: `Round ${index + 1}`, exact: true }) });
+    await round.getByRole("button", { name: "Show questions and answers", exact: true }).click();
+    await expect(round.getByRole("table")).toBeVisible();
+    if (index === 1) await expect(round.getByText("Media unavailable", { exact: true }).first()).toBeVisible();
+  }
+  await expect(page.getByRole("button", { name: "Hide questions", exact: true })).toHaveCount(1);
   await page.screenshot({ path: "test-results/stats-game-desktop.png" });
   await db.doc(`rooms/${gameId}/teams/red`).update({ scoreTotal: 99999 });
   await page.reload(); await expect(page.getByText("99,999", { exact: false })).toHaveCount(0);
@@ -87,6 +101,8 @@ test("review, partial identity mapping, provisional publication, public views, a
   expect(corrected.teams).toEqual(publicGame.teams);
   await page.goto(`/stats/players/${aliceId}`); await expect(page.getByRole("heading", { name: "Alice", exact: true })).toBeVisible();
   await expect(page.getByText("PRIVATE", { exact: false })).toHaveCount(0);
+  await page.goto(`/stats/hosts/${publicGame.host.personId}`);
+  await expect(page.getByRole("heading", { name: "Quizmaster", exact: true })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 }); await page.goto(`/stats/games/${gameId}`);
   await expect(page.getByRole("heading", { name: "Final results", exact: true })).toBeVisible();
   expect(await page.locator("body").evaluate((element) => element.scrollWidth <= window.innerWidth)).toBeTruthy();

@@ -6,6 +6,7 @@ import { StatsError } from "./error";
 import { statsPaths, type StatsGameRecord } from "./model";
 import { gameQueueTags, projectGame } from "./projection";
 import { normalizeRoomSource, readEndedRoom } from "./source";
+import { statsOperation } from "./telemetry";
 
 export type SnapshotDocument = { path: string; data: FirebaseFirestore.DocumentData };
 
@@ -37,10 +38,17 @@ export async function saveSnapshot(db: Firestore, snapshot: StatsSnapshot): Prom
     throw new StatsError("snapshot-document-too-large", "A source document is too large to snapshot safely.", 422, { path: document.path });
   }
   let chunk: SnapshotDocument[] = [], bytes = 0;
+  const root = db.doc(documents[0].path);
+  let first = true;
   const commit = async () => {
-    const batch = db.batch();
-    chunk.forEach(({ path, data }) => batch.create(db.doc(path), data));
-    await batch.commit();
+    await db.runTransaction(async (tx) => {
+      if (!first) {
+        const metadata = await tx.get(root);
+        if (!metadata.exists || metadata.data()?.deleting === true) throw new StatsError("snapshot-not-ready", "The unselected snapshot was claimed for cleanup.", 409);
+      }
+      chunk.forEach(({ path, data }) => tx.create(db.doc(path), data));
+    });
+    first = false;
     chunk = []; bytes = 0;
   };
   for (const document of documents) {
@@ -49,14 +57,18 @@ export async function saveSnapshot(db: Firestore, snapshot: StatsSnapshot): Prom
     chunk.push(document); bytes += size;
   }
   if (chunk.length) await commit();
-  await db.doc(documents[0].path).update({ ready: true });
+  await db.runTransaction(async (tx) => {
+    const metadata = await tx.get(root);
+    if (!metadata.exists || metadata.data()?.deleting === true) throw new StatsError("snapshot-not-ready", "The unselected snapshot was claimed for cleanup.", 409);
+    tx.update(root, { ready: true });
+  });
 }
 
 /** All dependencies use the caller's consistent read snapshot. Never consults rooms. */
 export async function loadSnapshot(tx: Transaction, db: Firestore, gameId: string, snapshotId: string): Promise<StatsSnapshot> {
   const ref = db.doc(statsPaths.snapshot(gameId, snapshotId));
   const metadata = await tx.get(ref);
-  if (metadata.data()?.ready !== true) throw new StatsError("snapshot-not-ready", "The saved snapshot is unavailable or incomplete.", 409);
+  if (metadata.data()?.ready !== true || metadata.data()?.deleting === true) throw new StatsError("snapshot-not-ready", "The saved snapshot is unavailable or incomplete.", 409);
   const [teams, appearances, assets, rounds] = await Promise.all([
     tx.get(ref.collection("teams")), tx.get(ref.collection("appearances")), tx.get(ref.collection("assets")), tx.get(ref.collection("rounds")),
   ]);
@@ -93,7 +105,11 @@ function expectedGame(data: StatsGameRecord | undefined, expectedVersion: number
 }
 
 /** A refresh selects a new immutable copy, preserving review records only when their roster is valid. */
-export async function prepareSnapshot(db: Firestore, gameId: string, actorId: string, expectedVersion: number) {
+export function prepareSnapshot(db: Firestore, gameId: string, actorId: string, expectedVersion: number) {
+  return statsOperation("snapshot", { actorId, gameId }, () => prepareSnapshotCommand(db, gameId, actorId, expectedVersion));
+}
+
+async function prepareSnapshotCommand(db: Firestore, gameId: string, actorId: string, expectedVersion: number) {
   const ref = db.doc(statsPaths.game(gameId));
   await db.runTransaction(async (tx) => {
     await assertStatsAdmin(tx, db, actorId);
@@ -107,6 +123,8 @@ export async function prepareSnapshot(db: Firestore, gameId: string, actorId: st
     const game = await tx.get(ref);
     const previous = game.data() as StatsGameRecord | undefined;
     expectedGame(previous, expectedVersion);
+    const metadata = await tx.get(db.doc(statsPaths.snapshot(gameId, snapshot.id)));
+    if (metadata.data()?.ready !== true || metadata.data()?.deleting === true) throw new StatsError("snapshot-not-ready", "The copied snapshot is no longer available for selection.", 409);
     const [mappings, overrides] = await Promise.all([tx.get(ref.collection("mappings")), tx.get(ref.collection("questionOverrides"))]);
     const oldSnapshot = previous ? await loadSnapshot(tx, db, gameId, previous.snapshotId) : null;
     const changed = new Set(oldSnapshot?.appearances.filter((old) => !snapshot.appearances.some((next) =>
@@ -137,6 +155,7 @@ export async function prepareSnapshot(db: Firestore, gameId: string, actorId: st
       mapping.data().personId && !reset.includes(mapping)).map((mapping) => [mapping.id, { personId: mapping.data().personId, duplicateOf: mapping.data().duplicateOf ?? null }])) };
     const { summary } = projectGame(snapshot, completeReview, expectedVersion + 1);
     tx.set(ref, { schemaVersion: 1, snapshotId: snapshot.id, version: expectedVersion + 1, published: false, publishedAt: null, review,
+      reviewStartedAt: previous?.reviewStartedAt ?? oldSnapshot?.snapshotAt ?? snapshot.snapshotAt,
       summary, queueTags: gameQueueTags(snapshot, completeReview, summary, false) } satisfies StatsGameRecord);
     reset.forEach((mapping) => {
       if (!snapshot.appearances.some((appearance) => appearance.id === mapping.id)) tx.delete(mapping.ref);

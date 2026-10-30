@@ -7,17 +7,23 @@ import { statsId } from "./model";
 import type { StatsQueryOptions } from "./queries";
 
 export async function statsResponse(work: () => Promise<Response>): Promise<Response> {
+  const correlationId = randomUUID(), started = performance.now();
+  let response: Response, code: string | undefined;
   try {
-    const response = await work();
-    response.headers.set("Cache-Control", "no-store");
-    return response;
+    response = await work();
   } catch (error) {
-    if (error instanceof StatsError) return Response.json({ code: error.code, message: error.message,
-      ...(error.details === undefined ? {} : { details: error.details }) }, { status: error.status, headers: { "Cache-Control": "no-store" } });
-    const correlationId = randomUUID();
-    console.error("[stats] Request failed", { correlationId, errorType: error instanceof Error ? error.name : "unknown" });
-    return Response.json({ code: "internal-error", message: "Unable to complete this request.", details: { correlationId } }, { status: 500, headers: { "Cache-Control": "no-store" } });
+    code = error instanceof StatsError ? error.code : "internal-error";
+    if (error instanceof StatsError) response = Response.json({ code, message: error.message,
+      ...(error.details === undefined ? {} : { details: error.details }) }, { status: error.status });
+    else {
+      const databaseCode = (error as { code?: unknown })?.code;
+      console.error(JSON.stringify({ event: "stats.request-failed", correlationId, errorType: error instanceof Error ? error.name : "unknown", databaseCode: typeof databaseCode === "number" || typeof databaseCode === "string" ? databaseCode : undefined }));
+      response = Response.json({ code, message: "Unable to complete this request.", details: { correlationId } }, { status: 500 });
+    }
   }
+  response.headers.set("Cache-Control", "no-store"); response.headers.set("X-Request-ID", correlationId);
+  console.info(JSON.stringify({ event: "stats.request", correlationId, status: response.status, code, elapsedMs: Math.round(performance.now() - started) }));
+  return response;
 }
 
 export async function statsJson(request: Request, allowed: string[]): Promise<Record<string, unknown>> {
