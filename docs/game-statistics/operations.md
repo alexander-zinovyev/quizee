@@ -6,6 +6,8 @@ The tools never write to live rooms. Historical games are added manually through
 
 ## Index verification
 
+Production Firestore changes are reviewed and applied manually by the maintainer. They are not part of the agent's implementation or PR work. The [index review](firestore-index-review.md) groups the changes by purpose and lists every composite index and single-field setting from the manifest.
+
 Run the read-only deployment diff first:
 
 ```sh
@@ -16,7 +18,7 @@ Exit 0 means all required composite and single-field configurations are ready. E
 
 The implementation requires 47 composite indexes and 18 field configurations. Query definitions and `firestore.indexes.json` are checked against one another in CI. Single-field collection-group indexes support mapping reconciliation and unselected-snapshot discovery. Large unqueried payload maps and private text fields are exempted to avoid indexing every nested metric or roster entry. Existing room/question/answer index settings are not changed.
 
-After reviewing the exact diff and authorizing deployment:
+If the maintainer chooses to use the reviewed helper to apply the changes manually, run it locally after reviewing the manifest and exact diff:
 
 ```sh
 npm run stats:indexes -- --project "$STATS_PROJECT_ID" --apply
@@ -112,7 +114,7 @@ The archive fixture uses snapshot headers and full relevant history rows to isol
 
 1. Review and merge the dependent draft PRs in order: foundation, snapshots, admin auth, publication, views, operations. Retarget each after its base merges. Do not squash later branches onto an unmerged base without preserving the earlier changes.
 2. Keep `QUIZEE_STATISTICS_PUBLIC_ENABLED` unset or `false`. Administrator routes remain available; public pages/APIs/media and homepage navigation remain unavailable. Deploy the rules and code without broadening room access.
-3. Review the index diff, authorize creation, and wait for read-only verification to exit 0. Verify every promised query shape against deployed indexes; emulator success alone is insufficient.
+3. The maintainer reviews and manually applies the production index configuration, then waits for read-only verification to exit 0. Verify every promised query shape against deployed indexes; emulator success alone is insufficient.
 4. Google login and first-admin bootstrap have been completed for the selected account. The maintainer can manually select historical ended rooms, create private snapshots, and review/publish them through `/stats/admin` after implementation. No import script or automatic historical processing is required. Do not publish synthetic emulator fixtures into the real project.
 5. Review a deliberately selected ended game, link only verified identities, and acknowledge incomplete grading if applicable. Validate publication and a mapping/maximum correction in an isolated preview environment using the real deployed indexes. Verify public game/player/host views keep the pinned totals after live room scores change. Do not modify real game scores solely to test rollout.
 6. Enable `QUIZEE_STATISTICS_PUBLIC_ENABLED=true` in the intended environment and redeploy. Check global/history sorting, private-data exclusion, media, mobile/keyboard access, and server logs. Choose production latency targets, retention cutoffs, analytics/log retention, and whether to enable scheduled full integrity scans based on the observed archive.
