@@ -1,5 +1,6 @@
 import { FieldPath, type Firestore } from "firebase-admin/firestore";
 import { statsId, statsPaths, STATS_ROOT, type StatsSortValue } from "./model";
+import { decodeBoundCursor, encodeBoundCursor } from "./cursors";
 
 export const STATS_SORTS = {
   games: { date: "number", host: "string", topScore: "number", totalScore: "number", margin: "number", pack: "string" },
@@ -74,12 +75,7 @@ export function planStatsQuery(scope: StatsQueryScope, options: StatsQueryOption
     binding: JSON.stringify([scope.kind, personId, sort, direction]), startAfter: null,
   };
   if (options.cursor !== undefined && options.cursor !== null) {
-    if (!options.cursor || options.cursor.length > 16000 || !/^[A-Za-z0-9_-]+$/.test(options.cursor)) throw new Error("Invalid statistics cursor.");
-    let decoded: { version?: unknown; binding?: unknown; values?: unknown };
-    try { decoded = JSON.parse(Buffer.from(options.cursor, "base64url").toString("utf8")); }
-    catch { throw new Error("Invalid statistics cursor."); }
-    if (!decoded || decoded.version !== 1 || decoded.binding !== plan.binding) throw new Error("Cursor does not match this statistics query.");
-    plan.startAfter = cursorValues(plan, decoded.values);
+    plan.startAfter = cursorValues(plan, decodeBoundCursor(options.cursor, plan.binding));
   }
   return plan;
 }
@@ -100,7 +96,7 @@ export function encodeStatsCursor(plan: StatsQueryPlan, id: string, value: Stats
     values.push(date.availability, date.value);
   }
   values.push(statsId(id));
-  return Buffer.from(JSON.stringify({ version: 1, binding: plan.binding, values: cursorValues(plan, values) })).toString("base64url");
+  return encodeBoundCursor(plan.binding, cursorValues(plan, values));
 }
 
 /** Query plans and deployment indexes share one definition. Tests reject stale checked-in indexes. */
@@ -127,6 +123,9 @@ export function statisticsIndexes() {
     { fieldPath: "archived", order: "ASCENDING" }, { fieldPath: "searchName", order: "ASCENDING" }, { fieldPath: "__name__", order: "ASCENDING" },
   ] }, { collectionGroup: "people", queryScope: "COLLECTION", fields: [
     { fieldPath: "archived", order: "ASCENDING" }, { fieldPath: "helperAliasesNormalized", arrayConfig: "CONTAINS" },
+  ] });
+  indexes.push({ collectionGroup: "audit", queryScope: "COLLECTION", fields: [
+    { fieldPath: "at", order: "DESCENDING" }, { fieldPath: "__name__", order: "ASCENDING" },
   ] });
   return { indexes, fieldOverrides: [] };
 }

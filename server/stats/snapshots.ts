@@ -3,8 +3,8 @@ import type { Firestore, Transaction } from "firebase-admin/firestore";
 import type { StatsSnapshot } from "@/types/stats";
 import { assertStatsAdmin } from "./authorization";
 import { StatsError } from "./error";
-import { calculateOutcomes } from "./metrics";
-import { gameSortValues, statsPaths, type StatsGameRecord } from "./model";
+import { statsPaths, type StatsGameRecord } from "./model";
+import { gameQueueTags, projectGame } from "./projection";
 import { normalizeRoomSource, readEndedRoom } from "./source";
 
 export type SnapshotDocument = { path: string; data: FirebaseFirestore.DocumentData };
@@ -126,10 +126,18 @@ export async function prepareSnapshot(db: Firestore, gameId: string, actorId: st
     }));
     const review = { hostPersonId: hostChanged ? null : previous?.review.hostPersonId ?? null,
       completedAt: previous ? previous.review.completedAt : snapshot.completedAt, packLabel: previous ? previous.review.packLabel : snapshot.packLabel };
+    const maxima: Record<string, Record<string, number>> = {};
+    overrides.docs.forEach((override) => {
+      const data = override.data();
+      if (!snapshot.rounds.some((round) => round.id === data.roundId && round.questions.some((question) => question.id === data.questionId))) return;
+      if (!Object.hasOwn(maxima, data.roundId)) maxima[data.roundId] = {};
+      maxima[data.roundId][data.questionId] = data.points;
+    });
+    const completeReview = { ...review, maxima, mappings: Object.fromEntries(mappings.docs.filter((mapping) =>
+      mapping.data().personId && !reset.includes(mapping)).map((mapping) => [mapping.id, { personId: mapping.data().personId, duplicateOf: mapping.data().duplicateOf ?? null }])) };
+    const { summary } = projectGame(snapshot, completeReview, expectedVersion + 1);
     tx.set(ref, { schemaVersion: 1, snapshotId: snapshot.id, version: expectedVersion + 1, published: false, publishedAt: null, review,
-      summary: { sort: gameSortValues({ ...review, host: snapshot.host ? { personId: review.hostPersonId, alias: snapshot.host.alias } : null, teams: calculateOutcomes(snapshot.teams) }),
-        unresolvedAppearances: snapshot.appearances.filter((appearance) => !mappings.docs.some((mapping) => mapping.id === appearance.id && mapping.data().personId && !reset.includes(mapping))).length,
-        provisional: snapshot.rounds.some((round) => round.gradingIncomplete === true) } } satisfies StatsGameRecord);
+      summary, queueTags: gameQueueTags(snapshot, completeReview, summary, false) } satisfies StatsGameRecord);
     reset.forEach((mapping) => {
       if (!snapshot.appearances.some((appearance) => appearance.id === mapping.id)) tx.delete(mapping.ref);
       else tx.set(mapping.ref, { personId: null, duplicateOf: null, needsReview: true });

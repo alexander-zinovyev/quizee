@@ -7,7 +7,16 @@ export const ADMIN_SESSION_COOKIE = "__stats_admin";
 export const ADMIN_SESSION_MS = 5 * 24 * 60 * 60 * 1000;
 
 export function assertSameOrigin(request: Request): void {
-  if (request.headers.get("origin") !== new URL(request.url).origin ||
+  // Next can construct route URLs with an internal hostname. Match its ingress headers,
+  // as Server Actions do, while retaining the exact scheme/host/port origin check.
+  const route = new URL(request.url);
+  const host = request.headers.get("x-forwarded-host")?.split(",")[0].trim() ?? request.headers.get("host") ?? route.host;
+  const protocol = request.headers.get("x-forwarded-proto")?.split(",")[0].trim().toLowerCase() ?? route.protocol.slice(0, -1);
+  let expected: string | null = null;
+  if (["http", "https"].includes(protocol) && host && !/[\s/@?#\\]/.test(host)) {
+    try { expected = new URL(`${protocol}://${host}`).origin; } catch { /* Refuse malformed ingress metadata below. */ }
+  }
+  if (!expected || request.headers.get("origin") !== expected ||
       ["cross-site", "same-site"].includes(request.headers.get("sec-fetch-site") ?? "")) {
     throw new StatsError("invalid-origin", "This action requires a request from this site.", 403);
   }

@@ -18,6 +18,18 @@ test("admin cookies never consume the gameplay session cookie", () => {
   assert.equal(adminCookie(new Request("https://quiz.test", { headers: { cookie: "__session=gameplay" } })), null);
 });
 
+test("same-origin checks use the ingress host when Next exposes an internal route URL", () => {
+  assert.doesNotThrow(() => assertSameOrigin(new Request("http://localhost:3018/api/auth/admin/session", { headers: {
+    host: "127.0.0.1:3018", origin: "http://127.0.0.1:3018", "sec-fetch-site": "same-origin",
+  } })));
+  assert.doesNotThrow(() => assertSameOrigin(new Request("http://internal:3000/api/auth/admin/session", { headers: {
+    host: "internal:3000", "x-forwarded-host": "quiz.test", "x-forwarded-proto": "https", origin: "https://quiz.test",
+  } })));
+  assert.throws(() => assertSameOrigin(new Request("http://internal:3000/api/auth/admin/session", { headers: {
+    "x-forwarded-host": "quiz.test", "x-forwarded-proto": "https", origin: "https://evil.test",
+  } })));
+});
+
 test("session validation checks revocation and refuses anonymous/provider-unverified identities", async () => {
   const token = { uid: "google-user", email: "test@example.com", email_verified: true, firebase: { sign_in_provider: "google.com" } } as DecodedIdToken;
   let checkRevoked: boolean | undefined;

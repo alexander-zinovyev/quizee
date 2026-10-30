@@ -16,6 +16,7 @@
 # next.js
 /.next/
 /.next-color/
+/.next-stats/
 /test-results/
 /playwright-report/
 /out/

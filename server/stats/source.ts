@@ -6,6 +6,8 @@ import type { StatsRecordedAnswer, StatsRoundScoring, StatsSnapshot, StatsStage 
 import { StatsError } from "./error";
 import { completionTime, statsId } from "./model";
 import { inferQuestionMaximum } from "./metrics";
+import { ALLOWED_MEDIA_EXTENSIONS } from "@/server/rooms/validation";
+import { stableJson } from "@/lib/stats/value";
 
 export type SourceDocument = { id: string; data: Record<string, unknown> };
 export type SourceRound = SourceDocument & {
@@ -100,13 +102,14 @@ export async function readEndedRoom(db: Firestore, gameId: string): Promise<Room
 }
 
 /** Normalize supported storage layouts; missing evidence stays null, malformed evidence fails. */
-export function normalizeRoomSource(source: RoomSource, snapshotId: string): StatsSnapshot {
+function normalizeSource(source: RoomSource, snapshotId: string): StatsSnapshot {
   if (source.room.data.state !== "ended") throw new StatsError("room-not-ended", "Only ended rooms can be snapshotted.", 422);
   const assets: StatsSnapshot["assets"] = {};
   const asset = (raw: unknown): string | null => {
     if (raw === null || raw === undefined) return null;
     const media = object(raw, "media"), path = text(media.storagePath, "media storage path");
     if (!path || !path.startsWith(`rooms/${source.room.id}/media/`) || path.split("/").some((part) => part === "." || part === "..") || /[\\\x00-\x1f]/.test(path)) malformed("media path");
+    if (!ALLOWED_MEDIA_EXTENSIONS.has(path.slice(path.lastIndexOf(".")).toLowerCase())) malformed("unsupported media extension");
     const id = createHash("sha256").update(path).digest("hex");
     assets[id] = { storagePath: path, contentType: text(media.contentType, "media content type") };
     return id;
@@ -162,9 +165,12 @@ export function normalizeRoomSource(source: RoomSource, snapshotId: string): Sta
         }
         const awardedPoints = numeric(raw?.awardedPoints, "awarded points");
         const perceptionScore = numeric(raw?.perceptionScore, "perception score");
+        if (perceptionScore !== null && (perceptionScore < 0 || perceptionScore > 10)) malformed("perception score");
+        if (scoring.type === "color" && answer !== null && answer !== "" && !HEX_COLOR.test(answer)) malformed("submitted color");
         let correctness = bool(raw?.correct, "recorded correctness");
         if (scoring.type === "image" && imageId && imageIds.has(imageId) && answer !== null) correctness = answer === imageId;
         if (scoring.type === "color" && scoring.scoring?.mode === "threshold" && perceptionScore !== null) correctness = perceptionScore >= scoring.scoring.threshold;
+        if (scoring.type === "color" && scoring.scoring?.mode === "closest") correctness = null;
         answers[team.id] = { answer, attempts, correctness, awardedPoints, perceptionScore,
           assetId: scoring.type === "image" && answer !== null ? imageIds.get(answer) ?? null : null };
       }
@@ -173,7 +179,7 @@ export function normalizeRoomSource(source: RoomSource, snapshotId: string): Sta
         if (color !== null && !HEX_COLOR.test(color)) malformed(label);
         return color;
       };
-      return { id: question.id, order, prompt: stages(question.data), acceptedAnswer: answerStages, answers,
+      return { id: question.id, order, prompt: stages(question.data), acceptedAnswer: answerStages, answerHint: text(accepted?.hint, "accepted answer hint"), answers,
         color: scoring.type === "color" ? { initialColor: colorValue(question.data.initialColor, "initial color"),
           targetColor: colorValue(accepted?.answer, "target color"), maskAssetId: asset(question.data.mask),
           regionIds: question.data.regionIds === undefined ? null : parseRegionIds(question.data.regionIds) } : null };
@@ -190,8 +196,14 @@ export function normalizeRoomSource(source: RoomSource, snapshotId: string): Sta
   const content = { schemaVersion: 1 as const, gameId: source.room.id, state: "ended" as const, completedAt,
     packLabel: text(source.room.data.packLabel, "pack label"), title: text(source.room.data.title, "room title") ?? "",
     host, appearances, sourceMembers, teams, rounds, assets };
-  const stable = (value: unknown): unknown => Array.isArray(value) ? value.map(stable) : value && typeof value === "object"
-    ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, entry]) => [key, stable(entry)])) : value;
-  const digest = createHash("sha256").update(JSON.stringify(stable(content))).digest("hex");
+  const digest = createHash("sha256").update(stableJson(content)).digest("hex");
   return { ...content, id: statsId(snapshotId), snapshotAt: source.readAt, digest };
+}
+
+export function normalizeRoomSource(source: RoomSource, snapshotId: string): StatsSnapshot {
+  try { return normalizeSource(source, snapshotId); }
+  catch (error) {
+    if (error instanceof StatsError) throw error;
+    throw new StatsError("malformed-source", error instanceof Error ? error.message : "Malformed historical data.", 422);
+  }
 }

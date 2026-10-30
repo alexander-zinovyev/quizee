@@ -45,7 +45,7 @@ export async function planContributionReplacement(tx: Transaction, db: Firestore
     if (nextPlayer || previousPlayer) writes.push({ ref: playerRef, data: nextPlayer });
     if (nextHost || previousHost) writes.push({ ref: hostRef, data: nextHost });
   }
-  return { writes, impact };
+  return { writes, impact, createdPersonIds: dependencies.filter((dependency) => !dependency.person.exists && creations.has(dependency.id)).map((dependency) => dependency.id) };
 }
 
 export function applyContributionPlan(tx: Transaction, plan: Awaited<ReturnType<typeof planContributionReplacement>>): void {

@@ -12,6 +12,7 @@ type ZoomableImageProps = {
   zoomButtonClassName?: string;
   zoomLabel?: string;
   fitToParent?: boolean;
+  onError?: () => void;
 };
 
 export default function ZoomableImage({
@@ -23,6 +24,7 @@ export default function ZoomableImage({
   zoomButtonClassName,
   zoomLabel = "Zoom image",
   fitToParent = false,
+  onError,
 }: ZoomableImageProps) {
   const [isZoomOpen, setIsZoomOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
@@ -127,7 +129,7 @@ export default function ZoomableImage({
             </svg>
           </button>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={src} alt={alt} className="h-full w-full object-contain" />
+          <img src={src} alt={alt} className="h-full w-full object-contain" onError={onError} />
         </div>
         {label ? <p className="text-sm text-white/80">{label}</p> : null}
       </div>
@@ -147,6 +149,7 @@ export default function ZoomableImage({
         <img
           src={src}
           alt={alt}
+          onError={onError}
           className={
             fitToParent
               ? `h-full w-full object-contain ${imageClassName ?? ""}`.trim()

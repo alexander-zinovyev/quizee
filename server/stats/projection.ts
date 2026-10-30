@@ -98,6 +98,8 @@ export function projectGame(snapshot: StatsSnapshot, review: StatsReview, versio
     players.set(player.personId, { namespace: STATS_NAMESPACE, personId: player.personId, gameId: snapshot.gameId, gameVersion: version,
       completedAt: review.completedAt, outcome: result.outcome, teamPoints: result.score, provisional, teamId: player.teamId,
       aliases: player.aliases, aliasesNormalized: [...new Set(player.aliases.map(normalizeStatsName))], roster, percentage,
+      rosterCoverage: { mapped: snapshot.appearances.filter((appearance) => appearance.teamId !== null && review.mappings[appearance.id]?.personId).length,
+        total: snapshot.appearances.filter((appearance) => appearance.teamId !== null).length },
       poolPercentage: calculatePercentage(own.filter((part) => part.closestPool === true)), byRoundType,
       sort: { date: sortNumber(completionTime(review.completedAt)), teamPoints: sortNumber(result.score), pointPercentage: sortNumber(percentage.value),
         result: sortNumber(result.outcome === "unavailable" ? null : { win: 3, tie: 2, loss: 1 }[result.outcome]) } });
@@ -118,4 +120,12 @@ export function projectGame(snapshot: StatsSnapshot, review: StatsReview, versio
       host: snapshot.host ? { personId: review.hostPersonId, alias: snapshot.host.alias } : null }), metrics, provisional,
     unresolvedAppearances: snapshot.appearances.filter((appearance) => !review.mappings[appearance.id]?.personId).length,
   } };
+}
+
+export function gameQueueTags(snapshot: StatsSnapshot, review: StatsReview, summary: ReturnType<typeof projectGame>["summary"], published: boolean): string[] {
+  const tags = ["all"];
+  if (!published) tags.push("unpublished");
+  if (summary.unresolvedAppearances || (snapshot.host && !review.hostPersonId)) tags.push("unresolved");
+  if (summary.metrics.warnings.some((warning) => !["completion-date-unavailable", "pack-unavailable", "grading-incomplete"].includes(warning.code))) tags.push("needs-review");
+  return tags;
 }

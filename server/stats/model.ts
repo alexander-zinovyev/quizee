@@ -51,6 +51,7 @@ export type StatsGameRecord = {
   version: number;
   published: boolean;
   publishedAt: string | null;
+  queueTags: string[];
   /** Host/metadata fields only. Mappings and overrides use their own child documents. */
   review: Pick<StatsReview, "hostPersonId" | "completedAt" | "packLabel">;
   summary: { sort: StatsSortMap; unresolvedAppearances: number; provisional: boolean; metrics?: StatsGameMetrics };
@@ -75,6 +76,7 @@ export type StatsPlayerContribution = StatsHistoryResult & {
   aliases: string[];
   aliasesNormalized: string[];
   roster: Array<{ personId: string; teamId: string }>;
+  rosterCoverage: { mapped: number; total: number };
   percentage: StatsPercentage;
   poolPercentage: StatsPercentage;
   byRoundType: Record<string, { percentage: StatsPercentage; poolPercentage: StatsPercentage }>;
