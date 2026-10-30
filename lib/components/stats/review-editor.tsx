@@ -1,7 +1,6 @@
 "use client";
 import Link from "next/link";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import type { AdminGameView } from "@/server/stats/admin-queries";
 import type { StatsReview } from "@/types/stats";
 import type { CreateStatsPerson } from "@/server/stats/people";
@@ -17,7 +16,7 @@ import StatsStages from "./stages";
 type PickerTarget = { kind: "host" } | { kind: "appearance"; id: string };
 
 export default function ReviewEditor({ initial, publicEnabled }: { initial: AdminGameView; publicEnabled: boolean }) {
-  const router = useRouter(), [view, setView] = useState(initial), [draft, setDraft] = useState<StatsReview | null>(initial.review);
+  const [view, setView] = useState(initial), [draft, setDraft] = useState<StatsReview | null>(initial.review);
   const [people, setPeople] = useState<PersonChoice[]>(initial.people), [creations, setCreations] = useState<CreateStatsPerson[]>([]);
   const [picker, setPicker] = useState<PickerTarget | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState(false), [acknowledged, setAcknowledged] = useState(false), [message, setMessage] = useState<string | null>(null);
@@ -28,7 +27,7 @@ export default function ReviewEditor({ initial, publicEnabled }: { initial: Admi
   const name = (id: string | null) => id ? people.find((person) => person.id === id)?.displayName ?? "Name unavailable" : "Unresolved";
   async function reload() {
     const next = await readJsonResponse<AdminGameView>(await fetch(`/api/stats/admin/games/${encodeURIComponent(view.id)}`, { cache: "no-store" }), "Reload review");
-    setView(next); setDraft(next.review); setPeople(next.people); setCreations([]); setConfirmation(false); setAcknowledged(false); router.refresh();
+    setView(next); setDraft(next.review); setPeople(next.people); setCreations([]); setConfirmation(false); setAcknowledged(false);
   }
   async function snapshot() {
     setBusy(true); setError(null); setMessage(null);

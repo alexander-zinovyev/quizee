@@ -1,4 +1,4 @@
-import { getServerFirestore } from "@/server/database";
+import { getStatsFirestore } from "@/server/stats/web-database";
 import { changeGameReview } from "@/server/stats/commands";
 import { StatsError } from "@/server/stats/error";
 import { requestStatsAdmin, statsJson, statsParam, statsResponse, statsVersion } from "@/server/stats/http";
@@ -8,6 +8,6 @@ export function PATCH(request: Request, context: { params: Promise<{ id: string 
   assertSameOrigin(request);
   const actor = await requestStatsAdmin(request), body = await statsJson(request, ["expectedVersion", "mappings", "hostPersonId", "maxima", "completedAt", "packLabel", "createPeople", "confirmedImpact"]);
   if (body.confirmedImpact !== undefined && typeof body.confirmedImpact !== "boolean") throw new StatsError("malformed-input", "confirmedImpact must be boolean.", 400);
-  const result = await changeGameReview(getServerFirestore(), actor, statsParam((await context.params).id), { ...body, expectedVersion: statsVersion(body.expectedVersion) } as ReviewPatch);
+  const result = await changeGameReview(getStatsFirestore(), actor, statsParam((await context.params).id), { ...body, expectedVersion: statsVersion(body.expectedVersion) } as ReviewPatch);
   return Response.json({ version: result.version, changed: result.changed, summary: result.summary, impact: result.impact });
 }); }

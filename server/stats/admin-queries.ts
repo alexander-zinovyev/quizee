@@ -54,7 +54,7 @@ export async function getAdminGame(db: Firestore, actorId: string, gameId: strin
       return { id: gameId, title: typeof room.data()?.title === "string" ? room.data()!.title : "", version: 0, published: false,
         snapshot: null, review: null, people: [], summary: null, publishedAt: null };
     }
-    const game = document.data() as StatsGameRecord, snapshot = await loadSnapshot(tx, db, gameId, game.snapshotId);
+    const game = document.data() as StatsGameRecord, snapshot = await loadSnapshot(tx, db, gameId, game.snapshotId, { cache: true });
     const review = await loadReview(tx, db, gameId, game), ids = [...mappingCounts(review).keys()];
     const people = ids.length ? (await tx.getAll(...ids.map((id) => db.doc(statsPaths.person(id))))).map((person) => {
       if (!person.exists) throw new StatsError("mapping-integrity", "A saved mapping references a missing person.", 409);

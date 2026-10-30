@@ -9,7 +9,7 @@
     "lint": "eslint",
     "test:rules": "tsx server/rooms/answer-rules.test.ts",
     "test:stats": "node --import tsx --test server/stats/*.test.ts && node --import tsx lib/firebase/client.test.ts",
-    "test:stats:firestore": "node --import tsx server/stats/firestore.integration.ts && node --import tsx server/stats/snapshots.integration.ts && node --import tsx server/stats/publication.integration.ts && node --import tsx server/stats/operations.integration.ts",
+    "test:stats:firestore": "node --import tsx server/stats/firestore.integration.ts && node --import tsx server/stats/snapshots.integration.ts && node --import tsx server/stats/publication.integration.ts && node --import tsx server/stats/operations.integration.ts && node --import tsx server/stats/read-budget.integration.ts",
     "stats:ops": "node --import tsx scripts/stats-operations.ts",
     "stats:indexes": "node --import tsx scripts/stats-indexes.ts",
     "stats:verify-queries": "node --import tsx scripts/stats-queries.ts",

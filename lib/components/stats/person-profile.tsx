@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getServerFirestore } from "@/server/database";
+import { getStatsFirestore } from "@/server/stats/web-database";
 import { StatsError } from "@/server/stats/error";
 import { getPublicPlayer, getPublicHost, listPublicHistory } from "@/server/stats/public-queries";
 import { statsPageOptions, type StatsPageSearch } from "@/server/stats/page-options";
@@ -17,7 +17,7 @@ function Extremes({ label, items, percentage = false }: { label: string; items: 
 }
 
 export default async function PersonProfile({ id, role, searchParams }: { id: string; role: "player" | "host"; searchParams: StatsPageSearch }) {
-  const db = getServerFirestore();
+  const db = getStatsFirestore();
   let data;
   try { data = role === "player" ? await getPublicPlayer(db, id) : await getPublicHost(db, id); }
   catch (error) {

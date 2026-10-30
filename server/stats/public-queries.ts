@@ -11,6 +11,8 @@ import { buildStatsQuery, encodeStatsCursor, planStatsQuery, type StatsQueryOpti
 import { percentageFromCounters, publicMetrics, publicPercentage, publicPerson, publicQuestion } from "./serializers";
 import { assertStatsPublicEnabled } from "./public-access";
 import { statsOperation } from "./telemetry";
+import { cacheStatsRead, documentCacheVersion } from "./read-cache";
+import { stableJson } from "@/lib/stats/value";
 
 const hidden = () => new StatsError("not-found", "Statistics are unavailable.", 404);
 const inconsistent = () => new StatsError("statistics-inconsistent", "Statistics changed or need reconciliation. Reload before continuing.", 409);
@@ -31,10 +33,13 @@ async function publishedGame(tx: Transaction, db: Firestore, gameId: string, exi
   return { game, snapshot };
 }
 
-async function gameHeader(tx: Transaction, db: Firestore, gameId: string, existing?: FirebaseFirestore.DocumentSnapshot): Promise<PublicStatsGame> {
-  const { game, snapshot } = await publishedGame(tx, db, gameId, existing);
+type HeaderOptions = { existing?: FirebaseFirestore.DocumentSnapshot; loaded?: Awaited<ReturnType<typeof publishedGame>>;
+  hosts?: Map<string, Promise<FirebaseFirestore.DocumentSnapshot>> };
+async function gameHeader(tx: Transaction, db: Firestore, gameId: string, options: HeaderOptions = {}): Promise<PublicStatsGame> {
+  const { game, snapshot } = options.loaded ?? await publishedGame(tx, db, gameId, options.existing);
   const hostId = game.review.hostPersonId;
-  const host = hostId ? await tx.get(db.doc(statsPaths.person(hostId))) : null;
+  if (hostId && options.hosts && !options.hosts.has(hostId)) options.hosts.set(hostId, tx.get(db.doc(statsPaths.person(hostId))));
+  const host = hostId ? await (options.hosts?.get(hostId) ?? tx.get(db.doc(statsPaths.person(hostId)))) : null;
   if (hostId && (!host?.exists || host.data()?.archived)) throw inconsistent();
   return { id: gameId, version: game.version, title: snapshot.data()!.title, snapshotAt: snapshot.data()!.snapshotAt,
     publishedAt: game.publishedAt!, completedAt: game.review.completedAt, packLabel: game.review.packLabel,
@@ -72,7 +77,8 @@ export async function listPublicGames(db: Firestore, options: StatsQueryOptions 
   const plan = publicQueryPlan({ kind: "games" }, options);
   return db.runTransaction(async (tx) => {
     const result = await tx.get(buildStatsQuery(db, plan)), page = result.docs.slice(0, plan.limit);
-    return { items: await Promise.all(page.map((document) => gameHeader(tx, db, document.id, document))),
+    const hosts: NonNullable<HeaderOptions["hosts"]> = new Map();
+    return { items: await Promise.all(page.map((document) => gameHeader(tx, db, document.id, { existing: document, hosts }))),
       nextCursor: nextListCursor(plan, page, result.size, (data) => data.summary.sort), sort: plan.sort, direction: plan.direction };
   }, { readOnly: true });
 }
@@ -96,8 +102,8 @@ export function getPublicGame(db: Firestore, gameId: string): Promise<PublicStat
 async function readPublicGame(db: Firestore, gameId: string): Promise<PublicStatsGameDetail> {
   assertStatsPublicEnabled();
   return db.runTransaction(async (tx) => {
-    const { game } = await publishedGame(tx, db, gameId);
-    return { ...await gameHeader(tx, db, gameId), roster: await roster(tx, db, gameId, game), metrics: publicMetrics(game.summary.metrics!) };
+    const loaded = await publishedGame(tx, db, gameId), { game } = loaded;
+    return { ...await gameHeader(tx, db, gameId, { loaded }), roster: await roster(tx, db, gameId, game), metrics: publicMetrics(game.summary.metrics!) };
   }, { readOnly: true });
 }
 
@@ -155,7 +161,7 @@ async function profile(tx: Transaction, db: Firestore, id: string, role: "player
   const person = document.data() as StatsPersonRecord;
   if (person.archived) throw new StatsError("person-archived", "This profile has been archived.", 410);
   if (role === "player" ? !person.hasPlayerHistory : !person.hasHostHistory) throw hidden();
-  return { ref, person };
+  return { ref, person, cacheVersion: `${person.version}:${documentCacheVersion(document)}` };
 }
 
 export function getPublicPlayer(db: Firestore, id: string): Promise<PublicStatsPlayer> {
@@ -164,21 +170,28 @@ export function getPublicPlayer(db: Firestore, id: string): Promise<PublicStatsP
 async function readPublicPlayer(db: Firestore, id: string): Promise<PublicStatsPlayer> {
   assertStatsPublicEnabled();
   return db.runTransaction(async (tx) => {
-    const { ref, person } = await profile(tx, db, id, "player");
-    const records = await tx.get(ref.collection("playerGames"));
-    const rows = records.docs.map((document) => document.data() as StatsPlayerContribution);
-    await publishedHistory(tx, db, rows);
-    const teammates = new Map<string, number>(), opponents = new Map<string, number>();
-    const rosterCoverage = { mapped: 0, total: 0 };
-    for (const row of rows) {
-      rosterCoverage.mapped += row.rosterCoverage.mapped; rosterCoverage.total += row.rosterCoverage.total;
-      const seen = new Set<string>();
-      for (const other of row.roster) if (other.personId !== id && !seen.has(other.personId)) {
-        seen.add(other.personId);
-        const counts = other.teamId === row.teamId ? teammates : opponents;
-        counts.set(other.personId, (counts.get(other.personId) ?? 0) + 1);
+    const { ref, person, cacheVersion } = await profile(tx, db, id, "player");
+    const history = await cacheStatsRead(db, ["player-history", id, cacheVersion], async () => {
+      const records = await tx.get(ref.collection("playerGames"));
+      const rows = records.docs.map((document) => document.data() as StatsPlayerContribution);
+      await publishedHistory(tx, db, rows);
+      const teammates = new Map<string, number>(), opponents = new Map<string, number>();
+      const rosterCoverage = { mapped: 0, total: 0 };
+      for (const row of rows) {
+        rosterCoverage.mapped += row.rosterCoverage.mapped; rosterCoverage.total += row.rosterCoverage.total;
+        const seen = new Set<string>();
+        for (const other of row.roster) if (other.personId !== id && !seen.has(other.personId)) {
+          seen.add(other.personId);
+          const counts = other.teamId === row.teamId ? teammates : opponents;
+          counts.set(other.personId, (counts.get(other.personId) ?? 0) + 1);
+        }
       }
-    }
+      const points = rows.map((row) => ({ gameId: row.gameId, value: row.teamPoints })), percentages = rows.map((row) => ({ gameId: row.gameId, value: row.percentage.value }));
+      return { aliases: [...new Set(rows.flatMap((row) => row.aliases))].sort(), streaks: resultStreaks(rows), rosterCoverage,
+        teammates: [...teammates], opponents: [...opponents], bestPoints: historyExtremes(points, true), worstPoints: historyExtremes(points, false),
+        bestPercentage: historyExtremes(percentages, true), worstPercentage: historyExtremes(percentages, false) };
+    });
+    const teammates = new Map(history.teammates), opponents = new Map(history.opponents);
     const names = new Map<string, string>(), ids = new Set([...teammates.keys(), ...opponents.keys()]);
     if (ids.size) for (const other of await tx.getAll(...[...ids].map((id) => db.doc(statsPaths.person(id))), { fieldMask: ["displayName", "archived"] })) {
       if (!other.exists || other.data()?.archived) throw inconsistent();
@@ -188,11 +201,9 @@ async function readPublicPlayer(db: Firestore, id: string): Promise<PublicStatsP
       .sort((a, b) => b.games - a.games || (a.personId < b.personId ? -1 : 1));
     const byRoundType = Object.fromEntries(["text", "image", "multi-step", "color"].filter((type) => Object.hasOwn(person.player.counters, `round:${type}:TotalGames`)).map((type) => [type,
       { percentage: percentageFromCounters(person.player.counters, `round:${type}:`), poolPercentage: percentageFromCounters(person.player.counters, `round:${type}:pool:`) }]));
-    const points = rows.map((row) => ({ gameId: row.gameId, value: row.teamPoints })), percentages = rows.map((row) => ({ gameId: row.gameId, value: row.percentage.value }));
-    return { ...publicPerson(id, person), version: person.version, aliases: [...new Set(rows.flatMap((row) => row.aliases))].sort(), summary: playerSummary(person.player.counters),
+    return { ...publicPerson(id, person), ...history, version: person.version, summary: playerSummary(person.player.counters),
       percentage: percentageFromCounters(person.player.counters, "percentage"), poolPercentage: percentageFromCounters(person.player.counters, "pool"), byRoundType,
-      streaks: resultStreaks(rows), teammates: frequencies(teammates), opponents: frequencies(opponents), rosterCoverage,
-      bestPoints: historyExtremes(points, true), worstPoints: historyExtremes(points, false), bestPercentage: historyExtremes(percentages, true), worstPercentage: historyExtremes(percentages, false) };
+      teammates: frequencies(teammates), opponents: frequencies(opponents) };
   }, { readOnly: true });
 }
 
@@ -202,13 +213,16 @@ export function getPublicHost(db: Firestore, id: string): Promise<PublicStatsHos
 async function readPublicHost(db: Firestore, id: string): Promise<PublicStatsHost> {
   assertStatsPublicEnabled();
   return db.runTransaction(async (tx) => {
-    const { ref, person } = await profile(tx, db, id, "host");
-    const records = await tx.get(ref.collection("hostedGames")), rows = records.docs.map((document) => document.data() as StatsHostContribution);
-    await publishedHistory(tx, db, rows);
-    const percentages = rows.flatMap((row) => row.teamPercentages);
-    return { ...publicPerson(id, person), version: person.version, aliases: [...new Set(rows.map((row) => row.alias).filter((alias): alias is string => alias !== null))].sort(),
-      summary: hostSummary(person.host.counters), difficulty: percentageFromCounters(person.host.counters, "difficulty"),
-      medianTeamPercentage: median(percentages), medianTeamSampleSize: percentages.length };
+    const { ref, person, cacheVersion } = await profile(tx, db, id, "host");
+    const history = await cacheStatsRead(db, ["host-history", id, cacheVersion], async () => {
+      const records = await tx.get(ref.collection("hostedGames")), rows = records.docs.map((document) => document.data() as StatsHostContribution);
+      await publishedHistory(tx, db, rows);
+      const percentages = rows.flatMap((row) => row.teamPercentages);
+      return { aliases: [...new Set(rows.map((row) => row.alias).filter((alias): alias is string => alias !== null))].sort(),
+        medianTeamPercentage: median(percentages), medianTeamSampleSize: percentages.length };
+    });
+    return { ...publicPerson(id, person), ...history, version: person.version,
+      summary: hostSummary(person.host.counters), difficulty: percentageFromCounters(person.host.counters, "difficulty") };
   }, { readOnly: true });
 }
 
@@ -216,15 +230,20 @@ export async function listPublicHistory(db: Firestore, id: string, role: "player
   assertStatsPublicEnabled();
   const plan = publicQueryPlan({ kind: role === "player" ? "playerGames" : "hostedGames", personId: id }, options);
   return db.runTransaction(async (tx) => {
-    await profile(tx, db, id, role);
-    const records = await tx.get(buildStatsQuery(db, plan)), page = records.docs.slice(0, plan.limit);
-    const items = await Promise.all(page.map(async (document) => {
-      const row = document.data() as StatsPlayerContribution | StatsHostContribution, game = await gameHeader(tx, db, row.gameId);
+    const { cacheVersion } = await profile(tx, db, id, role);
+    const page = await cacheStatsRead(db, ["history-page", id, role, cacheVersion, stableJson(plan)], async () => {
+      const records = await tx.get(buildStatsQuery(db, plan)), documents = records.docs.slice(0, plan.limit);
+      return { rows: documents.map((document) => document.data() as StatsPlayerContribution | StatsHostContribution),
+        nextCursor: nextListCursor(plan, documents, records.size, (data) => data.sort) };
+    });
+    const hosts: NonNullable<HeaderOptions["hosts"]> = new Map();
+    const items = await Promise.all(page.rows.map(async (row) => {
+      const game = await gameHeader(tx, db, row.gameId, { hosts });
       if (game.version !== row.gameVersion) throw inconsistent();
       return { game, percentage: publicPercentage("percentage" in row ? row.percentage : row.difficulty),
         teamId: "teamId" in row ? row.teamId : null, teamPoints: "teamPoints" in row ? row.teamPoints : null, outcome: "outcome" in row ? row.outcome : null };
     }));
-    return { items, nextCursor: nextListCursor(plan, page, records.size, (data) => data.sort), sort: plan.sort, direction: plan.direction };
+    return { items, nextCursor: page.nextCursor, sort: plan.sort, direction: plan.direction };
   }, { readOnly: true });
 }
 

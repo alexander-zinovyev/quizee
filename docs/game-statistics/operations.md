@@ -110,7 +110,28 @@ Measurements below were made on 2026-10-30 against local Firebase emulators and 
 | Archive query fixture: 10,000 games, 5,000 people, 1,000-game player and host histories | 31,999 documents, 50,979,245 JSON data bytes; largest document 2,810 bytes. Seeding 65,329 ms; all required sort directions, complete default pagination, alias lookup, and two history profiles 11,860 ms combined. The profile pair and alias lookup took 364 ms. |
 | Full source/copy/publication stress fixture: 20 teams, 120 players, 9 rounds, 90 questions | 2,040 snapshot documents, 237,034 JSON data bytes; largest document 554 bytes. Private create/link/90-maxima review writes 333 documents / 396,345 JSON bytes. Snapshot, review and successful atomic publication completed in 2,992 ms combined. |
 
-The archive fixture uses snapshot headers and full relevant history rows to isolate query costs; it does not model millions of historical question documents or a fully imported archive. Full source copying and participant fan-out are exercised separately. The measured read workload made 11,320 SDK read calls and delivered 31,361 documents across all checks. These are SDK deliveries, not billed reads or a per-page cost estimate. Exact aliases, median, streaks, and roster frequencies remain proportional to one person's history. Measure real deployed query/index costs before exposing a large archive. No cache or asynchronous aggregate layer is added without evidence that it is needed.
+The archive fixture uses snapshot headers and full relevant history rows to isolate query costs; it does not model millions of historical question documents or a fully imported archive. Full source copying and participant fan-out are exercised separately. The measured read workload made 11,320 SDK read calls and delivered 31,361 documents across all checks. These are SDK deliveries, not billed reads or a per-page cost estimate. Exact aliases, median, streaks, and roster frequencies remain proportional to one person's history. Measure real deployed query/index costs before exposing a large archive. The subsequent read-budget measurements below motivated shared immutable/versioned caching. No asynchronous aggregate layer is used.
+
+### Statistics read budget
+
+Web requests use the existing Next.js Data Cache, with compressed entries scoped to project, database, emulator environment, and deployment commit where available. Snapshots use immutable snapshot ID/digest/manifest keys; profile calculations and contribution pages use the live person version/update timestamp. Access checks and current names stay outside cache lookups. Payloads above the 1 MiB compressed-entry budget remain supported through uncached reads. Bump the `stats-read-v1` cache schema key when changing cached representations/calculations outside a deployment that provides `VERCEL_GIT_COMMIT_SHA`.
+
+The administration UI performs one review fetch after a mutation or explicit reload. Tab focus performs none. Initial publication still reads the ended room to verify the approved digest, then pins the approved snapshot without copying it again. Existing snapshots need no migration. Operator integrity/rebuild tools read snapshots uncached and do not rely on the web cache. `stats.cache-read` server events report the cache scope and `hit`/`load` outcome without recording payloads or identity details.
+
+The emulator regression uses a 90-question/two-team/six-player game and shared cache storage across two simulated web workers. Counts below include SDK document deliveries and empty-query minimums, but exclude index-entry billing and separate authentication HTTP checks. They are code-path regression budgets, not a guarantee about production bills or cold-cache traffic.
+
+| Read path | Cold | Repeated with unchanged data |
+| --- | --- | --- |
+| Review without mappings | 332 | 5 |
+| Review with six player mappings and a host | 344 | 17 |
+| Save identity mappings against a cached snapshot | Not measured here | 26 |
+| Player calculations, 100 games / five other people | 206 | 6 |
+| Host calculations, 100 games | 201 | 1 |
+| Player history table, 25 rows / one host | Reads its first contribution page | 52 |
+
+Thus a repeated full 100-game player profile costs 58 reads (6 calculations + 52 table), and the host profile costs 53. First loads and new versions still need cold calculations. Global lists stay paginated; a shared host is read once per page instead of once per game. Public game detail reuses its already checked game/snapshot header.
+
+`npm run test:stats:firestore` includes these budgets, revoked-role and snapshot-readiness checks, selection changes, live renamed people, archived profiles, publication snapshot reuse, and correction invalidation. Browser tests cover focus and duplicate-reload requests.
 
 `npm run test:stats:load` requires the Firestore emulator and clears its dedicated demo project at the end. Run it in a fresh disposable emulator, never a shared development session. CI runs this fixture nightly and on manual workflow dispatch. The usual rules, unit, auth, service, browser, TypeScript, and deployment tests run on push/PR as well.
 
