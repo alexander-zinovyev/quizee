@@ -9,7 +9,7 @@ import { SortHeading, PageLinks } from "./table-navigation";
 
 export default function HistoryTable({ data, role }: { data: Awaited<ReturnType<typeof listPublicHistory>>; role: "player" | "host" }) {
   const [expanded, setExpanded] = useState<string | null>(null);
-  const headings = role === "host" ? [["Date (UTC)", "date"], ["Comparable team percentage", "pointPercentage"], ["Top score", "topScore"], ["Total score", "totalScore"]]
+  const headings = role === "host" ? [["Date (UTC)", "date"], ["Points teams earned (%)", "pointPercentage"], ["Top score", "topScore"], ["Total score", "totalScore"]]
     : [["Date (UTC)", "date"], ["Team points", "teamPoints"], ["Result", "result"], ["Point percentage", "pointPercentage"]];
   return <><div className="overflow-x-auto rounded-xl border"><table className="w-full text-sm"><caption className="sr-only">Published {role} game history</caption><thead className="bg-zinc-100 dark:bg-zinc-900"><tr><th className="px-3 py-3 text-left" scope="col">Game</th>{role === "player" && <th className="px-3 py-3 text-left" scope="col">Team</th>}{headings.map(([label, field]) => <SortHeading {...data} prefix="history" key={field} label={label} field={field} />)}<th scope="col" className="px-3">Roster</th></tr></thead><tbody>{data.items.map(({ game, teamId, teamPoints, outcome, percentage }) => {
     const values = gameSortValues(game);

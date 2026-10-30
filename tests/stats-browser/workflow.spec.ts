@@ -68,6 +68,8 @@ test("review, partial identity mapping, provisional publication, public views, a
   const publicResponse = await page.request.get(`/api/stats/games/${gameId}`); expect(publicResponse.ok()).toBeTruthy();
   const publicGame = await publicResponse.json(); expect(JSON.stringify(publicGame)).not.toContain("PRIVATE");
   await page.goto("/stats"); await expect(page.getByRole("heading", { name: "Game statistics", exact: true })).toBeVisible();
+  await expect(page.getByRole("figure", { name: "Top scores by game", exact: true })).toBeVisible();
+  await page.screenshot({ path: "test-results/stats-global-desktop.png", fullPage: true });
   await expect(page.getByRole("link", { name: "Alice", exact: true })).toBeVisible();
   await page.goto("/stats?playersSort=wins&playersDirection=asc");
   const dateHeading = page.getByRole("columnheader", { name: /Date \(UTC\)/ });
@@ -79,6 +81,20 @@ test("review, partial identity mapping, provisional publication, public views, a
   await expect(page.getByRole("button", { name: "Hide roster", exact: true })).toHaveAttribute("aria-expanded", "true");
   await expect(page.getByText("red player 1 (unresolved)", { exact: false })).toBeVisible();
   await page.goto(`/stats/games/${gameId}`); await expect(page.getByText(/Grading was incomplete when these scores were published/)).toBeVisible();
+  const chart = page.getByRole("figure", { name: "Round scores", exact: true });
+  await expect(chart).toBeVisible();
+  const redSeries = chart.getByRole("button", { name: "red", exact: true });
+  await redSeries.click(); await expect(redSeries).toHaveAttribute("aria-pressed", "false");
+  await expect(chart.getByRole("button", { name: /^red, Round/ })).toHaveCount(0);
+  await redSeries.click(); await expect(redSeries).toHaveAttribute("aria-pressed", "true");
+  await chart.getByRole("button", { name: "blue, Round 3: -4 points", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await expect(chart.getByText("Round 3: Round 3", { exact: true })).toBeVisible();
+  await chart.getByText("View chart data", { exact: true }).click();
+  await expect(chart.getByRole("table", { name: "Round scores chart data", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Closest contest", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Biggest gap", exact: true })).toBeVisible();
+  await expect(page.getByText(/pool share|competitive point.pool|comparable team percentage|median team percentage/i)).toHaveCount(0);
   await page.getByRole("button", { name: "Show questions and answers", exact: true }).first().click();
   await expect(page.getByText("Correctness unavailable", { exact: true }).first()).toBeVisible();
   for (let index = 1; index < 4; index++) {
@@ -88,7 +104,7 @@ test("review, partial identity mapping, provisional publication, public views, a
     if (index === 1) await expect(round.getByText("Media unavailable", { exact: true }).first()).toBeVisible();
   }
   await expect(page.getByRole("button", { name: "Hide questions", exact: true })).toHaveCount(1);
-  await page.screenshot({ path: "test-results/stats-game-desktop.png" });
+  await page.screenshot({ path: "test-results/stats-game-desktop.png", fullPage: true });
   await db.doc(`rooms/${gameId}/teams/red`).update({ scoreTotal: 99999 });
   await page.reload(); await expect(page.getByText("99,999", { exact: false })).toHaveCount(0);
   await page.goto(`/stats/admin/games/${gameId}`); await page.getByText("Round 1 (text)", { exact: true }).click();
@@ -100,11 +116,31 @@ test("review, partial identity mapping, provisional publication, public views, a
   const corrected = await (await page.request.get(`/api/stats/games/${gameId}`)).json();
   expect(corrected.teams).toEqual(publicGame.teams);
   await page.goto(`/stats/players/${aliceId}`); await expect(page.getByRole("heading", { name: "Alice", exact: true })).toBeVisible();
+  await expect(page.getByRole("figure", { name: "Results at a glance", exact: true })).toBeVisible();
+  await expect(page.getByRole("figure", { name: "Team scores by game", exact: true })).toBeVisible();
+  await expect(page.getByText(/pool share|competitive point.pool|comparable percentage/i)).toHaveCount(0);
+  await page.screenshot({ path: "test-results/stats-player-desktop.png", fullPage: true });
   await expect(page.getByText("PRIVATE", { exact: false })).toHaveCount(0);
   await page.goto(`/stats/hosts/${publicGame.host.personId}`);
   await expect(page.getByRole("heading", { name: "Quizmaster", exact: true })).toBeVisible();
-  await page.setViewportSize({ width: 390, height: 844 }); await page.goto(`/stats/games/${gameId}`);
-  await expect(page.getByRole("heading", { name: "Final results", exact: true })).toBeVisible();
-  expect(await page.locator("body").evaluate((element) => element.scrollWidth <= window.innerWidth)).toBeTruthy();
-  await page.screenshot({ path: "test-results/stats-game-mobile.png" });
+  await expect(page.getByText("Typical team score", { exact: true })).toBeVisible();
+  await expect(page.getByRole("figure", { name: "Team scoring by game", exact: true })).toBeVisible();
+  await expect(page.getByText(/comparable team percentage|median team percentage|difficulty proxy/i)).toHaveCount(0);
+  await page.screenshot({ path: "test-results/stats-host-desktop.png", fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  for (const [name, path, title] of [["global", "/stats", "Game statistics"], ["game", `/stats/games/${gameId}`, "Final results"],
+    ["player", `/stats/players/${aliceId}`, "Alice"], ["host", `/stats/hosts/${publicGame.host.personId}`, "Quizmaster"]]) {
+    await page.goto(path);
+    await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
+    expect(await page.locator("body").evaluate((element) => element.scrollWidth <= window.innerWidth)).toBeTruthy();
+    if (name === "game") {
+      const plot = page.getByRole("group", { name: "Round scores chart", exact: true });
+      expect((await plot.boundingBox())!.width).toBeLessThanOrEqual(390 - 48);
+    }
+    await page.screenshot({ path: `test-results/stats-${name}-mobile.png`, fullPage: true });
+  }
+  await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
+  await page.goto(`/stats/games/${gameId}`);
+  await expect(page.getByRole("figure", { name: "Round scores", exact: true })).toBeVisible();
+  await page.screenshot({ path: "test-results/stats-game-dark.png", fullPage: true });
 });
