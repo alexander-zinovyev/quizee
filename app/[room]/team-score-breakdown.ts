@@ -1,3 +1,5 @@
+import type { SortingItem } from "@/types/quiz";
+import { parseSortingOrder } from "@/types/sorting";
 import { getAwardedPoints, type ScoringRound } from "@/lib/components/room/grading";
 import { parseAttempts } from "@/lib/answers";
 
@@ -14,4 +16,9 @@ export type BreakdownAttempt = {
 
 export function parseBreakdownAttempts(attemptsRaw: unknown): BreakdownAttempt[] {
   return parseAttempts(attemptsRaw).map(({ answer, step }) => ({ answer, step }));
+}
+
+export function parseBreakdownSortingOrder(answer: string, items: SortingItem[]): { items: SortingItem[]; order: string[] } | undefined {
+  if (!answer) return undefined;
+  return { items, order: parseSortingOrder(JSON.parse(answer), items.map((item) => item.id)) };
 }

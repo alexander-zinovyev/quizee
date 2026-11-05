@@ -1,8 +1,9 @@
 import type { Firestore } from "firebase-admin/firestore";
-import { isAnswerCommitted, parseTeamAnswer, type AnswerMutation, type TeamAnswer } from "@/lib/answers";
+import { isAnswerCommitted, MAX_ANSWER_LENGTH, parseTeamAnswer, type AnswerMutation, type TeamAnswer } from "@/lib/answers";
 import { RoomOperationError } from "./operation-error";
 import { parsePresentation } from "./presentation";
 import { parsePointsPerStep } from "./multi-step-submission";
+import { parseSortingOrder } from "@/types/sorting";
 import { HEX_COLOR } from "@/types/color";
 
 export type AnswerSave = { teamId: string; expectedStep?: number; mutation: AnswerMutation };
@@ -20,7 +21,7 @@ export function parseAnswerSave(raw: unknown): AnswerSave {
   const changesWager = "wagered" in data;
   if (Number(changesAnswer) + Number(changesLock) + Number(changesWager) !== 1 ||
       (changesWager && typeof data.wagered !== "boolean") ||
-      (changesAnswer && (typeof data.answer !== "string" || data.answer.length > 10000)) ||
+      (changesAnswer && (typeof data.answer !== "string" || data.answer.length > MAX_ANSWER_LENGTH)) ||
       (changesLock && typeof data.locked !== "boolean")) throw new Error("Invalid answer request.");
   return { teamId: data.teamId, expectedStep: data.expectedStep as number | undefined,
     mutation: changesAnswer ? { answer: data.answer as string }
@@ -45,9 +46,19 @@ export async function saveTeamAnswer(
     if (!team.exists || !round.exists || !question.exists) throw new RoomOperationError("Answer destination not found.", 404);
     const roundData = round.data()!;
     if (room.data()?.state !== "playing" || roundData.state !== "active") throw new RoomOperationError("Round is not accepting answers.");
-    if (roundData.type !== "text" && roundData.type !== "multi-step" && roundData.type !== "color") throw new RoomOperationError("Unsupported answer type.", 400);
+    if (roundData.type !== "text" && roundData.type !== "multi-step" && roundData.type !== "color" && roundData.type !== "sorting") throw new RoomOperationError("Unsupported answer type.", 400);
     if ("wagered" in save.mutation && (roundData.type !== "text" || roundData.allowWager !== true)) {
       throw new RoomOperationError("Wagers are not enabled for this round.", 400);
+    }
+    if (roundData.type === "sorting") {
+      if (typeof save.mutation.answer !== "string" || save.expectedStep !== undefined) throw new RoomOperationError("Sorting accepts an order only.", 400);
+      try {
+        const items = question.data()?.items;
+        if (!Array.isArray(items)) throw new Error("Missing sorting items.");
+        parseSortingOrder(JSON.parse(save.mutation.answer), items.map((item) => item.id));
+      } catch {
+        throw new RoomOperationError("Expected a complete order of unique sorting item IDs.", 400);
+      }
     }
     if (roundData.type === "color") {
       const current = parsePresentation(room.data()?.presenting);

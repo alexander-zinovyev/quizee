@@ -8,13 +8,14 @@ import {
 } from "firebase/firestore";
 
 import { getClientFirestore } from "@/lib/firebase/client";
+import type { SortingItem } from "@/types/quiz";
 import { parseRegionIds } from "@/types/color";
 
 export type RoundMeta = {
   id: string;
   title: string;
   order: number;
-  type: "text" | "image" | "multi-step" | "color";
+  type: "text" | "image" | "multi-step" | "color" | "sorting";
   state: "scheduled" | "active" | "closed";
   gradingRequired?: boolean;
   pointsPerStep?: number[];
@@ -36,6 +37,7 @@ export type RoundQuestionStage = {
 };
 
 export type RoundQuestion = {
+  items?: SortingItem[];
   regionIds?: string[];
   mask?: RoundQuestionMedia | null;
   initialColor?: string;
@@ -102,6 +104,18 @@ export function parseStages(stagesRaw: unknown): RoundQuestionStage[] {
   return parsed;
 }
 
+export function parseSortingItems(raw: unknown): SortingItem[] {
+  if (!Array.isArray(raw) || raw.length < 2) throw new Error("Sorting requires at least two items.");
+  const ids = new Set<string>();
+  return raw.map((item) => {
+    if (!item || typeof item.id !== "string" || !item.id || ids.has(item.id)) throw new Error("Invalid sorting item ID.");
+    ids.add(item.id);
+    const stages = parseStages(item.stages);
+    if (!stages.length || stages.length !== item.stages.length) throw new Error("Invalid sorting item stages.");
+    return { id: item.id, stages };
+  });
+}
+
 function parsePointsPerStep(pointsRaw: unknown): number[] | undefined {
   if (!Array.isArray(pointsRaw)) return undefined;
   const points = pointsRaw.filter(
@@ -112,7 +126,7 @@ function parsePointsPerStep(pointsRaw: unknown): number[] | undefined {
 
 export function parseRoundMeta(id: string, data: Record<string, unknown>, index: number): RoundMeta | null {
   const type = (data.type as string | undefined)?.toLowerCase();
-  if (type !== "text" && type !== "image" && type !== "multi-step" && type !== "color") {
+  if (type !== "text" && type !== "image" && type !== "multi-step" && type !== "color" && type !== "sorting") {
     return null;
   }
 
@@ -292,6 +306,7 @@ export function useRoomRounds(roomSlug: string, isHost?: boolean) {
 
                     return {
                       id: questionSnap.id,
+                      items: meta.type === "sorting" ? parseSortingItems(data.items) : undefined,
                       finalizedStep: typeof data.finalizedStep === "number" ? data.finalizedStep : -1,
                       prompt: promptRaw,
                       displayPrompt,
@@ -376,7 +391,7 @@ export function useRoomRounds(roomSlug: string, isHost?: boolean) {
             }
           }
 
-          const canReadAnswers = meta.type !== "image" && isHost;
+          const canReadAnswers = meta.type !== "image" && meta.type !== "sorting" && isHost;
 
           if (!canReadAnswers) {
             const existing = answerUnsubs.get(meta.id);

@@ -11,8 +11,9 @@ export type HostRound = {
   roundNumber: number;
   order: number;
   state: "scheduled" | "active" | "closed";
-  type: "text" | "image" | "multi-step" | "color";
+  type: "text" | "image" | "multi-step" | "color" | "sorting";
   questions: HostRoundQuestion[];
+  gradingRequired?: boolean;
 };
 
 export function resolveHostRoundId(
@@ -37,4 +38,8 @@ export function getVisibleHostQuestions(round: HostRound): HostRoundQuestion[] {
   }
 
   return round.questions.filter((question) => question.answer.trim().length > 0);
+}
+
+export function hasActiveForegroundRound(rounds: Pick<HostRound, "type" | "state">[]): boolean {
+  return rounds.some((round) => round.state === "active" && round.type !== "sorting");
 }

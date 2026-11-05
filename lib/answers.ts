@@ -1,3 +1,5 @@
+export const MAX_ANSWER_LENGTH = 10000;
+
 export type AnswerAttempt = {
   answer: string;
   step: number;

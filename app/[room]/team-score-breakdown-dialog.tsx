@@ -5,8 +5,9 @@ import { collection, getDocs, setDoc, doc, serverTimestamp } from "firebase/fire
 
 import { getClientFirestore } from "@/lib/firebase/client";
 import { allowsNegativePoints, getAwardedPoints } from "@/lib/components/room/grading";
+import { SortingItems } from "@/lib/components/sorting-round";
 import { recordedAnswer } from "@/lib/answers";
-import { parseBreakdownAttempts, parseDraftPoints, type BreakdownAttempt } from "./team-score-breakdown";
+import { parseBreakdownAttempts, parseBreakdownSortingOrder, parseDraftPoints, type BreakdownAttempt } from "./team-score-breakdown";
 import type { RoundMeta, RoundQuestion } from "@/lib/hooks/use-room-rounds";
 
 type TeamScoreBreakdownDialogProps = {
@@ -22,6 +23,7 @@ type TeamScoreBreakdownDialogProps = {
 };
 
 type BreakdownQuestion = {
+  sorting?: ReturnType<typeof parseBreakdownSortingOrder>;
   questionId: string;
   order: number;
   prompt: string;
@@ -109,6 +111,7 @@ export default function TeamScoreBreakdownDialog({
               .map((question, idx) => {
                 const answer = answersByQuestion.get(question.id);
                 return {
+                  sorting: round.type === "sorting" ? parseBreakdownSortingOrder(answer?.answer ?? "", question.items ?? []) : undefined,
                   questionId: question.id,
                   order: question.order ?? idx,
                   prompt: question.displayPrompt || question.prompt || `Question ${idx + 1}`,
@@ -305,7 +308,7 @@ export default function TeamScoreBreakdownDialog({
                                     {question.step + 1}
                                   </span>
                                 ) : null}
-                                <p className="text-sm text-zinc-100">{question.answer || "—"}</p>
+                                {question.sorting ? <SortingItems items={question.sorting.items} order={question.sorting.order} /> : <p className="text-sm text-zinc-100">{question.answer || "—"}</p>}
                                 {question.wagered ? <span className="text-xs font-semibold text-amber-300">x2</span> : null}
                                 {round.type === "color" && question.perceptionScore !== null ? <span className="text-xs text-zinc-300">{question.perceptionScore.toFixed(2)} / 10</span> : null}
                               </div>

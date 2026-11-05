@@ -1,3 +1,5 @@
+import { parseSortingRound } from "@/types/sorting";
+
 type JsonSchema = {
   $ref?: string;
   $defs?: Record<string, JsonSchema>;
@@ -249,5 +251,11 @@ function validateNode(
 }
 
 export function validateAgainstQuizSchema(quizData: unknown, schema: JsonSchema): string[] {
-  return validateNode(quizData, schema, "$", schema);
+  const errors = validateNode(quizData, schema, "$", schema);
+  if (Array.isArray(quizData)) quizData.forEach((round, index) => {
+    if (!isObject(round) || round.type !== "sorting") return;
+    try { parseSortingRound(round); }
+    catch (error) { errors.push(`Round ${index + 1}: ${(error as Error).message}`); }
+  });
+  return uniqueErrors(errors);
 }

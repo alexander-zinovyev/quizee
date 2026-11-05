@@ -12,7 +12,8 @@ The host builds a quiz or loads a prepared quiz pack. Each round has a theme of 
 
 - **Team play.** Teammates can talk through clues over voice and video, use their team chat, and submit a shared answer. Other teams can have their own discussions at the same time, and everyone can use the room chat between rounds.
 - **Live hosting.** The host sets the pace. They decide when to show a question, give teams another clue, reveal the answer, or move on to the next round.
-- **Scoring and standings.** Hosts grade written answers and can adjust points. Image and color rounds support automatic scoring, and text rounds can offer a double-or-nothing wager. After the game, teams can see where they placed and which questions earned them points.
+- **Scoring and standings.** Hosts grade written answers and can adjust points. Image, color, and sorting rounds support automatic scoring, and text rounds can offer a double-or-nothing wager. After the game, teams can see where they placed and which questions earned them points.
+- **Sorting rounds.** Teams arrange text or media items into a shared order while other rounds continue. Each item in its correct position earns one point. The host closes submissions and reveals the correct order separately.
 - **Quiz builder.** Hosts can write themed rounds, add images, audio, or video, and preview questions before game night. They can save the quiz as a reusable pack or load an existing pack to edit it.
 - **Game history.** Players can revisit published games, compare results round by round, and follow their performance across quiz nights.
 
@@ -24,3 +25,6 @@ The host builds a quiz or loads a prepared quiz pack. Each round has a theme of 
 | **Image matching** | Teams match pictures to prompts, such as pairing film stills with movie titles. |
 | **Multi-step** | Teams get one clue at a time. An early guess can be worth more points, so teams have to weigh answering now against waiting for another clue. |
 | **Color matching** | Teams adjust part of an image to match a color from memory, such as the red in a familiar logo. The closer the match, the better the score. |
+| **Sorting** | Teams arrange text or media items according to a criterion, with one point for each correct position. The list can stay open alongside other rounds. |
+
+Sorting packs use the existing stage format for item text and media. See [sorting pack authoring](docs/sorting-rounds.md) for the JSON format.

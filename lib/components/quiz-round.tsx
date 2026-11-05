@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { QuizRoundData } from "@/types/quiz";
+import { SortingRound } from "./sorting-round";
 import ImageQuizRound from "./image-round";
 import AnswerRound from "./answer-round";
 import { ColorAnswerSummary } from "./color-answer-summary";
@@ -25,6 +26,10 @@ export default function QuizRound(props: QuizRoundData) {
     body = (
       <p className="text-sm text-zinc-500 dark:text-zinc-400">{emptyLabel}</p>
     );
+  } else if (props.type === "sorting") {
+    body = <SortingRound key={`${roomSlug}:${teamId}:${roundId}:${props.state}`} roomSlug={roomSlug} teamId={teamId}
+      roundId={roundId} question={props.questions[0]} state={props.state}
+      reveal={props.presenting?.round === roundId && props.presenting.withAnswer === true} />;
   } else if (props.type === "color") {
     body = <ColorAnswerSummary key={`${roomSlug}:${teamId}:${roundId}`} roomSlug={roomSlug} roundId={roundId} teamId={teamId} questions={questions} />;
   } else if (props.type === "text" || props.type === "multi-step") {

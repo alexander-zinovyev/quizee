@@ -1,4 +1,5 @@
 import { posix } from "node:path";
+import { parseSortingRound, type SortingItem } from "@/types/sorting";
 import { parseColorQuestion, parseColorScoring, type ColorScoring } from "@/types/color";
 
 export type ValidatedStage = {
@@ -64,7 +65,16 @@ export type ValidatedColorRound = {
   questions: Array<{ order: number; imagePath: string; initialColor: string; targetColor: string } & ({ maskPath: string; regionIds?: never } | { regionIds: string[]; maskPath?: never })>;
 };
 
-export type ValidatedRound = ValidatedTextRound | ValidatedImageRound | ValidatedMultiStepRound | ValidatedColorRound;
+export type ValidatedSortingRound = {
+  order: number;
+  type: "sorting";
+  title: string;
+  criterion: string;
+  items: SortingItem<ValidatedStage>[];
+  correctOrder: string[];
+};
+
+export type ValidatedRound = ValidatedSortingRound | ValidatedTextRound | ValidatedImageRound | ValidatedMultiStepRound | ValidatedColorRound;
 
 export { ROOM_ID_REGEX } from "@/lib/room-id";
 import { RESERVED_ROOM_IDS, ROOM_ID_REGEX } from "@/lib/room-id";
@@ -252,6 +262,18 @@ export function validateQuizFile(content: string): ValidatedRound[] | string {
     const type = round?.type;
     const title = ensureString(round?.title);
     const questions = round?.questions;
+
+    if (type === "sorting") {
+      try {
+        const sorting = parseSortingRound(round);
+        validatedRounds.push({ ...sorting, order: roundIndex, items: sorting.items.map((item) => ({
+          id: item.id, stages: item.stages.map((stage) => ({
+            ...(stage.text ? { text: stage.text } : {}), ...(stage.media ? { media: { path: stage.media } } : {}),
+          })),
+        })) });
+      } catch (error) { return `Round ${roundIndex + 1}: ${(error as Error).message}`; }
+      continue;
+    }
 
     if (type !== "text" && type !== "image" && type !== "multi-step" && type !== "color") {
       return `Round ${roundIndex + 1}: unsupported round type.`;
