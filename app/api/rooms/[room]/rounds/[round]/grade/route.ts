@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 
 import { getServerAuth, getServerFirestore } from "@/server/database";
+import { gradeSortingRound } from "@/server/rooms/sorting";
 import { gradeColorRound } from "@/server/rooms/color-scoring";
 
 const SESSION_COOKIE_NAME = "__session";
@@ -85,6 +86,11 @@ export async function POST(
     }
 
     const roundData = roundSnap.data() ?? {};
+    if (roundData.type === "sorting") {
+      if (roundData.state !== "closed") return NextResponse.json({ message: "Round must be closed before grading." }, { status: 409 });
+      await gradeSortingRound(db, roomSlug, roundId, authResult.uid);
+      return NextResponse.json({ status: "ok" });
+    }
     if (roundData.type === "color") {
       if (roundData.state !== "closed") return NextResponse.json({ message: "Round must be closed before grading." }, { status: 409 });
       await gradeColorRound(db, roomSlug, roundId, authResult.uid);

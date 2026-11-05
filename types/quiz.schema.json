@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://quizee.local/schemas/quiz.schema.json",
   "title": "Quizee Quiz Schema",
-  "description": "Schema for quiz packs containing text, image, multi-step, and color rounds.",
+  "description": "Schema for quiz packs containing text, image, multi-step, color, and sorting rounds.",
   "type": "array",
   "minItems": 1,
   "items": {
@@ -33,6 +33,23 @@
     "colorRound": { "type": "object", "additionalProperties": false, "required": ["type", "title", "questions", "scoring"], "properties": {
       "type": { "const": "color" }, "title": { "$ref": "#/$defs/nonEmptyText" }, "scoring": { "$ref": "#/$defs/colorScoring" }, "questions": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/colorQuestion" } }
     } },
+    "sortingItem": {
+      "type": "object", "additionalProperties": false, "required": ["id", "stages"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
+        "stages": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/stage" } }
+      }
+    },
+    "sortingRound": {
+      "type": "object", "additionalProperties": false,
+      "required": ["type", "title", "criterion", "items", "correctOrder"],
+      "properties": {
+        "type": { "const": "sorting" }, "title": { "$ref": "#/$defs/nonEmptyText" },
+        "criterion": { "$ref": "#/$defs/nonEmptyText" },
+        "items": { "type": "array", "minItems": 2, "items": { "$ref": "#/$defs/sortingItem" } },
+        "correctOrder": { "type": "array", "minItems": 2, "uniqueItems": true, "items": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" } }
+      }
+    },
     "nonEmptyText": {
       "type": "string",
       "minLength": 1,
@@ -242,6 +259,7 @@
     "round": {
       "oneOf": [
         { "$ref": "#/$defs/colorRound" },
+        { "$ref": "#/$defs/sortingRound" },
         {
           "$ref": "#/$defs/textRound"
         },

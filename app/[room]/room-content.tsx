@@ -18,6 +18,7 @@ import {
 import Member from "@/lib/components/member";
 import Team from "@/lib/components/team";
 import { RoundStage } from "@/lib/components/room/round-stage";
+import { SortingRound } from "@/lib/components/sorting-round";
 import { ColorPresenting } from "@/lib/components/color-presenting";
 import { PromptNavigation } from "@/lib/components/room/prompt-navigation";
 import { canRetryAutoGrade, getAwardedPoints } from "@/lib/components/room/grading";
@@ -31,7 +32,7 @@ import RoomChatPanel from "./room-chat-panel";
 import RoomRoundsPanel from "./room-rounds-panel";
 import RoomHostRoundsPanel from "./room-host-rounds-panel";
 import TeamScoreBreakdownDialog from "./team-score-breakdown-dialog";
-import type { HostRound } from "./host-rounds";
+import { hasActiveForegroundRound, type HostRound } from "./host-rounds";
 import { getAudioIsolatedRound } from "./round-audio";
 import type { RoomRosterTeam } from "./room-layout-types";
 import type { TeamMember } from "@/lib/components/team";
@@ -229,9 +230,14 @@ export default function RoomContent({
     // Keeps this memo in sync with media cache invalidations.
     void mediaCacheVersion;
     const mapped = roundsMeta
-      .filter((meta) => meta.state === "active")
+      .filter((meta) => meta.state === "active" || (meta.type === "sorting" && meta.state === "closed"))
       .map<QuizRoundData | null>((meta, index) => {
         const questions = roundQuestions[meta.id] ?? [];
+
+        if (meta.type === "sorting") return {
+          id: meta.id, type: "sorting", title: meta.title, roundNumber: meta.order + 1,
+          state: meta.state as "active" | "closed", questions: questions.map((q) => ({ ...q, prompt: q.prompt ?? q.displayPrompt })), presenting,
+        };
 
         if (meta.type === "color") return {
           id: meta.id, type: "color", title: meta.title, roundNumber: meta.order + 1,
@@ -357,6 +363,7 @@ export default function RoomContent({
           roundNumber: meta.order + 1 || index + 1,
           state: meta.state,
           type: meta.type,
+          gradingRequired: meta.gradingRequired,
           questions: questions.map((q, qIndex) => {
             const answer =
               meta.type === "image"
@@ -401,6 +408,7 @@ export default function RoomContent({
       !presentingRoundMeta ||
       presentingRoundMeta.type === "image" ||
       presentingRoundMeta.type === "color" ||
+      presentingRoundMeta.type === "sorting" ||
       presentingRoundMeta.state !== "closed" ||
       presenting?.question ||
       gradingRequiredRounds[presentingRoundMeta.id] === false
@@ -586,11 +594,24 @@ export default function RoomContent({
     });
   }
 
+  function currentPresentation() {
+    return { round: presenting?.round ?? null, question: presenting?.question ?? null,
+      withAnswer: presenting?.withAnswer ?? false, promptPage: presenting?.promptPage ?? 0,
+      answerPage: presenting?.answerPage ?? 0 };
+  }
+
+  async function activateRound(roundId: string) {
+    const meta = roundsMeta.find((round) => round.id === roundId);
+    if (!meta) throw new Error("Round not found.");
+    const next = meta.type === "sorting" ? currentPresentation() : { round: roundId, question: null, withAnswer: false };
+    await persistPresentation(next, { activateRound: roundId });
+  }
+
   async function handleActivateSpecificRound(roundId: string) {
     if (!isHost) return;
     setRoundsError(null);
     try {
-      await persistPresentation({ round: roundId, question: null, withAnswer: false }, { activateRound: roundId });
+      await activateRound(roundId);
     } catch (error) {
       console.error("[room-content] activate round failed", error);
       setRoundsError("Unable to activate that round right now.");
@@ -602,14 +623,14 @@ export default function RoomContent({
     setRoundsError(null);
     try {
       const meta = roundsMeta.find((round) => round.id === roundId);
-      if (meta?.type === "text" || meta?.type === "multi-step" || meta?.type === "color") {
+      if (meta?.type === "text" || meta?.type === "multi-step" || meta?.type === "color" || meta?.type === "sorting") {
         const next = presenting?.round === roundId
-          ? { round: roundId, question: meta.type === "color" ? presenting?.question ?? roundQuestions[roundId]?.[0]?.id ?? null : null, withAnswer: false }
+          ? { round: roundId, question: (meta.type === "color" || meta.type === "sorting") ? presenting?.question ?? roundQuestions[roundId]?.[0]?.id ?? null : null, withAnswer: false }
           : { round: presenting?.round ?? null, question: presenting?.question ?? null,
               withAnswer: presenting?.withAnswer ?? false, promptPage: presenting?.promptPage ?? 0,
               answerPage: presenting?.answerPage ?? 0 };
         await persistPresentation(next, { closeRound: roundId });
-        if (meta.type === "color") await autoGradeRound(roundId);
+        if (meta.type === "color" || meta.type === "sorting") await autoGradeRound(roundId);
         return;
       }
       const db = getClientFirestore();
@@ -860,6 +881,10 @@ export default function RoomContent({
 
   async function handleEndRound() {
     if (!isHost || !activeRoundForControls || activeRoundForControls.state !== "active") return;
+    if (activeRoundForControls.type === "sorting") {
+      await handleEndSpecificRound(activeRoundForControls.id);
+      return;
+    }
     setIsEndingRound(true);
     try {
       if (activeRoundForControls.type === "text" || activeRoundForControls.type === "multi-step" || activeRoundForControls.type === "color") {
@@ -1303,6 +1328,7 @@ export default function RoomContent({
       onHideQuestion={hideQuestionFromPanel}
       onStartRound={handleActivateSpecificRound}
       onEndRound={handleEndSpecificRound}
+      onGradeRound={autoGradeRound}
       className="col-span-2 flex-1 min-h-0 rounded-3xl border border-zinc-200 bg-white/90 p-4 shadow-xl backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/80"
     />
   ) : (
@@ -1325,8 +1351,7 @@ export default function RoomContent({
     setRoundsError(null);
 
     try {
-      await persistPresentation({ round: nextScheduledRound.id, question: null, withAnswer: false },
-        { activateRound: nextScheduledRound.id });
+      await activateRound(nextScheduledRound.id);
     } catch (error) {
       console.error("[room-content] activate next round failed", error);
       setRoundsError("Unable to start the next round right now.");
@@ -1340,8 +1365,9 @@ export default function RoomContent({
       <main className="grid h-full grid-rows-2 gap-3 p-1 sm:gap-4 sm:p-2 lg:p-3">
         <section className="grid min-h-0 h-full w-full grid-cols-7 items-stretch gap-3">
           {roundsError ? (
-            <div className="col-span-2 flex h-full min-h-0 items-center justify-center rounded-3xl border border-red-200 bg-red-50/80 p-4 text-sm text-red-700 shadow-xl dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">
-              {roundsError}
+            <div className="col-span-2 flex h-full min-h-0 flex-col items-center justify-center gap-3 rounded-3xl border border-red-200 bg-red-50/80 p-4 text-sm text-red-700 shadow-xl dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">
+              <p>{roundsError}</p>
+              <button type="button" onClick={() => setRoundsError(null)} className="rounded-lg border border-current px-3 py-2">Dismiss</button>
             </div>
           ) : isLoadingRounds ? (
             <div className="col-span-2 h-full min-h-0 animate-pulse rounded-3xl border border-zinc-200 bg-white/70 p-4 shadow-xl dark:border-zinc-800 dark:bg-zinc-900/60" />
@@ -1366,7 +1392,7 @@ export default function RoomContent({
                 </div>
               ) : null}
 
-              {isHost && !allRoundsClosed && !rounds.length && nextScheduledRound ? (
+              {isHost && !allRoundsClosed && !hasActiveForegroundRound(roundsMeta) && nextScheduledRound ? (
                 <div className="rounded-2xl border border-dashed border-emerald-300 bg-emerald-50/60 px-4 py-3 text-sm text-emerald-700 shadow-sm dark:border-emerald-900 dark:bg-emerald-900/20 dark:text-emerald-200">
                   Next up: {nextScheduledRound.title}
                   <button
@@ -1408,7 +1434,14 @@ export default function RoomContent({
                 ) : null}
               </div>
             </header>
-            {presentingRoundMeta?.type === "color" && presentingQuestion ? (
+            {presentingRoundMeta?.type === "sorting" && presentingQuestion ? (
+              <div className="min-h-0 flex-1 overflow-auto text-white">
+                <SortingRound key={`${presentingRoundMeta.id}:${presentingQuestion.id}:${presentingRoundMeta.state}`}
+                  roomSlug={roomSlug} roundId={presentingRoundMeta.id} question={{ ...presentingQuestion, prompt: presentingQuestion.prompt ?? presentingQuestion.displayPrompt }}
+                  state={presentingRoundMeta.state === "closed" ? "closed" : "active"} readOnly
+                  reveal={presenting?.withAnswer ?? false} />
+              </div>
+            ) : presentingRoundMeta?.type === "color" && presentingQuestion ? (
               <ColorPresenting key={`${presentingRoundMeta.id}:${presentingQuestion.id}:${viewerTeamId ?? "host"}`}
                 roomSlug={roomSlug} round={presentingRoundMeta} question={presentingQuestion} teamId={viewerTeamId} isHost={!!isHost}
                 teams={teams ?? []} withAnswer={presenting?.withAnswer ?? false} />

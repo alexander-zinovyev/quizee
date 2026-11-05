@@ -18,6 +18,7 @@ type RoomHostRoundsPanelProps = {
   onHideQuestion?: () => void;
   onStartRound?: (roundId: string) => void;
   onEndRound?: (roundId: string) => void;
+  onGradeRound?: (roundId: string) => void;
 };
 
 export default function RoomHostRoundsPanel({
@@ -28,6 +29,7 @@ export default function RoomHostRoundsPanel({
   onHideQuestion,
   onStartRound,
   onEndRound,
+  onGradeRound,
 }: RoomHostRoundsPanelProps) {
   const sanitizedRounds = useMemo(
     () => rounds.slice().sort((a, b) => a.order - b.order),
@@ -97,6 +99,9 @@ export default function RoomHostRoundsPanel({
               >
                 Activate
               </button>
+            ) : null}
+            {activeRound.type === "sorting" && activeRound.state === "closed" && activeRound.gradingRequired ? (
+              <button type="button" onClick={() => onGradeRound?.(activeRound.id)} className="rounded-md bg-emerald-600 px-3 py-1 text-xs font-semibold text-white">Score round</button>
             ) : null}
             {activeRound.state === "active" ? (
               <button

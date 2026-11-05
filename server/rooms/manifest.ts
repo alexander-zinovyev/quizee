@@ -27,6 +27,10 @@ export function collectReferencedMedia(rounds: ValidatedRound[]): Set<string> {
   const referencedMedia = new Set<string>();
 
   rounds.forEach((round) => {
+    if (round.type === "sorting") {
+      round.items.forEach((item) => addStageMedia(referencedMedia, item.stages));
+      return;
+    }
     if (round.type === "color") {
       round.questions.forEach((q) => { referencedMedia.add(q.imagePath); if (q.maskPath) referencedMedia.add(q.maskPath); });
       return;
@@ -65,7 +69,7 @@ export function createRoundDocumentData(round: ValidatedRound): RoundDocumentDat
     order: round.order,
     state: "scheduled",
     activeWindow: { startedAt: null, endedAt: null },
-    questionCount: round.questions.length,
+    questionCount: round.type === "sorting" ? 1 : round.questions.length,
     gradingRequired: false,
   };
 

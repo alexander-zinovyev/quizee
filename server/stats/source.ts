@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { Firestore, Transaction } from "firebase-admin/firestore";
 import { parseAttempts, recordedAnswer } from "@/lib/answers";
 import { HEX_COLOR, parseColorScoring, parseRegionIds } from "@/types/color";
+import { parseSortingOrder, SORTING_ITEM_ID } from "@/types/sorting";
 import type { StatsRecordedAnswer, StatsRoundScoring, StatsSnapshot, StatsStage } from "@/types/stats";
 import { StatsError } from "./error";
 import { completionTime, statsId } from "./model";
@@ -54,7 +55,7 @@ function ordered(documents: SourceDocument[]): SourceDocument[] {
   });
 }
 
-function parseScoring(data: Record<string, unknown>): StatsRoundScoring {
+function parseScoring(data: Record<string, unknown>, questions: SourceDocument[]): StatsRoundScoring {
   let scoring: StatsRoundScoring;
   switch (data.type) {
     case "text":
@@ -62,6 +63,11 @@ function parseScoring(data: Record<string, unknown>): StatsRoundScoring {
       scoring = { type: "text", allowWager: data.allowWager === undefined ? false : bool(data.allowWager, "wager policy") };
       break;
     case "image": scoring = { type: "image" }; break;
+    case "sorting": {
+      if (questions.length !== 1 || !Array.isArray(questions[0].data.items)) malformed("sorting question/items");
+      scoring = { type: "sorting", itemCount: questions[0].data.items.length };
+      break;
+    }
     case "multi-step": {
       const points = data.pointsPerStep;
       if (points !== null && points !== undefined && (!Array.isArray(points) || !points.length ||
@@ -147,7 +153,7 @@ function normalizeSource(source: RoomSource, snapshotId: string): StatsSnapshot 
     id: team.id, name: text(team.data.name, "team name"), score: numeric(team.data.scoreTotal, "final score"),
   }));
   const rounds = ordered(source.rounds).map((document, roundOrder) => {
-    const round = document as SourceRound, scoring = parseScoring(round.data);
+    const round = document as SourceRound, scoring = parseScoring(round.data, round.questions);
     if (round.data.state !== "closed") malformed("ended room contains an unclosed round");
     const required = bool(round.data.gradingRequired, "round grading status");
     const teamGrading = teams.map((team) => bool(round.teamAnswers[team.id]?.metadata?.graded, "team grading status"));
@@ -162,6 +168,18 @@ function normalizeSource(source: RoomSource, snapshotId: string): StatsSnapshot 
       legacyOnePointAwards(round, questionDocuments, scoring, team.id, teamScores[team.id], questionCount)]));
     const questions = questionDocuments.map((question, order) => {
       const accepted = round.answers.find((answer) => answer.id === question.id)?.data;
+      const sorting = scoring.type === "sorting" ? (() => {
+        const items = (question.data.items as unknown[]).map((raw) => {
+          const item = object(raw, "sorting item"), id = text(item.id, "sorting item ID");
+          if (!id || !SORTING_ITEM_ID.test(id) || !Array.isArray(item.stages) || !item.stages.length) malformed("sorting item");
+          const content = stages(item);
+          if (content.some((stage) => !stage.text?.trim() && !stage.assetId)) malformed("empty sorting stage");
+          return { id, stages: content };
+        });
+        const ids = items.map((item) => item.id);
+        if (new Set(ids).size !== ids.length) malformed("duplicate sorting item IDs");
+        return { items, correctOrder: parseSortingOrder(accepted?.correctOrder, ids) };
+      })() : undefined;
       const imageId = scoring.type === "image" ? text(accepted?.answer, "accepted image ID") : null;
       const answerStages = scoring.type === "image" ? imageId && imageIds.get(imageId) ? [{ text: null, assetId: imageIds.get(imageId)! }] : [] : stages(accepted);
       const answers: Record<string, StatsRecordedAnswer> = {};
@@ -178,12 +196,15 @@ function normalizeSource(source: RoomSource, snapshotId: string): StatsSnapshot 
         const perceptionScore = numeric(raw?.perceptionScore, "perception score");
         if (perceptionScore !== null && (perceptionScore < 0 || perceptionScore > 10)) malformed("perception score");
         if (scoring.type === "color" && answer !== null && answer !== "" && !HEX_COLOR.test(answer)) malformed("submitted color");
+        const sortingOrder = sorting && answer !== null && answer !== "" ? parseSortingOrder(JSON.parse(answer), sorting.items.map((item) => item.id)) : null;
         let correctness = bool(raw?.correct, "recorded correctness");
         if (scoring.type === "image" && imageId && imageIds.has(imageId) && answer !== null) correctness = answer === imageId;
         if (scoring.type === "color" && scoring.scoring?.mode === "threshold" && perceptionScore !== null) correctness = perceptionScore >= scoring.scoring.threshold;
         if (scoring.type === "color" && scoring.scoring?.mode === "closest") correctness = null;
+        if (sorting && answer !== null) correctness = sortingOrder !== null && sortingOrder.every((id, index) => id === sorting.correctOrder[index]);
         answers[team.id] = { answer, attempts, correctness, awardedPoints, perceptionScore,
           ...(legacyAward !== undefined ? { awardedPointsProvenance: "legacy-correctness" as const } : {}),
+          ...(sorting ? { sortingOrder } : {}),
           assetId: scoring.type === "image" && answer !== null ? imageIds.get(answer) ?? null : null };
       }
       const colorValue = (value: unknown, label: string) => {
@@ -192,6 +213,7 @@ function normalizeSource(source: RoomSource, snapshotId: string): StatsSnapshot 
         return color;
       };
       return { id: question.id, order, prompt: stages(question.data, "prompt"), acceptedAnswer: answerStages, answerHint: text(accepted?.hint, "accepted answer hint"), answers,
+        ...(sorting ? { sorting } : {}),
         color: scoring.type === "color" ? { initialColor: colorValue(question.data.initialColor, "initial color"),
           targetColor: colorValue(accepted?.answer, "target color"), maskAssetId: asset(question.data.mask),
           regionIds: question.data.regionIds === undefined ? null : parseRegionIds(question.data.regionIds) } : null };

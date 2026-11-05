@@ -7,6 +7,7 @@ import { getFirestore as getAdminFirestore } from "firebase-admin/firestore";
 import { transitionPresentation } from "./presentation";
 import { parseAnswerSave, saveTeamAnswer } from "./answer-input";
 import { recordedAnswer } from "@/lib/answers";
+import { gradeSortingRound } from "./sorting";
 
 async function main() {
   const address = process.env.FIRESTORE_EMULATOR_HOST;
@@ -159,6 +160,106 @@ async function main() {
       await denied(updateDoc(doc(a.db, gradedPath), { awardedPoints: 2 }));
       await updateDoc(doc(hostClient.db, gradedPath), { awardedPoints: 2 });
       assert.equal((await getDocFromServer(doc(a.db, gradedPath))).data()?.awardedPoints, 2);
+    }
+    {
+      const roomId = "rules-sorting", path = `rooms/${roomId}`;
+      const [a, b, outsider, hostClient] = apps;
+      const questionId = "question-1";
+      const foreground = { round: "foreground", question: "q1", promptPage: 0, answerPage: 0, withAnswer: false };
+      const roundPath = `${path}/rounds/sorting`;
+      const answerPath = `${path}/teams/red/rounds/sorting/answers/${questionId}`;
+      const privatePath = `${roundPath}/answers/${questionId}`;
+      const frozenPath = `${roundPath}/teamAnswers/red/answers/${questionId}`;
+      const correctOrder = ["a", "b", "c", "d"];
+      await admin.doc(path).set({ state: "playing", presenting: foreground });
+      for (const { uid } of apps) await admin.doc(`${path}/members/${uid}`).set({
+        role: uid === "host" ? "host" : "player", team: uid === "outsider" ? "blue" : "red",
+      });
+      await admin.doc(`${path}/teams/red`).set({ name: "Red" });
+      await admin.doc(`${path}/teams/blue`).set({ name: "Blue" });
+      await admin.doc(`${path}/rounds/foreground`).set({ type: "text", state: "active" });
+      await admin.doc(`${path}/rounds/foreground/questions/q1`).set({ stages: [{ text: "Foreground one" }] });
+      await admin.doc(`${path}/rounds/foreground-two`).set({ type: "text", state: "scheduled" });
+      await admin.doc(`${path}/rounds/foreground-two/questions/q1`).set({ stages: [{ text: "Foreground two" }] });
+      await admin.doc(roundPath).set({ type: "sorting", state: "scheduled" });
+      await admin.doc(`${roundPath}/questions/${questionId}`).set({
+        order: 0, text: "Earliest to latest", stages: [{ text: "Earliest to latest" }],
+        items: correctOrder.map((id) => ({ id, stages: [{ text: id.toUpperCase() }] })),
+      });
+      await admin.doc(privatePath).set({ correctOrder });
+      const save = (uid: string, teamId: string, order: string[]) => saveTeamAnswer(admin, roomId, "sorting", questionId, uid,
+        parseAnswerSave({ teamId, answer: JSON.stringify(order) }));
+      await transitionPresentation(admin, roomId, "host", foreground, foreground, { activateRound: "sorting" });
+      assert.deepEqual((await admin.doc(path).get()).data()?.presenting, foreground);
+      await denied(getDocFromServer(doc(a.db, privatePath)));
+      assert.deepEqual((await getDocFromServer(doc(hostClient.db, privatePath))).data()?.correctOrder, correctOrder);
+      await denied(updateDoc(doc(hostClient.db, roundPath), { state: "closed" }));
+      await denied(setDoc(doc(a.db, answerPath), { answer: JSON.stringify(correctOrder) }));
+      await denied(setDoc(doc(a.db, frozenPath), { answer: JSON.stringify(correctOrder), awardedPoints: 999 }));
+      await assert.rejects(save("outsider", "red", correctOrder), /Team changed/);
+      await assert.rejects(transitionPresentation(admin, roomId, "host", foreground,
+        { ...foreground, round: "sorting", question: questionId, withAnswer: true }));
+      // Even a forged presentation flag cannot make an active sorting answer readable.
+      await admin.doc(path).update({ presenting: { ...foreground, round: "sorting", question: questionId, withAnswer: true } });
+      await denied(getDocFromServer(doc(a.db, privatePath)));
+      await admin.doc(path).update({ presenting: foreground });
+      const observed = new Promise<string>((resolve, reject) => {
+        const unsubscribe = onSnapshot(doc(b.db, answerPath), (snapshot) => {
+          if (snapshot.metadata.fromCache || snapshot.data()?.answer !== JSON.stringify(correctOrder)) return;
+          unsubscribe();
+          resolve(snapshot.data()!.answer);
+        }, reject);
+      });
+      await save("a", "red", correctOrder);
+      assert.equal(await observed, JSON.stringify(correctOrder));
+      await save("outsider", "blue", ["b", "a", "d", "c"]);
+      assert.equal((await getDocFromServer(doc(b.db, answerPath))).data()?.answer, JSON.stringify(correctOrder));
+      await denied(getDocFromServer(doc(outsider.db, answerPath)));
+      await save("b", "red", ["a", "c", "b", "d"]);
+      const secondForeground = { ...foreground, round: "foreground-two" };
+      await transitionPresentation(admin, roomId, "host", foreground, secondForeground, { activateRound: "foreground-two" });
+      // A fresh client represents a reconnect, with no cached order from either teammate.
+      const reconnectApp = initializeApp({ projectId, apiKey: "fake" }, "sorting-reconnect");
+      const reconnect = getFirestore(reconnectApp);
+      connectFirestoreEmulator(reconnect, host, Number(port), { mockUserToken: { sub: "a", user_id: "a" } });
+      try {
+        assert.equal((await getDocFromServer(doc(reconnect, answerPath))).data()?.answer, '["a","c","b","d"]');
+      } finally {
+        await terminate(reconnect);
+        await deleteApp(reconnectApp);
+      }
+      await transitionPresentation(admin, roomId, "host", secondForeground, secondForeground, { closeRound: "sorting" });
+      assert.deepEqual((await admin.doc(path).get()).data()?.presenting, secondForeground);
+      assert.equal((await getDocFromServer(doc(a.db, frozenPath))).data()?.answer, '["a","c","b","d"]');
+      await assert.rejects(save("a", "red", correctOrder), /Round/);
+      await assert.rejects(save("outsider", "blue", correctOrder), /Round/);
+      await denied(updateDoc(doc(a.db, answerPath), { answer: JSON.stringify(correctOrder) }));
+      await denied(getDocFromServer(doc(a.db, privatePath)));
+      await gradeSortingRound(admin, roomId, "sorting", "host");
+      assert.equal((await getDocFromServer(doc(a.db, frozenPath))).data()?.awardedPoints, 2);
+      assert.equal((await getDocFromServer(doc(a.db, `${path}/teams/red/scores/sorting`))).data()?.score, 2);
+      assert.equal((await getDocFromServer(doc(a.db, `${path}/teams/red`))).data()?.scoreTotal, 2);
+      await gradeSortingRound(admin, roomId, "sorting", "host");
+      assert.equal((await getDocFromServer(doc(a.db, `${path}/teams/red`))).data()?.scoreTotal, 2);
+      await denied(updateDoc(doc(a.db, frozenPath), { awardedPoints: 999 }));
+      await transitionPresentation(admin, roomId, "host", secondForeground,
+        { ...secondForeground, round: "sorting", question: questionId, withAnswer: true });
+      assert.deepEqual((await getDocFromServer(doc(a.db, privatePath))).data()?.correctOrder, correctOrder);
+      // The real emulator exercises transaction conflicts between a late save and closure.
+      await admin.doc(path).update({ presenting: secondForeground });
+      await admin.doc(roundPath).update({ state: "active" });
+      const [closing, saving] = await Promise.allSettled([
+        transitionPresentation(admin, roomId, "host", secondForeground, secondForeground, { closeRound: "sorting" }),
+        save("a", "red", correctOrder),
+      ]);
+      assert.equal(closing.status, "fulfilled");
+      if (saving.status === "rejected") assert.match(String(saving.reason), /Round/);
+      const liveAnswer = (await admin.doc(answerPath).get()).data()?.answer;
+      const frozenAnswer = (await admin.doc(frozenPath).get()).data()?.answer;
+      assert.equal(frozenAnswer, liveAnswer);
+      assert.equal(liveAnswer, saving.status === "fulfilled" ? JSON.stringify(correctOrder) : '["a","c","b","d"]');
+      await assert.rejects(save("b", "red", ["d", "c", "b", "a"]), /Round/);
+      assert.deepEqual((await admin.doc(path).get()).data()?.presenting, secondForeground);
     }
     const roomPath = "rooms/rules-multi-step";
     await admin.doc(`${roomPath}/rounds/r1`).update({ state: "active", allowAnswerChanges: false });

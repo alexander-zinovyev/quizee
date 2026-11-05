@@ -76,6 +76,7 @@ const svgRound: BuildRound = { ...colorRound, colorQuestions: [{ id: "vector-1",
 const svgMedia = [{ id: "logo.svg", name: "logo.svg", path: "logo.svg", file: new File([], "logo.svg") }];
 const vectors = buildQuizFromBuilderState([svgRound], svgMedia);
 assert.deepEqual(vectors.errors, []);
+assert.ok(vectors.quizRounds[0].type === "color");
 assert.deepEqual(vectors.quizRounds[0].questions[0], { image: "logo.svg", regionIds: ["left", "right"], initialColor: "#123456", targetColor: "#FFFFFF" });
 assert.ok(buildQuizFromBuilderState([{ ...svgRound, colorQuestions: [{ ...svgRound.colorQuestions![0], regionIds: ["left", "left"] }] }], svgMedia).errors.length);
 assert.deepEqual(result.errors, []);
@@ -112,3 +113,27 @@ for (const pointsPerStep of [[NaN, 1], [Infinity, 1]]) {
   const result = buildQuizFromBuilderState([{ ...round, pointsPerStep }], []);
   assert.ok(result.errors.some((error) => error.includes("finite numbers")));
 }
+
+const sortingRound: BuildRound = {
+  ...round, type: "sorting", name: "Timeline", multiStepQuestions: [],
+  sortingCriterion: "Earliest to latest",
+  sortingItems: [
+    { id: "event-a", stages: [{ id: "a-stage", collapsed: false, text: "An event", mediaPath: null }] },
+    { id: "event-b", stages: [{ id: "b-stage", collapsed: false, text: "", mediaPath: audioPath }] },
+  ],
+  sortingCorrectOrder: ["event-b", "event-a"],
+};
+const sortingMedia = [{ id: audioPath, path: audioPath, name: "1_1.aac", file: new File([], "1_1.aac", { type: "audio/aac" }) }];
+const sorting = buildQuizFromBuilderState([sortingRound], sortingMedia);
+assert.deepEqual(sorting.errors, []);
+assert.deepEqual(sorting.quizRounds, [{
+  type: "sorting", title: "Timeline", criterion: "Earliest to latest",
+  items: [{ id: "event-a", stages: [{ text: "An event" }] }, { id: "event-b", stages: [{ media: audioPath }] }],
+  correctOrder: ["event-b", "event-a"],
+}]);
+assert.deepEqual(validateAgainstQuizSchema(sorting.quizRounds, quizSchema), []);
+assert.ok(Array.isArray(validateQuizFile(JSON.stringify(sorting.quizRounds))));
+assert.ok(buildQuizFromBuilderState([sortingRound], []).errors.some((error) => error.includes("media file not found")));
+assert.ok(buildQuizFromBuilderState([{ ...sortingRound, sortingCorrectOrder: ["event-a", "event-a"] }], sortingMedia).errors.some((error) => error.includes("exactly once")));
+assert.ok(buildQuizFromBuilderState([{ ...sortingRound, sortingCriterion: "" }], sortingMedia).errors.length);
+assert.ok(buildQuizFromBuilderState([{ ...sortingRound, sortingItems: [{ id: "empty", stages: [{ id: "empty-stage", collapsed: false, text: "", mediaPath: null }] }] }], []).errors.some((error) => error.includes("add text or media")));

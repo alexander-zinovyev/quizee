@@ -25,6 +25,7 @@ import type { MediaTreeFile } from "@/lib/components/build/media-tree-shared";
 import MediaSelector from "@/lib/components/build/media-selector";
 import { ColorRoundEditor, createColorQuestion, type BuildColorQuestion } from "./color-round-editor";
 import type { ColorScoring } from "@/types/color";
+import { SortingRoundEditor, type BuildSortingItem } from "./sorting-round-editor";
 import type {
   RoundMeta,
   RoundQuestion,
@@ -32,9 +33,9 @@ import type {
   RoundQuestionStage,
 } from "@/lib/hooks/use-room-rounds";
 
-type RoundType = "text" | "image" | "multi-step" | "color";
+type RoundType = "text" | "image" | "multi-step" | "color" | "sorting";
 
-type Stage = {
+export type Stage = {
   id: string;
   collapsed: boolean;
   text: string;
@@ -75,6 +76,9 @@ export type BuildRound = {
   pointsPerStep: number[];
   allowAnswerChanges: boolean;
   allowWager?: boolean;
+  sortingCriterion?: string;
+  sortingItems?: BuildSortingItem[];
+  sortingCorrectOrder?: string[];
   colorQuestions?: BuildColorQuestion[];
   scoring?: ColorScoring;
 };
@@ -511,6 +515,10 @@ export default function RoundBuilderPanel({
 
   function resetRoundByType(round: BuildRound, type: RoundType): BuildRound {
     round = { ...round, allowWager: false };
+    if (type === "sorting") {
+      const sortingItems = Array.from({ length: 2 }, () => ({ id: makeId(), stages: [createStage()] }));
+      return { ...round, type, textQuestions: [], imageItems: [], multiStepQuestions: [], sortingCriterion: "", sortingItems, sortingCorrectOrder: sortingItems.map((item) => item.id) };
+    }
     if (type === "color") return { ...round, type, textQuestions: [], imageItems: [], multiStepQuestions: [], colorQuestions: [createColorQuestion()], scoring: { mode: "threshold", points: 1, threshold: 8.5 } };
     if (type === "text") {
       return {
@@ -920,7 +928,7 @@ export default function RoundBuilderPanel({
                 <div className="space-y-2">
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">Type</p>
                   <div className="inline-flex rounded-lg border border-zinc-300 p-1 dark:border-zinc-700">
-                    {(["text", "image", "multi-step", "color"] as const).map((type) => (
+                    {(["text", "image", "multi-step", "color", "sorting"] as const).map((type) => (
                       <button
                         key={type}
                         type="button"
@@ -938,13 +946,17 @@ export default function RoundBuilderPanel({
                           .filter(Boolean)
                           .join(" ")}
                       >
-                        {type === "text" ? "Text" : type === "image" ? "Image" : type === "color" ? "Color" : "Multi-step"}
+                        {type === "text" ? "Text" : type === "image" ? "Image" : type === "color" ? "Color" : type === "sorting" ? "Sorting" : "Multi-step"}
                       </button>
                     ))}
                   </div>
                 </div>
 
-                {round.type === "color" ? (
+                {round.type === "sorting" ? (
+                  <SortingRoundEditor value={{ criterion: round.sortingCriterion ?? "", items: round.sortingItems ?? [], correctOrder: round.sortingCorrectOrder ?? [] }}
+                    mediaFiles={mediaFiles} createStage={createStage} StageEditor={StageEditor}
+                    onChange={(value) => updateRound(round.id, (prev) => ({ ...prev, sortingCriterion: value.criterion, sortingItems: value.items, sortingCorrectOrder: value.correctOrder }))} />
+                ) : round.type === "color" ? (
                   <ColorRoundEditor questions={round.colorQuestions ?? []} scoring={round.scoring ?? { mode: "threshold", points: 1, threshold: 8.5 }} mediaFiles={mediaFiles}
                     onQuestionsChange={(colorQuestions) => updateRound(round.id, (prev) => ({ ...prev, colorQuestions }))}
                     onScoringChange={(scoring) => updateRound(round.id, (prev) => ({ ...prev, scoring }))} />

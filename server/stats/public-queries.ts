@@ -137,6 +137,7 @@ export async function getPublicRound(db: Firestore, gameId: string, roundId: str
       return { ...data, maximum: inferQuestionMaximum(round.data()!.scoring, maxima.get(question.id)) };
     }));
     const ids = new Set(items.flatMap((question) => [...question.prompt.map((stage) => stage.assetId), ...question.acceptedAnswer.map((stage) => stage.assetId),
+      ...(question.sorting?.items.flatMap((item) => item.stages.map((stage) => stage.assetId)) ?? []),
       ...Object.values(question.answers).map((answer) => answer.assetId), question.color?.maskAssetId ?? null]).filter((id): id is string => id !== null));
     const assets: PublicStatsQuestionPage["assets"] = {};
     if (ids.size) for (const asset of await tx.getAll(...[...ids].map((id) => db.doc(statsPaths.snapshot(gameId, game.snapshotId)).collection("assets").doc(id)))) {
@@ -199,7 +200,7 @@ async function readPublicPlayer(db: Firestore, id: string): Promise<PublicStatsP
     }
     const frequencies = (counts: Map<string, number>) => [...counts].map(([personId, games]) => ({ personId, displayName: names.get(personId)!, games }))
       .sort((a, b) => b.games - a.games || (a.personId < b.personId ? -1 : 1));
-    const byRoundType = Object.fromEntries(["text", "image", "multi-step", "color"].filter((type) => Object.hasOwn(person.player.counters, `round:${type}:TotalGames`)).map((type) => [type,
+    const byRoundType = Object.fromEntries(["text", "image", "multi-step", "color", "sorting"].filter((type) => Object.hasOwn(person.player.counters, `round:${type}:TotalGames`)).map((type) => [type,
       { percentage: percentageFromCounters(person.player.counters, `round:${type}:`), poolPercentage: percentageFromCounters(person.player.counters, `round:${type}:pool:`) }]));
     return { ...publicPerson(id, person), ...history, version: person.version, summary: playerSummary(person.player.counters),
       percentage: percentageFromCounters(person.player.counters, "percentage"), poolPercentage: percentageFromCounters(person.player.counters, "pool"), byRoundType,

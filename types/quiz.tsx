@@ -1,4 +1,9 @@
+import type { SortingItem as Item } from "./sorting";
+
+export type SortingItem = Item<{ text?: string | null; media?: Question["media"] }>;
+
 export type Question = {
+  items?: SortingItem[];
   initialColor?: string;
   /**
    * Stable identifier for associating answers with questions.
@@ -128,4 +133,12 @@ export type ColorRoundData = RoundData & {
   teamId?: string;
 };
 
-export type QuizRoundData = TextRoundData | ImageRoundData | MultiStepRoundData | ColorRoundData;
+export type SortingRoundData = RoundData & {
+  type: "sorting";
+  state: "active" | "closed";
+  questions: Question[];
+  roomSlug?: string;
+  teamId?: string;
+};
+
+export type QuizRoundData = TextRoundData | ImageRoundData | MultiStepRoundData | ColorRoundData | SortingRoundData;

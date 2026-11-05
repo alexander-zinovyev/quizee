@@ -4,7 +4,7 @@ export type AwardShortcutSource = {
 };
 
 export function canRetryAutoGrade(round: { id: string; type: string; state: string; gradingRequired?: boolean }, failedRoundId: string | null): boolean {
-  return round.type === "color" && round.state === "closed" && round.gradingRequired === true && failedRoundId === round.id;
+  return (round.type === "color" || round.type === "sorting") && round.state === "closed" && round.gradingRequired === true && failedRoundId === round.id;
 }
 
 export type ScoringRound = { type: string; allowWager?: boolean; pointsPerStep?: number[] };
