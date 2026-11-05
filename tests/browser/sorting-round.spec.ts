@@ -1,11 +1,14 @@
-import { expect, test, type Locator } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { build } from "esbuild";
+
+test.use({ hasTouch: true });
 
 async function bundle() {
   const result = await build({
     stdin: { contents: `
       import React from 'react';
       import { createRoot } from 'react-dom/client';
+      import { flushSync } from 'react-dom';
       import RoomRoundsPanel from './app/[room]/room-rounds-panel';
       import { SortingRound } from './lib/components/sorting-round';
       const question = { id:'question-1', prompt:'Order events from earliest to latest', items:[
@@ -18,12 +21,18 @@ async function bundle() {
       window.renderSortingViews = (state = 'active', reveal = false, reconnect = false, foreground = 'Foreground one') => {
         if (reconnect) generation++;
         if (state === 'closed') window.sortingTransport.freeze();
+        flushSync(() => {
         ['red','red','blue'].forEach((teamId,index) => roots[index].render(<RoomRoundsPanel
           key={generation} roomSlug="demo" teamId={teamId} rounds={[
             {id:'sorting',type:'sorting',title:'History sorting',roundNumber:1,state,questions:[question],presenting:reveal ? {round:'sorting',withAnswer:true}:null},
             {id:'foreground',type:'text',title:foreground,roundNumber:2,questions:[],emptyLabel:foreground}
           ]} />));
         roots[3].render(<SortingRound key={generation} roomSlug="demo" roundId="sorting" question={question} state={state} readOnly reveal={reveal} />);
+        });
+      };
+      window.expandSortingItem = () => {
+        question.items[1].stages.push({text:'Extra context',media:{storagePath:'images/extra.svg',filename:'extra.svg'}});
+        window.renderSortingViews();
       };
       window.renderSortingViews();`, resolveDir: process.cwd(), loader: "tsx" },
     bundle: true, write: false, jsx: "automatic", define: { "process.env.NODE_ENV": '"development"' },
@@ -49,6 +58,7 @@ async function bundle() {
 }
 
 type Harness = {
+  expandSortingItem: () => void;
   renderSortingViews: (state?: "active" | "closed", reveal?: boolean, reconnect?: boolean, foreground?: string) => void;
   sortingReads: string[];
   sortingAssetReads: string[];
@@ -57,6 +67,38 @@ type Harness = {
   sortingTransport: { setTeam: (team: string, order: string[]) => void };
 };
 const order = (region: Locator) => region.getByRole("list", { name: "Sorting order", exact: true }).first().locator(":scope > li").evaluateAll((items) => items.map((item) => item.getAttribute("data-item-id")));
+
+async function dragItem(page: Page, region: Locator, id: string, targetId: string, touch: boolean) {
+  const handle = region.locator(`[data-item-id="${id}"]`).getByRole("button", { name: /^Reorder item/ });
+  await region.getByRole("list", { name: "Sorting order", exact: true }).first().scrollIntoViewIfNeeded();
+  await handle.scrollIntoViewIfNeeded();
+  const start = (await handle.boundingBox())!;
+  const target = (await region.locator(`[data-item-id="${targetId}"]`).boundingBox())!;
+  const x = start.x + start.width / 2;
+  const y = start.y + start.height / 2;
+  const targetY = target.y + target.height / 2;
+  if (touch) {
+    const client = await page.context().newCDPSession(page);
+    try {
+      await client.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
+      await client.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: y + Math.sign(targetY - y) * 10 }] });
+      await expect(handle).toHaveAttribute("aria-pressed", "true");
+      await client.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: targetY }] });
+      await client.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    } finally { await client.detach(); }
+  } else {
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x, y + Math.sign(targetY - y) * 10);
+    await expect(handle).toHaveAttribute("aria-pressed", "true");
+    await page.mouse.move(x, targetY, { steps: 10 });
+    await page.mouse.up();
+  }
+  await expect(handle).not.toHaveAttribute("aria-pressed", "true");
+  await region.getByRole("list", { name: "Sorting order", exact: true }).first().evaluate(async (list) => {
+    await Promise.all(list.getAnimations({ subtree: true }).map((animation) => animation.finished));
+  });
+}
 
 for (const width of [1440, 390]) test(`sorting team workflow across foreground transitions at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 900 });
@@ -121,23 +163,49 @@ for (const width of [1440, 390]) test(`sorting team workflow across foreground t
   const blue = page.getByRole("region", { name: "blue view", exact: true });
   const foreground = page.getByRole("region", { name: "foreground view", exact: true });
   const correctPath = "rooms/demo/rounds/sorting/answers/question-1";
+  await expect(red.getByRole("button", { name: "Reorder item 1", exact: true })).toBeEnabled();
+  await expect(red.getByRole("button", { name: /^Move item/ })).toHaveCount(0);
   await expect(red.getByRole("button", { name: "Save order" })).toBeEnabled();
   await expect(red.getByRole("img", { name: "B", exact: true })).toBeVisible();
+  await red.getByRole("button", { name: "Zoom image", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "B", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Close zoomed image", exact: true }).click();
+  expect(await red.getByRole("button", { name: "Reorder item 1", exact: true }).evaluate((handle) => getComputedStyle(handle).touchAction)).toBe("none");
   await expect(foreground.getByRole("button", { name: "Save order" })).toHaveCount(0);
   expect(await page.evaluate(() => (window as unknown as Harness).sortingReads)).toEqual([
     "rooms/demo/teams/red/rounds/sorting/answers/question-1",
     "rooms/demo/teams/red/rounds/sorting/answers/question-1",
     "rooms/demo/teams/blue/rounds/sorting/answers/question-1",
   ]);
+  const firstHandle = red.getByRole("button", { name: "Reorder item 1", exact: true });
+  await firstHandle.focus();
+  await page.keyboard.press("Space");
+  await expect(firstHandle).toHaveAttribute("aria-pressed", "true");
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+  await expect(red.locator('[aria-live="assertive"]')).toHaveText("Over position 1.");
+  await page.keyboard.press("Space");
+  await expect(firstHandle).not.toHaveAttribute("aria-pressed", "true");
+  expect(await page.evaluate(() => (window as unknown as Harness).sortingWrites)).toHaveLength(0);
+  await page.keyboard.press("Space");
+  await expect(firstHandle).toHaveAttribute("aria-pressed", "true");
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+  await expect(red.locator('[aria-live="assertive"]')).toHaveText("Over position 1.");
+  await page.keyboard.press("ArrowDown");
+  await expect(red.locator('[aria-live="assertive"]')).toHaveText("Over position 2.");
+  await page.keyboard.press("Escape");
+  await expect(firstHandle).not.toHaveAttribute("aria-pressed", "true");
+  await expect(firstHandle).toBeFocused();
+  await expect.poll(() => order(red)).toEqual(["a", "b", "c", "d"]);
+  expect(await page.evaluate(() => (window as unknown as Harness).sortingWrites)).toHaveLength(0);
   await red.getByRole("button", { name: "Save order" }).click();
-  await expect(red.getByRole("status")).toHaveText("Order saved");
-  await red.getByRole("button", { name: "Move item b down", exact: true }).click();
+  await expect(red.getByRole("status", { name: "Order saving status" })).toHaveText("Order saved");
+  await dragItem(page, red, "b", "c", width === 390);
   await expect.poll(() => order(red)).toEqual(["a", "c", "b", "d"]);
   await expect.poll(() => order(teammate)).toEqual(["a", "c", "b", "d"]);
-  await expect(teammate.getByRole("status")).toHaveText("Order saved");
-  await blue.getByRole("button", { name: "Move item a down", exact: true }).click();
-  await expect(blue.getByRole("status")).toHaveText("Order saved");
-  await blue.getByRole("button", { name: "Move item c down", exact: true }).click();
+  await expect(teammate.getByRole("status", { name: "Order saving status" })).toHaveText("Order saved");
+  await dragItem(page, blue, "a", "b", width === 390);
+  await expect(blue.getByRole("status", { name: "Order saving status" })).toHaveText("Order saved");
+  await dragItem(page, blue, "c", "d", width === 390);
   await expect.poll(() => order(blue)).toEqual(["b", "a", "d", "c"]);
   await expect.poll(() => order(red)).toEqual(["a", "c", "b", "d"]);
 
@@ -145,28 +213,52 @@ for (const width of [1440, 390]) test(`sorting team workflow across foreground t
   await expect(red.getByText("Foreground one", { exact: true })).toHaveCount(2);
   await page.evaluate(() => (window as unknown as Harness).renderSortingViews("active", false, false, "Foreground two"));
   await expect(red.getByRole("button", { name: "Foreground two", exact: true })).toBeVisible();
-  await expect(red.getByRole("button", { name: "Move item a down", exact: true })).toHaveCount(0);
+  await expect(red.getByRole("button", { name: /^Reorder item/ })).toHaveCount(0);
   await red.getByRole("button", { name: "History sorting", exact: true }).click();
   await expect.poll(() => order(red)).toEqual(["a", "c", "b", "d"]);
   await page.evaluate(() => (window as unknown as Harness).renderSortingViews("active", false, true, "Foreground two"));
-  await expect(red.getByRole("status")).toHaveText("Order saved");
+  await expect(red.getByRole("status", { name: "Order saving status" })).toHaveText("Order saved");
   await expect.poll(() => order(red)).toEqual(["a", "c", "b", "d"]);
   await expect.poll(() => order(blue)).toEqual(["b", "a", "d", "c"]);
 
   await page.evaluate(() => { (window as unknown as Harness).rejectNextSortingWrite = true; });
-  await red.getByRole("button", { name: "Move item a down", exact: true }).click();
+  await dragItem(page, red, "a", "c", width === 390);
   await expect(red.getByRole("alert")).toContainText("Unable to save this order.");
   await expect.poll(() => order(red)).toEqual(["a", "c", "b", "d"]);
   await red.getByRole("button", { name: "Dismiss", exact: true }).click();
-  await teammate.getByRole("button", { name: "Move item b up", exact: true }).click();
+  await page.evaluate(() => (window as unknown as Harness).expandSortingItem());
+  const tallCard = red.locator('[data-item-id="b"]');
+  await expect(tallCard.getByRole("img", { name: "Extra context", exact: true })).toBeVisible();
+  expect((await tallCard.boundingBox())!.height).toBeGreaterThan((await red.locator('[data-item-id="d"]').boundingBox())!.height * 3 + 16);
+  const writesBeforeTallDrag = await page.evaluate(() => (window as unknown as Harness).sortingWrites.length);
+  const tallHandle = tallCard.getByRole("button", { name: /^Reorder item/ });
+  await tallHandle.focus();
+  await page.keyboard.press("Space");
+  await expect(tallHandle).toHaveAttribute("aria-pressed", "true");
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+  await page.keyboard.press("ArrowDown");
+  await expect(red.locator('[aria-live="assertive"]')).toHaveText("Over position 4.");
+  await page.keyboard.press("Escape");
+  await expect(tallHandle).not.toHaveAttribute("aria-pressed", "true");
+  expect(await page.evaluate(() => (window as unknown as Harness).sortingWrites.length)).toBe(writesBeforeTallDrag);
+  const keyboardHandle = teammate.locator('[data-item-id="b"]').getByRole("button", { name: /^Reorder item/ });
+  await keyboardHandle.focus();
+  await page.keyboard.press("Space");
+  await expect(keyboardHandle).toHaveAttribute("aria-pressed", "true");
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+  await expect(teammate.locator('[aria-live="assertive"]')).toHaveText("Over position 3.");
+  await page.keyboard.press("ArrowUp");
+  await expect(teammate.locator('[aria-live="assertive"]')).toHaveText("Over position 2.");
+  await page.keyboard.press("Space");
   await expect.poll(() => order(red)).toEqual(["a", "b", "c", "d"]);
   await expect.poll(() => order(teammate)).toEqual(["a", "b", "c", "d"]);
+  await expect(keyboardHandle).toBeFocused();
   expect(await page.evaluate(() => (window as unknown as Harness).sortingReads.includes("rooms/demo/rounds/sorting/answers/question-1"))).toBe(false);
 
   await page.evaluate(() => (window as unknown as Harness).renderSortingViews("closed", false, false, "Foreground two"));
   await expect(red.getByText("Submissions closed · 4 / 4 points", { exact: true })).toBeVisible();
   await expect(blue.getByText("Submissions closed · 0 / 4 points", { exact: true })).toBeVisible();
-  await expect(red.getByRole("button", { name: /Move item/ })).toHaveCount(0);
+  await expect(red.getByRole("button", { name: /^Reorder item/ })).toHaveCount(0);
   await expect(red.getByRole("button", { name: "Save order" })).toHaveCount(0);
   await expect(red.getByRole("region", { name: "Correct order", exact: true })).toHaveCount(0);
   // Frozen submissions stay intact even if a stale live draft changes after closing.

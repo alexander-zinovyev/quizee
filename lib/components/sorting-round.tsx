@@ -1,6 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
+import { closestCenter, pointerWithin, type CollisionDetection, type KeyboardCoordinateGetter, DndContext, KeyboardSensor, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { GripVertical } from "lucide-react";
 import { doc, getDocFromServer, onSnapshot } from "firebase/firestore";
 import { getDownloadURL, getStorage, ref } from "firebase/storage";
 import { useFirebaseAuth } from "@/app/providers/firebase-auth-provider";
@@ -27,28 +31,90 @@ function SortingMedia({ media, label }: { media: NonNullable<Question["media"]>;
     videoClassName="max-h-40 w-full" />;
 }
 
+function SortingItemContent({ item, index }: { item: SortingItem; index: number }) {
+  return <>
+    <span className="text-sm font-semibold">{index + 1}.</span>
+    <div className="min-w-0 flex-1 space-y-2">
+      {item.stages.map((stage, stageIndex) => <div key={stageIndex} className="space-y-2">
+        {stage.text ? <p className="whitespace-pre-wrap text-sm">{stage.text}</p> : null}
+        {stage.media ? <SortingMedia media={stage.media} label={stage.text ?? `Item ${index + 1}`} /> : null}
+      </div>)}
+    </div>
+  </>;
+}
+
+const itemClassName = "relative flex items-start gap-3 rounded-xl border border-zinc-400/40 p-3";
+
+function SortableSortingItem({ item, index, disabled }: { item: SortingItem; index: number; disabled: boolean }) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: item.id, disabled });
+  return <li ref={setNodeRef} data-item-id={item.id} className={`${itemClassName} ${isDragging ? "z-10 bg-emerald-50 shadow-lg ring-2 ring-emerald-500 dark:bg-zinc-800" : ""}`}
+    style={{ transform: CSS.Transform.toString(transform), transition }}>
+    <SortingItemContent item={item} index={index} />
+    <button ref={setActivatorNodeRef} type="button" {...attributes} {...listeners}
+      aria-label={`Reorder item ${index + 1}`} aria-disabled={disabled} tabIndex={disabled ? -1 : 0}
+      title="Drag to reorder"
+      className="inline-flex h-11 w-11 shrink-0 touch-none cursor-grab items-center justify-center rounded-lg border border-zinc-400/40 text-zinc-500 hover:bg-emerald-100 focus-visible:outline-2 focus-visible:outline-emerald-500 active:cursor-grabbing aria-disabled:cursor-default aria-disabled:opacity-30 dark:text-zinc-300 dark:hover:bg-zinc-700">
+      <GripVertical aria-hidden="true" className="h-5 w-5" />
+    </button>
+  </li>;
+}
+
+// Pointer drops follow the handle even when neighboring media cards have different heights.
+const sortingCollisionDetection: CollisionDetection = (args) => {
+  return args.pointerCoordinates ? pointerWithin(args) : closestCenter(args);
+};
+
+function SortableSortingItems({ items, order, onMove, disabled }: {
+  items: SortingItem[]; order: readonly string[]; onMove: (from: number, to: number) => void; disabled: boolean;
+}) {
+  const contextId = useId();
+  // Center the dragged card on its neighbor so tall media cards cannot hide keyboard targets.
+  const keyboardCoordinates: KeyboardCoordinateGetter = (event, { active, context }) => {
+    const direction = event.code === "ArrowDown" ? 1 : event.code === "ArrowUp" ? -1 : 0;
+    if (!direction || !context.collisionRect) return;
+    event.preventDefault();
+    const index = order.indexOf(String(context.over?.id ?? active));
+    const targetId = order[index + direction];
+    const target = targetId === undefined ? undefined : context.droppableRects.get(targetId);
+    if (!target) return;
+    return { x: target.left, y: target.top + (target.height - context.collisionRect.height) / 2 };
+  };
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: keyboardCoordinates }),
+  );
+  const position = (id: string | number) => order.indexOf(String(id)) + 1;
+  return <DndContext id={contextId} sensors={sensors} collisionDetection={sortingCollisionDetection}
+    accessibility={{
+      screenReaderInstructions: { draggable: "Press space to pick up an item, use the up and down arrow keys to choose its position, then press space to drop. Press escape to cancel." },
+      announcements: {
+        onDragStart: ({ active }) => `Picked up item ${position(active.id)}.`,
+        onDragOver: ({ over }) => over ? `Over position ${position(over.id)}.` : "Outside the sorting list.",
+        onDragEnd: ({ over }) => over ? `Dropped at position ${position(over.id)}.` : "Reordering cancelled.",
+        onDragCancel: () => "Reordering cancelled.",
+      },
+    }}
+    onDragEnd={({ active, over }) => {
+      if (disabled || !over || active.id === over.id) return;
+      const from = order.indexOf(String(active.id)), to = order.indexOf(String(over.id));
+      if (from >= 0 && to >= 0) onMove(from, to);
+    }}>
+    <SortableContext items={[...order]} strategy={verticalListSortingStrategy}>
+      <ol className="space-y-2" aria-label="Sorting order">
+        {order.map((id, index) => <SortableSortingItem key={id} item={items.find((item) => item.id === id)!} index={index} disabled={disabled} />)}
+      </ol>
+    </SortableContext>
+  </DndContext>;
+}
+
 export function SortingItems({ items, order, onMove, disabled = true }: {
   items: SortingItem[]; order: readonly string[]; onMove?: (from: number, to: number) => void; disabled?: boolean;
 }) {
+  if (onMove) return <SortableSortingItems items={items} order={order} onMove={onMove} disabled={disabled} />;
   return <ol className="space-y-2" aria-label="Sorting order">
-    {order.map((id, index) => {
-      const item = items.find((candidate) => candidate.id === id)!;
-      return <li key={id} data-item-id={id} className="flex items-start gap-3 rounded-xl border border-zinc-400/40 p-3">
-        <span className="text-sm font-semibold">{index + 1}.</span>
-        <div className="min-w-0 flex-1 space-y-2">
-          {item.stages.map((stage, stageIndex) => <div key={stageIndex} className="space-y-2">
-            {stage.text ? <p className="whitespace-pre-wrap text-sm">{stage.text}</p> : null}
-            {stage.media ? <SortingMedia media={stage.media} label={stage.text ?? `Item ${index + 1}`} /> : null}
-          </div>)}
-        </div>
-        {onMove ? <div className="flex shrink-0 flex-col gap-1">
-          <button type="button" aria-label={`Move item ${id} up`} disabled={disabled || index === 0}
-            className="rounded border px-2 py-1 disabled:opacity-30" onClick={() => onMove(index, index - 1)}>↑</button>
-          <button type="button" aria-label={`Move item ${id} down`} disabled={disabled || index === order.length - 1}
-            className="rounded border px-2 py-1 disabled:opacity-30" onClick={() => onMove(index, index + 1)}>↓</button>
-        </div> : null}
-      </li>;
-    })}
+    {order.map((id, index) => <li key={id} data-item-id={id} className={itemClassName}>
+      <SortingItemContent item={items.find((item) => item.id === id)!} index={index} />
+    </li>)}
   </ol>;
 }
 
@@ -123,7 +189,7 @@ export function SortingRound({ roomSlug, teamId, roundId, question, state, readO
     }} />
     {!readOnly && state === "active" ? <div className="flex items-center gap-3">
       <button type="button" className="rounded-lg bg-emerald-600 px-3 py-2 text-sm text-white disabled:opacity-40" disabled={disabled} onClick={() => void save(order)}>Save order</button>
-      <p role="status" className="text-xs">{pending ? "Saving…" : !saved ? "Loading team order…" : saved.order ? "Order saved" : "Reorder items or save this order to submit."}</p>
+      <p role="status" aria-label="Order saving status" className="text-xs">{pending ? "Saving…" : !saved ? "Loading team order…" : saved.order ? "Order saved" : "Reorder items or save this order to submit."}</p>
     </div> : null}
     {state === "closed" && teamId ? <p className="text-sm">{saved?.order ? "Submissions closed" : "No order submitted"}{saved?.points === undefined ? "" : ` · ${saved.points} / ${items.length} points`}</p> : null}
     {reveal && state === "closed" ? <section className="space-y-2" aria-label="Correct order">
