@@ -51,7 +51,8 @@ export function projectGame(snapshot: StatsSnapshot, review: StatsReview, versio
           knownCorrectness: recorded.filter((answer) => answer?.correctness !== null && answer !== undefined).length,
           incorrect: recorded.filter((answer) => answer?.correctness === false).length, total: round.questions.length } }];
     }));
-    return { id: round.id, title: round.title, type: round.scoring.type, closestPool, teams };
+    return { id: round.id, title: round.title, type: round.scoring.type, closestPool, teams,
+      ...(round.criterion === undefined ? {} : { criterion: round.criterion }) };
   });
   const difficultyParts = completeDetail ? components : components.map((part) => ({ ...part, reconciled: false }));
   const difficulty = calculatePercentage(difficultyParts, "difficulty");

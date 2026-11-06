@@ -83,3 +83,26 @@ export function legacyRoomSourceFixture(gameId = "legacy-demo"): RoomSource {
   }
   return source;
 }
+
+/** Sorting stores flat Stage questions and one frozen order/award map per team-round. */
+export function sortingRoomSourceFixture(gameId = "demo"): RoomSource {
+  const source = roomSourceFixture(1, 1, gameId);
+  const round = source.rounds[0];
+  round.data = { ...round.data, type: "sorting", title: "Timeline", criterion: "Earliest to latest", questionCount: 4 };
+  round.questions = [
+    { id: "B", data: { text: "Event B", media: { storagePath: `rooms/${gameId}/media/event-b.png` } } },
+    { id: "D", data: { text: "Event D" } },
+    { id: "A", data: { text: "Event A" } },
+    { id: "C", data: { media: { storagePath: `rooms/${gameId}/media/event-c.mp3` } } },
+  ];
+  round.answers = [{ id: "order", data: { correctOrder: ["A", "B", "C", "D"] } }];
+  for (const team of source.teams) {
+    const order = team.id === "red" ? ["A", "B", "C", "D"] : ["A", "C", "B", "D"];
+    const pointsByQuestion = Object.fromEntries(order.map((id, index) => [id, Number(id === ["A", "B", "C", "D"][index])]));
+    const awardedPoints = Object.values(pointsByQuestion).reduce((sum, points) => sum + points, 0);
+    round.teamAnswers[team.id] = { metadata: { order, pointsByQuestion, awardedPoints, graded: true, revision: 2, user: `${team.id}-uid-0` }, answers: [] };
+    team.data.scoreTotal = awardedPoints;
+    team.scores[0].data.score = awardedPoints;
+  }
+  return source;
+}

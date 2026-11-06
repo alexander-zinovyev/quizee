@@ -27,9 +27,7 @@ export function inferQuestionMaximum(scoring: StatsRoundScoring, override?: numb
       if (typeof scoring.allowWager !== "boolean") throw new Error("Invalid wager configuration.");
       return configured(scoring.allowWager ? 2 : 1);
     case "image": return configured(1);
-    case "sorting":
-      if (!Number.isSafeInteger(scoring.itemCount) || scoring.itemCount < 2) throw new Error("Invalid sorting item count.");
-      return configured(scoring.itemCount);
+    case "sorting": return configured(1);
     case "multi-step":
       if (scoring.pointsPerStep === null) break;
       if (!Array.isArray(scoring.pointsPerStep) || !scoring.pointsPerStep.length) throw new Error("Invalid step points.");

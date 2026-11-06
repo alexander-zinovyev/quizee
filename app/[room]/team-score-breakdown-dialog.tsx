@@ -1,14 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { collection, getDocs, setDoc, doc, serverTimestamp } from "firebase/firestore";
+import { collection, getDocs, getDoc, runTransaction, setDoc, doc, serverTimestamp } from "firebase/firestore";
 
 import { getClientFirestore } from "@/lib/firebase/client";
 import { allowsNegativePoints, getAwardedPoints } from "@/lib/components/room/grading";
-import { SortingItems } from "@/lib/components/sorting-round";
+import { SortingQuestionContent } from "@/lib/components/sorting-round";
 import { recordedAnswer } from "@/lib/answers";
-import { parseBreakdownAttempts, parseBreakdownSortingOrder, parseDraftPoints, type BreakdownAttempt } from "./team-score-breakdown";
-import type { RoundMeta, RoundQuestion } from "@/lib/hooks/use-room-rounds";
+import { parseBreakdownAttempts, parseBreakdownSortingOrder, parseDraftPoints, type BreakdownAttempt, type SortingBreakdown } from "./team-score-breakdown";
+import { getSortingQuestions, type RoundMeta, type RoundQuestion } from "@/lib/hooks/use-room-rounds";
 
 type TeamScoreBreakdownDialogProps = {
   isOpen: boolean;
@@ -23,7 +23,6 @@ type TeamScoreBreakdownDialogProps = {
 };
 
 type BreakdownQuestion = {
-  sorting?: ReturnType<typeof parseBreakdownSortingOrder>;
   questionId: string;
   order: number;
   prompt: string;
@@ -37,6 +36,8 @@ type BreakdownQuestion = {
 
 type BreakdownRound = {
   roundId: string;
+  criterion?: string;
+  sorting?: SortingBreakdown;
   type: RoundMeta["type"];
   allowWager?: boolean;
   title: string;
@@ -77,6 +78,15 @@ export default function TeamScoreBreakdownDialog({
           .sort((a, b) => a.order - b.order);
         const loaded = await Promise.all(
           sortedRounds.map(async (round) => {
+            if (round.type === "sorting") {
+              const submission = await getDoc(doc(db, "rooms", roomSlug, "rounds", round.id, "teamAnswers", activeTeamId));
+              const scored = round.gradingRequired === false;
+              const correct = scored ? await getDoc(doc(db, "rooms", roomSlug, "rounds", round.id, "answers", "order")) : null;
+              const sorting = parseBreakdownSortingOrder(submission.data(), correct?.data()?.correctOrder, getSortingQuestions(roundQuestions[round.id] ?? []), scored);
+              return { roundId: round.id, type: round.type, title: round.title, order: round.order, criterion: round.criterion, sorting,
+                questions: sorting.order.map((id, index) => ({ questionId: id, order: index, prompt: "", answer: "", awardedPoints: sorting.pointsByQuestion[id] ?? null,
+                  step: null, attempts: [], perceptionScore: null })) } satisfies BreakdownRound;
+            }
             const answersSnap = await getDocs(
               collection(
                 db,
@@ -111,7 +121,6 @@ export default function TeamScoreBreakdownDialog({
               .map((question, idx) => {
                 const answer = answersByQuestion.get(question.id);
                 return {
-                  sorting: round.type === "sorting" ? parseBreakdownSortingOrder(answer?.answer ?? "", question.items ?? []) : undefined,
                   questionId: question.id,
                   order: question.order ?? idx,
                   prompt: question.displayPrompt || question.prompt || `Question ${idx + 1}`,
@@ -211,24 +220,20 @@ export default function TeamScoreBreakdownDialog({
 
     try {
       const db = getClientFirestore();
-      await setDoc(
-        doc(
-          db,
-          "rooms",
-          roomSlug,
-          "rounds",
-          roundId,
-          "teamAnswers",
-          teamId,
-          "answers",
-          questionId
-        ),
-        {
-          awardedPoints: normalizedPoints,
-          gradedAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
+      if (round.sorting) {
+        const ref = doc(db, "rooms", roomSlug, "rounds", roundId, "teamAnswers", teamId);
+        await runTransaction(db, async (tx) => {
+          const saved = (await tx.get(ref)).data();
+          if (!saved?.graded || !saved.pointsByQuestion || !Object.hasOwn(saved.pointsByQuestion, questionId)) throw new Error("Sorting results are not scored.");
+          const pointsByQuestion = { ...saved.pointsByQuestion, [questionId]: normalizedPoints } as Record<string, number>;
+          const awardedPoints = Object.values(pointsByQuestion).reduce((sum, value) => sum + value, 0);
+          tx.set(ref, { pointsByQuestion, awardedPoints, gradedAt: serverTimestamp() }, { merge: true });
+        });
+      } else {
+        await setDoc(doc(db, "rooms", roomSlug, "rounds", roundId, "teamAnswers", teamId, "answers", questionId),
+          { awardedPoints: normalizedPoints, gradedAt: serverTimestamp() }, { merge: true });
+      }
+
       await onPointsUpdated(teamId);
     } catch (saveError) {
       console.error("[score-breakdown] save failed", saveError);
@@ -236,6 +241,22 @@ export default function TeamScoreBreakdownDialog({
     } finally {
       setSavingKey((prev) => (prev === key ? null : prev));
     }
+  }
+
+  function pointsEditor(round: BreakdownRound, question: BreakdownQuestion) {
+    const saveId = `${round.roundId}:${question.questionId}`;
+    const draftValue = draftPoints[saveId] ?? "";
+    const parsedDraft = parseDraftPoints(draftValue, round);
+    const hasChanges = parsedDraft !== null && parsedDraft !== question.awardedPoints;
+    return <>
+      <input type="number" aria-label={`Points for position ${question.order + 1}`} min={allowsNegativePoints(round) ? undefined : 0} step="any"
+        disabled={!isHost || (round.sorting !== undefined && round.sorting.correctOrder === null)} value={draftValue}
+        onChange={(event) => { if (isHost) setDraftPoints((prev) => ({ ...prev, [saveId]: event.target.value })); }}
+        className="h-8 w-20 rounded-md border border-zinc-700 bg-zinc-950 px-2 text-sm text-zinc-100 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/40 disabled:cursor-not-allowed disabled:opacity-60" />
+      {isHost ? <button type="button" disabled={savingKey === saveId || parsedDraft === null || !hasChanges || (round.sorting !== undefined && round.sorting.correctOrder === null)}
+        onClick={() => { if (parsedDraft !== null) void savePoints(round.roundId, question.questionId, parsedDraft); }}
+        className="inline-flex h-8 items-center justify-center rounded-md border border-emerald-400/60 bg-emerald-500/20 px-2 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-500/30 disabled:cursor-not-allowed disabled:opacity-50">Save</button> : null}
+    </>;
   }
 
   return (
@@ -289,9 +310,22 @@ export default function TeamScoreBreakdownDialog({
                         {roundPoints} pts
                       </p>
                     </div>
-                    <div className="divide-y divide-zinc-800">
+                    {round.sorting ? <div className="p-4" aria-label="Sorting comparison">
+                      <p className="mb-3 text-sm text-zinc-300">{round.criterion}</p>
+                      {round.sorting.correctOrder ? <div className="mb-2 hidden grid-cols-[2rem_1fr_1fr_7rem] gap-3 text-xs text-zinc-400 sm:grid"><span>#</span><span>Correct order</span><span>Your submitted order</span><span>Points</span></div> : <p className="mb-3 text-sm text-zinc-400">Awaiting scoring</p>}
+                      <ol className="divide-y divide-zinc-800">{round.questions.map((question, index) => {
+                        const sorting = round.sorting!;
+                        const submitted = sorting.questions.find((entry) => entry.id === sorting.order[index])!;
+                        const correct = sorting.correctOrder ? sorting.questions.find((entry) => entry.id === sorting.correctOrder![index])! : null;
+                        return <li key={question.questionId} className="grid gap-3 py-3 sm:grid-cols-[2rem_1fr_1fr_7rem]" aria-label={`Position ${index + 1}`}>
+                          <span className="text-xs text-zinc-400">#{index + 1}</span>
+                          <div className="min-w-0" aria-label="Correct item"><p className="mb-1 text-xs text-zinc-400 sm:hidden">Correct order</p>{correct ? <SortingQuestionContent item={correct} index={index} /> : "—"}</div>
+                          <div className="min-w-0" aria-label="Submitted item"><p className="mb-1 text-xs text-zinc-400 sm:hidden">Your submitted order</p><SortingQuestionContent item={submitted} index={index} /></div>
+                          <div className="flex items-center gap-2" aria-label="Points"><span className="text-xs text-zinc-400 sm:hidden">Points</span>{pointsEditor(round, question)}</div>
+                        </li>;
+                      })}</ol>
+                    </div> : <div className="divide-y divide-zinc-800">
                       {round.questions.map((question) => {
-                        const saveId = `${round.roundId}:${question.questionId}`;
                         return (
                           <div key={question.questionId} className="grid grid-cols-[auto_1fr_auto] gap-3 px-4 py-2">
                             <span className="w-8 text-xs font-semibold text-zinc-400">
@@ -308,7 +342,7 @@ export default function TeamScoreBreakdownDialog({
                                     {question.step + 1}
                                   </span>
                                 ) : null}
-                                {question.sorting ? <SortingItems items={question.sorting.items} order={question.sorting.order} /> : <p className="text-sm text-zinc-100">{question.answer || "—"}</p>}
+                                <p className="text-sm text-zinc-100">{question.answer || "—"}</p>
                                 {question.wagered ? <span className="text-xs font-semibold text-amber-300">x2</span> : null}
                                 {round.type === "color" && question.perceptionScore !== null ? <span className="text-xs text-zinc-300">{question.perceptionScore.toFixed(2)} / 10</span> : null}
                               </div>
@@ -329,53 +363,12 @@ export default function TeamScoreBreakdownDialog({
                               ) : null}
                             </div>
                             <div className="flex items-center gap-2">
-                              {(() => {
-                                const draftValue = draftPoints[saveId] ?? "";
-                                const parsedDraft = parseDraftPoints(draftValue, round);
-                                const persistedPoints = question.awardedPoints;
-                                const hasChanges =
-                                  parsedDraft !== null && parsedDraft !== persistedPoints;
-                                return (
-                                  <>
-                              <input
-                                type="number"
-                                min={allowsNegativePoints(round) ? undefined : 0}
-                                step="any"
-                                disabled={!isHost}
-                                value={draftValue}
-                                onChange={(event) => {
-                                  if (!isHost) return;
-                                  setDraftPoints((prev) => ({
-                                    ...prev,
-                                    [saveId]: event.target.value,
-                                  }));
-                                }}
-                                className="h-8 w-20 rounded-md border border-zinc-700 bg-zinc-950 px-2 text-sm text-zinc-100 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400/40 disabled:cursor-not-allowed disabled:opacity-60"
-                              />
-                              {isHost ? (
-                                <button
-                                  type="button"
-                                  disabled={
-                                    savingKey === saveId || parsedDraft === null || !hasChanges
-                                  }
-                                  onClick={() =>
-                                    parsedDraft !== null
-                                      ? void savePoints(round.roundId, question.questionId, parsedDraft)
-                                      : undefined
-                                  }
-                                  className="inline-flex h-8 items-center justify-center rounded-md border border-emerald-400/60 bg-emerald-500/20 px-2 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-500/30 disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                  Save
-                                </button>
-                              ) : null}
-                                  </>
-                                );
-                              })()}
+                              {pointsEditor(round, question)}
                             </div>
                           </div>
                         );
                       })}
-                    </div>
+                    </div>}
                   </section>
                 );
               })}

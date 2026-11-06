@@ -3,6 +3,7 @@ import { parseSortingSnapshot } from "@/types/sorting";
 import { Timestamp, type Firestore, type DocumentData, type DocumentReference } from "firebase-admin/firestore";
 import { parseTeamAnswer, type TeamAnswer } from "@/lib/answers";
 import { captureMultiStepAnswer, snapshotTeamAnswer, parsePointsPerStep } from "./multi-step-submission";
+import { sortingQuestionIds } from "./sorting-questions";
 
 export type Presentation = {
   round: string | null;
@@ -69,8 +70,12 @@ export async function transitionPresentation(
       !["active", "closed"].includes(rounds.get(next.round)?.state)) {
       throw new Error("Round is not active.");
     }
+    if (next.round && rounds.get(next.round)?.type === "sorting") {
+      if (next.question !== null) throw new Error("Sorting presents the whole round.");
+      if (next.withAnswer && rounds.get(next.round)?.state !== "closed") throw new Error("End the sorting round before revealing answers.");
+    }
     if (next.question && next.round) {
-      if (["color", "sorting"].includes(rounds.get(next.round)?.type) && next.withAnswer && rounds.get(next.round)?.state !== "closed") throw new Error(`End the ${rounds.get(next.round)?.type} round before revealing answers.`);
+      if (rounds.get(next.round)?.type === "color" && next.withAnswer && rounds.get(next.round)?.state !== "closed") throw new Error(`End the ${rounds.get(next.round)?.type} round before revealing answers.`);
       const question = await tx.get(roomRef.collection("rounds").doc(next.round).collection("questions").doc(next.question));
       if (!question.exists) throw new Error("Question not found.");
       const stages = question.data()?.stages;
@@ -101,18 +106,13 @@ export async function transitionPresentation(
       ? await tx.get(roomRef.collection("rounds").doc(options.activateRound).collection("questions")) : null;
     let startingSortingOrder: string[] | null = null;
     if (initializingSorting) {
-      if (initializingSorting.docs.length !== 1) throw new Error("Sorting requires one item list.");
-      const question = initializingSorting.docs[0];
-      const items: unknown = question.data().items;
-      if (!Array.isArray(items)) throw new Error("Missing sorting items.");
-      const shuffled = [...items];
+      const ids = sortingQuestionIds(initializingSorting.docs);
+      const shuffled = [...ids];
       for (let index = shuffled.length - 1; index > 0; index--) {
         const other = randomInt(index + 1);
         [shuffled[index], shuffled[other]] = [shuffled[other], shuffled[index]];
       }
-      const ids = shuffled.map((item: { id: string }) => item.id);
-      startingSortingOrder = parseSortingSnapshot({ order: ids, revision: 0 }, ids).order;
-      writes.push({ ref: question.ref, data: { items: shuffled }, merge: true });
+      startingSortingOrder = parseSortingSnapshot({ order: shuffled, revision: 0 }, ids).order;
     }
     const now = Timestamp.now();
     const sortingQuestions = options.closeRound && rounds.get(options.closeRound)?.type === "sorting"
@@ -124,7 +124,7 @@ export async function transitionPresentation(
       for (const team of teams.docs) {
         const teamRounds = team.ref.collection("rounds");
         if (initializingSorting && startingSortingOrder) {
-          const answerRef = teamRounds.doc(options.activateRound!).collection("answers").doc(initializingSorting.docs[0].id);
+          const answerRef = teamRounds.doc(options.activateRound!);
           writes.push({ ref: answerRef, data: { order: startingSortingOrder, revision: 0, user: null }, merge: false });
         }
         let captured: TeamAnswer | null = null;
@@ -137,19 +137,15 @@ export async function transitionPresentation(
           }
         }
         if (options.closeRound) {
-          const answers = await tx.get(teamRounds.doc(options.closeRound).collection("answers"));
           const target = roomRef.collection("rounds").doc(options.closeRound).collection("teamAnswers").doc(team.id);
-          writes.push({ ref: target, data: { graded: false, copiedAt: now }, merge: true });
           if (sortingQuestions) {
-            for (const question of sortingQuestions.docs) {
-              const saved = answers.docs.find((answer) => answer.id === question.id)?.data();
-              const snapshot = parseSortingSnapshot(saved, question.data().items.map((item: { id: string }) => item.id));
-              writes.push({ ref: target.collection("answers").doc(question.id), data: {
-                answer: JSON.stringify(snapshot.order), revision: snapshot.revision, user: saved?.user ?? null,
-              }, merge: false });
-            }
+            const saved = await tx.get(teamRounds.doc(options.closeRound));
+            const snapshot = parseSortingSnapshot(saved.data(), sortingQuestionIds(sortingQuestions.docs));
+            writes.push({ ref: target, data: { ...snapshot, user: saved.data()?.user ?? null, graded: false, copiedAt: now }, merge: false });
             continue;
           }
+          const answers = await tx.get(teamRounds.doc(options.closeRound).collection("answers"));
+          writes.push({ ref: target, data: { graded: false, copiedAt: now }, merge: true });
           if (colorQuestions) {
             for (const question of colorQuestions.docs) {
               const saved = answers.docs.find((answer) => answer.id === question.id);
@@ -178,7 +174,8 @@ export async function transitionPresentation(
     if (options.closeRound) writes.push({ ref: roomRef.collection("rounds").doc(options.closeRound),
       data: { state: "closed", activeWindow: { ...rounds.get(options.closeRound)!.activeWindow, endedAt: now }, gradingRequired: true }, merge: true });
     if (options.activateRound) writes.push({ ref: roomRef.collection("rounds").doc(options.activateRound),
-      data: { state: "active", activeWindow: { startedAt: now, endedAt: null }, gradingRequired: true }, merge: true });
+      data: { state: "active", activeWindow: { startedAt: now, endedAt: null }, gradingRequired: true,
+        ...(startingSortingOrder ? { startingOrder: startingSortingOrder } : {}) }, merge: true });
     for (const write of writes) tx.set(write.ref, write.data, { merge: write.merge });
     tx.update(roomRef, { presenting: next });
   });

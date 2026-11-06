@@ -4,6 +4,7 @@ import { initializeApp, deleteApp } from "firebase/app";
 import { collection, connectFirestoreEmulator, doc, getDoc, getDocFromServer, getFirestore, onSnapshot, setDoc, terminate, updateDoc } from "firebase/firestore";
 import { initializeApp as initializeAdmin, deleteApp as deleteAdmin } from "firebase-admin/app";
 import { getFirestore as getAdminFirestore } from "firebase-admin/firestore";
+import { parseSortingEditSave, saveSortingEdit } from "./sorting-edits";
 import { transitionPresentation } from "./presentation";
 import { parseAnswerSave, saveTeamAnswer } from "./answer-input";
 import { recordedAnswer } from "@/lib/answers";
@@ -165,21 +166,20 @@ async function main() {
     {
       const roomId = "rules-sorting", path = `rooms/${roomId}`;
       const [a, b, outsider, hostClient] = apps;
-      const questionId = "question-1";
       const foreground = { round: "foreground", question: "q1", promptPage: 0, answerPage: 0, withAnswer: false };
       const roundPath = `${path}/rounds/sorting`;
-      const answerPath = `${path}/teams/red/rounds/sorting/answers/${questionId}`;
-      const privatePath = `${roundPath}/answers/${questionId}`;
-      const frozenPath = `${roundPath}/teamAnswers/red/answers/${questionId}`;
+      const answerPath = `${path}/teams/red/rounds/sorting`;
+      const privatePath = `${roundPath}/answers/order`;
+      const frozenPath = `${roundPath}/teamAnswers/red`;
       const correctOrder = ["a", "b", "c", "d"];
       let editNumber = 0;
       const edit = (itemId: string, anchorId: string, placement: SortingEdit["placement"] = "after"): SortingEdit => ({ id: `emulator-edit-${++editNumber}`, itemId, anchorId, placement });
       const save = async (uid: string, teamId: string, operation: SortingEdit) => {
-        const ack = await saveTeamAnswer(admin, roomId, "sorting", questionId, uid, parseAnswerSave({ teamId, edit: operation }));
+        const ack = await saveSortingEdit(admin, roomId, "sorting", uid, parseSortingEditSave({ teamId, edit: operation }));
         assert.ok("editId" in ack);
         return ack;
       };
-      const live = async (teamId = "red") => parseSortingSnapshot((await admin.doc(`${path}/teams/${teamId}/rounds/sorting/answers/${questionId}`).get()).data(), correctOrder);
+      const live = async (teamId = "red") => parseSortingSnapshot((await admin.doc(`${path}/teams/${teamId}/rounds/sorting`).get()).data(), correctOrder);
       const arrange = async (uid: string, teamId: string, desired: string[]) => {
         for (let index = 0; index < desired.length; index++) {
           const current = (await live(teamId)).order;
@@ -197,10 +197,7 @@ async function main() {
       await admin.doc(`${path}/rounds/foreground-two`).set({ type: "text", state: "scheduled" });
       await admin.doc(`${path}/rounds/foreground-two/questions/q1`).set({ stages: [{ text: "Foreground two" }] });
       await admin.doc(roundPath).set({ type: "sorting", state: "scheduled" });
-      await admin.doc(`${roundPath}/questions/${questionId}`).set({
-        order: 0, text: "Earliest to latest", stages: [{ text: "Earliest to latest" }],
-        items: correctOrder.map((id) => ({ id, stages: [{ text: id.toUpperCase() }] })),
-      });
+      for (const id of correctOrder) await admin.doc(`${roundPath}/questions/${id}`).set({ text: id.toUpperCase() });
       await admin.doc(privatePath).set({ correctOrder });
       await transitionPresentation(admin, roomId, "host", foreground, foreground, { activateRound: "sorting" });
       assert.deepEqual((await admin.doc(path).get()).data()?.presenting, foreground);
@@ -215,8 +212,8 @@ async function main() {
       await denied(setDoc(doc(a.db, frozenPath), { answer: JSON.stringify(correctOrder), awardedPoints: 999 }));
       await assert.rejects(save("outsider", "red", edit("a", "b")), /Team changed/);
       await assert.rejects(transitionPresentation(admin, roomId, "host", foreground,
-        { ...foreground, round: "sorting", question: questionId, withAnswer: true }));
-      await admin.doc(path).update({ presenting: { ...foreground, round: "sorting", question: questionId, withAnswer: true } });
+        { ...foreground, round: "sorting", question: null, withAnswer: true }));
+      await admin.doc(path).update({ presenting: { ...foreground, round: "sorting", question: null, withAnswer: true } });
       await denied(getDocFromServer(doc(a.db, privatePath)));
       await admin.doc(path).update({ presenting: foreground });
       const propagationStarted = performance.now();
@@ -271,13 +268,15 @@ async function main() {
       await transitionPresentation(admin, roomId, "host", secondForeground, secondForeground, { closeRound: "sorting" });
       assert.deepEqual((await admin.doc(path).get()).data()?.presenting, secondForeground);
       const frozen = (await getDocFromServer(doc(a.db, frozenPath))).data()!;
-      assert.equal(frozen.answer, '["a","c","b","d"]');
+      assert.deepEqual(frozen.order, ["a", "c", "b", "d"]);
       assert.equal(frozen.revision, accepted.revision);
       await assert.rejects(save("a", "red", edit("a", "b")), (error: unknown) => (error as { code: string }).code === "round-closed");
       assert.deepEqual(await save("a", "red", duplicate), duplicates[0], "An accepted edit can be acknowledged after closing");
       await denied(updateDoc(doc(a.db, answerPath), { order: correctOrder, revision: accepted.revision + 1 }));
       await denied(getDocFromServer(doc(a.db, privatePath)));
       await gradeSortingRound(admin, roomId, "sorting", "host");
+      assert.deepEqual((await getDocFromServer(doc(a.db, privatePath))).data()?.correctOrder, correctOrder, "Scored correct order is readable without presentation");
+      assert.deepEqual((await getDocFromServer(doc(a.db, frozenPath))).data()?.pointsByQuestion, { a: 1, b: 0, c: 0, d: 1 });
       assert.equal((await getDocFromServer(doc(a.db, frozenPath))).data()?.awardedPoints, 2);
       assert.equal((await getDocFromServer(doc(a.db, `${path}/teams/red/scores/sorting`))).data()?.score, 2);
       assert.equal((await getDocFromServer(doc(a.db, `${path}/teams/red`))).data()?.scoreTotal, 2);
@@ -285,7 +284,7 @@ async function main() {
       assert.equal((await getDocFromServer(doc(a.db, `${path}/teams/red`))).data()?.scoreTotal, 2);
       await denied(updateDoc(doc(a.db, frozenPath), { awardedPoints: 999 }));
       await transitionPresentation(admin, roomId, "host", secondForeground,
-        { ...secondForeground, round: "sorting", question: questionId, withAnswer: true });
+        { ...secondForeground, round: "sorting", question: null, withAnswer: true });
       assert.deepEqual((await getDocFromServer(doc(a.db, privatePath))).data()?.correctOrder, correctOrder);
       await admin.doc(path).update({ presenting: secondForeground });
       await admin.doc(roundPath).update({ state: "active" });
@@ -298,7 +297,7 @@ async function main() {
       if (saving.status === "rejected") assert.equal(saving.reason.code, "round-closed");
       const liveSnapshot = await live();
       const frozenSnapshot = (await admin.doc(frozenPath).get()).data()!;
-      assert.equal(frozenSnapshot.answer, JSON.stringify(liveSnapshot.order));
+      assert.deepEqual(frozenSnapshot.order, liveSnapshot.order);
       assert.equal(frozenSnapshot.revision, liveSnapshot.revision);
       assert.deepEqual(liveSnapshot.order, saving.status === "fulfilled" ? applySortingEdit(accepted.order, lateEdit) : accepted.order);
       await assert.rejects(save("b", "red", edit("d", "c")), /Round/);

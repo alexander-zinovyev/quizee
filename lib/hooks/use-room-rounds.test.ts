@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { parseRoundMeta, parseStages } from "./use-room-rounds";
+import { getActiveRounds, getSortingQuestions, parseRoundMeta, parseStages } from "./use-room-rounds";
 
 assert.deepEqual(
   parseRoundMeta(
@@ -63,3 +63,7 @@ assert.deepEqual(
     },
   ]
 );
+
+// Every ended round, including sorting, leaves the active-round area.
+assert.deepEqual(getActiveRounds((["text", "image", "sorting"] as const).flatMap((type) => (["active", "closed"] as const).map((state) => ({ id: `${type}-${state}`, title: type, order: 0, type, state })))).map((round) => round.id), ["text-active", "image-active", "sorting-active"]);
+assert.deepEqual(getSortingQuestions([{id:"a",prompt:"A",displayPrompt:"A",order:0}]), [{id:"a",text:"A"}]);

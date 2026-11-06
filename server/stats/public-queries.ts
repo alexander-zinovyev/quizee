@@ -137,7 +137,6 @@ export async function getPublicRound(db: Firestore, gameId: string, roundId: str
       return { ...data, maximum: inferQuestionMaximum(round.data()!.scoring, maxima.get(question.id)) };
     }));
     const ids = new Set(items.flatMap((question) => [...question.prompt.map((stage) => stage.assetId), ...question.acceptedAnswer.map((stage) => stage.assetId),
-      ...(question.sorting?.items.flatMap((item) => item.stages.map((stage) => stage.assetId)) ?? []),
       ...Object.values(question.answers).map((answer) => answer.assetId), question.color?.maskAssetId ?? null]).filter((id): id is string => id !== null));
     const assets: PublicStatsQuestionPage["assets"] = {};
     if (ids.size) for (const asset of await tx.getAll(...[...ids].map((id) => db.doc(statsPaths.snapshot(gameId, game.snapshotId)).collection("assets").doc(id)))) {

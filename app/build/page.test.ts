@@ -117,9 +117,9 @@ for (const pointsPerStep of [[NaN, 1], [Infinity, 1]]) {
 const sortingRound: BuildRound = {
   ...round, type: "sorting", name: "Timeline", multiStepQuestions: [],
   sortingCriterion: "Earliest to latest",
-  sortingItems: [
-    { id: "event-a", stages: [{ id: "a-stage", collapsed: false, text: "An event", mediaPath: null }] },
-    { id: "event-b", stages: [{ id: "b-stage", collapsed: false, text: "", mediaPath: audioPath }] },
+  sortingQuestions: [
+    { id: "event-a", collapsed: false, text: "An event", mediaPath: null },
+    { id: "event-b", collapsed: false, text: "", mediaPath: audioPath },
   ],
   sortingCorrectOrder: ["event-b", "event-a"],
 };
@@ -128,7 +128,7 @@ const sorting = buildQuizFromBuilderState([sortingRound], sortingMedia);
 assert.deepEqual(sorting.errors, []);
 assert.deepEqual(sorting.quizRounds, [{
   type: "sorting", title: "Timeline", criterion: "Earliest to latest",
-  items: [{ id: "event-a", stages: [{ text: "An event" }] }, { id: "event-b", stages: [{ media: audioPath }] }],
+  questions: [{ id: "event-a", text: "An event" }, { id: "event-b", media: audioPath }],
   correctOrder: ["event-b", "event-a"],
 }]);
 assert.deepEqual(validateAgainstQuizSchema(sorting.quizRounds, quizSchema), []);
@@ -136,4 +136,4 @@ assert.ok(Array.isArray(validateQuizFile(JSON.stringify(sorting.quizRounds))));
 assert.ok(buildQuizFromBuilderState([sortingRound], []).errors.some((error) => error.includes("media file not found")));
 assert.ok(buildQuizFromBuilderState([{ ...sortingRound, sortingCorrectOrder: ["event-a", "event-a"] }], sortingMedia).errors.some((error) => error.includes("exactly once")));
 assert.ok(buildQuizFromBuilderState([{ ...sortingRound, sortingCriterion: "" }], sortingMedia).errors.length);
-assert.ok(buildQuizFromBuilderState([{ ...sortingRound, sortingItems: [{ id: "empty", stages: [{ id: "empty-stage", collapsed: false, text: "", mediaPath: null }] }] }], []).errors.some((error) => error.includes("add text or media")));
+assert.ok(buildQuizFromBuilderState([{ ...sortingRound, sortingQuestions: [{ id: "empty", collapsed: false, text: "", mediaPath: null }] }], []).errors.some((error) => error.includes("add text or media")));

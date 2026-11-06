@@ -1,9 +1,8 @@
-import type { SortingItem as Item } from "./sorting";
+import type { SortingQuestion as Entry } from "./sorting";
 
-export type SortingItem = Item<{ text?: string | null; media?: Question["media"] }>;
+export type SortingQuestion = Entry<{ text?: string | null; media?: Question["media"] }>;
 
 export type Question = {
-  items?: SortingItem[];
   initialColor?: string;
   /**
    * Stable identifier for associating answers with questions.
@@ -135,8 +134,10 @@ export type ColorRoundData = RoundData & {
 
 export type SortingRoundData = RoundData & {
   type: "sorting";
+  criterion: string;
+  startingOrder?: string[];
   state: "active" | "closed";
-  questions: Question[];
+  questions: SortingQuestion[];
   roomSlug?: string;
   teamId?: string;
 };

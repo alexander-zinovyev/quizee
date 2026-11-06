@@ -25,7 +25,7 @@ import type { MediaTreeFile } from "@/lib/components/build/media-tree-shared";
 import MediaSelector from "@/lib/components/build/media-selector";
 import { ColorRoundEditor, createColorQuestion, type BuildColorQuestion } from "./color-round-editor";
 import type { ColorScoring } from "@/types/color";
-import { SortingRoundEditor, type BuildSortingItem } from "./sorting-round-editor";
+import { SortingRoundEditor, type BuildSortingQuestion } from "./sorting-round-editor";
 import type {
   RoundMeta,
   RoundQuestion,
@@ -77,7 +77,7 @@ export type BuildRound = {
   allowAnswerChanges: boolean;
   allowWager?: boolean;
   sortingCriterion?: string;
-  sortingItems?: BuildSortingItem[];
+  sortingQuestions?: BuildSortingQuestion[];
   sortingCorrectOrder?: string[];
   colorQuestions?: BuildColorQuestion[];
   scoring?: ColorScoring;
@@ -516,8 +516,8 @@ export default function RoundBuilderPanel({
   function resetRoundByType(round: BuildRound, type: RoundType): BuildRound {
     round = { ...round, allowWager: false };
     if (type === "sorting") {
-      const sortingItems = Array.from({ length: 2 }, () => ({ id: makeId(), stages: [createStage()] }));
-      return { ...round, type, textQuestions: [], imageItems: [], multiStepQuestions: [], sortingCriterion: "", sortingItems, sortingCorrectOrder: sortingItems.map((item) => item.id) };
+      const sortingQuestions = Array.from({ length: 2 }, createStage);
+      return { ...round, type, textQuestions: [], imageItems: [], multiStepQuestions: [], sortingCriterion: "", sortingQuestions, sortingCorrectOrder: sortingQuestions.map((item) => item.id) };
     }
     if (type === "color") return { ...round, type, textQuestions: [], imageItems: [], multiStepQuestions: [], colorQuestions: [createColorQuestion()], scoring: { mode: "threshold", points: 1, threshold: 8.5 } };
     if (type === "text") {
@@ -953,9 +953,9 @@ export default function RoundBuilderPanel({
                 </div>
 
                 {round.type === "sorting" ? (
-                  <SortingRoundEditor value={{ criterion: round.sortingCriterion ?? "", items: round.sortingItems ?? [], correctOrder: round.sortingCorrectOrder ?? [] }}
+                  <SortingRoundEditor value={{ criterion: round.sortingCriterion ?? "", questions: round.sortingQuestions ?? [], correctOrder: round.sortingCorrectOrder ?? [] }}
                     mediaFiles={mediaFiles} createStage={createStage} StageEditor={StageEditor}
-                    onChange={(value) => updateRound(round.id, (prev) => ({ ...prev, sortingCriterion: value.criterion, sortingItems: value.items, sortingCorrectOrder: value.correctOrder }))} />
+                    onChange={(value) => updateRound(round.id, (prev) => ({ ...prev, sortingCriterion: value.criterion, sortingQuestions: value.questions, sortingCorrectOrder: value.correctOrder }))} />
                 ) : round.type === "color" ? (
                   <ColorRoundEditor questions={round.colorQuestions ?? []} scoring={round.scoring ?? { mode: "threshold", points: 1, threshold: 8.5 }} mediaFiles={mediaFiles}
                     onQuestionsChange={(colorQuestions) => updateRound(round.id, (prev) => ({ ...prev, colorQuestions }))}

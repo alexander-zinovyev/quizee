@@ -7,8 +7,9 @@ import {
   type Unsubscribe,
 } from "firebase/firestore";
 
+import { closeSortingRound } from "./use-sorting-order";
 import { getClientFirestore } from "@/lib/firebase/client";
-import type { SortingItem } from "@/types/quiz";
+import type { SortingQuestion } from "@/types/quiz";
 import { parseRegionIds } from "@/types/color";
 
 export type RoundMeta = {
@@ -18,6 +19,8 @@ export type RoundMeta = {
   type: "text" | "image" | "multi-step" | "color" | "sorting";
   state: "scheduled" | "active" | "closed";
   gradingRequired?: boolean;
+  criterion?: string;
+  startingOrder?: string[];
   pointsPerStep?: number[];
   allowAnswerChanges?: boolean;
   allowWager?: boolean;
@@ -37,7 +40,6 @@ export type RoundQuestionStage = {
 };
 
 export type RoundQuestion = {
-  items?: SortingItem[];
   regionIds?: string[];
   mask?: RoundQuestionMedia | null;
   initialColor?: string;
@@ -104,16 +106,13 @@ export function parseStages(stagesRaw: unknown): RoundQuestionStage[] {
   return parsed;
 }
 
-export function parseSortingItems(raw: unknown): SortingItem[] {
-  if (!Array.isArray(raw) || raw.length < 2) throw new Error("Sorting requires at least two items.");
-  const ids = new Set<string>();
-  return raw.map((item) => {
-    if (!item || typeof item.id !== "string" || !item.id || ids.has(item.id)) throw new Error("Invalid sorting item ID.");
-    ids.add(item.id);
-    const stages = parseStages(item.stages);
-    if (!stages.length || stages.length !== item.stages.length) throw new Error("Invalid sorting item stages.");
-    return { id: item.id, stages };
-  });
+export function getActiveRounds(rounds: RoundMeta[]): RoundMeta[] {
+  return rounds.filter((round) => round.state === "active");
+}
+
+export function getSortingQuestions(questions: RoundQuestion[]): SortingQuestion[] {
+  return questions.map((question) => ({ id: question.id, ...(question.prompt ? { text: question.prompt } : {}),
+    ...(question.media ? { media: question.media } : {}) }));
 }
 
 function parsePointsPerStep(pointsRaw: unknown): number[] | undefined {
@@ -155,6 +154,14 @@ export function parseRoundMeta(id: string, data: Record<string, unknown>, index:
 
   if (data.allowWager !== undefined && (type !== "text" || typeof data.allowWager !== "boolean")) {
     throw new Error("Invalid wager configuration.");
+  }
+  if (type === "sorting") {
+    if (typeof data.criterion !== "string" || !data.criterion.trim()) throw new Error("Missing sorting criterion.");
+    meta.criterion = data.criterion;
+  }
+  if (type === "sorting" && data.startingOrder !== undefined) {
+    if (!Array.isArray(data.startingOrder) || !data.startingOrder.every((id) => typeof id === "string") || new Set(data.startingOrder).size !== data.startingOrder.length) throw new Error("Invalid starting order.");
+    meta.startingOrder = data.startingOrder;
   }
   if (type === "text") meta.allowWager = data.allowWager === true;
 
@@ -206,6 +213,9 @@ export function useRoomRounds(roomSlug: string, isHost?: boolean) {
           })
           .sort((a, b) => a.order - b.order);
 
+        for (const meta of metaList) {
+          if (meta.type === "sorting" && meta.state === "closed") closeSortingRound(roomSlug, meta.id);
+        }
         const currentRoundIds = new Set(metaList.map((meta) => meta.id));
 
         questionUnsubs.forEach((unsubscribe, roundId) => {
@@ -266,7 +276,7 @@ export function useRoomRounds(roomSlug: string, isHost?: boolean) {
           } else if (!questionUnsubs.has(meta.id)) {
             const questionsQuery = query(
               collection(db, "rooms", roomSlug, "rounds", meta.id, "questions"),
-              orderBy("order", "asc")
+              ...(meta.type === "sorting" ? [] : [orderBy("order", "asc")])
             );
 
             const unsubscribeQuestions = onSnapshot(
@@ -306,7 +316,6 @@ export function useRoomRounds(roomSlug: string, isHost?: boolean) {
 
                     return {
                       id: questionSnap.id,
-                      items: meta.type === "sorting" ? parseSortingItems(data.items) : undefined,
                       finalizedStep: typeof data.finalizedStep === "number" ? data.finalizedStep : -1,
                       prompt: promptRaw,
                       displayPrompt,

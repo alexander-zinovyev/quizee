@@ -1,8 +1,8 @@
 # Sorting rounds
 
-A sorting round has one criterion, at least two items, and an authored correct order. In the builder, choose **Sorting**, enter the criterion, add item text or media using the stage editor, then move the items into the correct order. All stages belonging to an item are shown together. Item IDs remain stable when the correct order changes.
+A sorting round has one criterion, at least two sortable questions, and an authored correct order. Each question uses a single Stage-shaped object: nonempty text, media, or both. Questions do not contain a `stages` array. In the builder, choose **Sorting**, enter the criterion, edit each question with the shared stage editor, then move questions into the correct order. Question IDs stay stable when the correct order changes.
 
-A quiz pack still contains `quiz.json` and optional files under `media/` in a `.tar.gz`. Item media paths are relative to `media/` and support the same image, audio, and video formats as other stage media.
+A quiz pack contains `quiz.json` and optional files under `media/` in a `.tar.gz`. Media paths in quiz JSON are relative to `media/` and support the same image, audio, and video formats as other stage media.
 
 ```json
 [
@@ -10,28 +10,30 @@ A quiz pack still contains `quiz.json` and optional files under `media/` in a `.
     "type": "sorting",
     "title": "Timeline",
     "criterion": "Order these events from earliest to latest.",
-    "items": [
-      { "id": "moon", "stages": [{ "text": "First Moon landing" }] },
-      { "id": "flight", "stages": [{ "media": "events/first-flight.jpg" }] },
-      { "id": "web", "stages": [{ "text": "World Wide Web", "media": "events/web.mp3" }] }
+    "questions": [
+      { "id": "moon", "text": "First Moon landing" },
+      { "id": "flight", "media": "events/first-flight.jpg" },
+      { "id": "web", "text": "World Wide Web", "media": "events/web.mp3" }
     ],
     "correctOrder": ["flight", "moon", "web"]
   }
 ]
 ```
 
-Each item has a unique ID containing letters, numbers, underscores, or dashes. Every stage must contain nonempty `text`, a supported `media` path, or both. `correctOrder` must contain every item ID exactly once. The builder validates imports and exports, and the server validates packs again when creating a room. Referenced media must exist in the pack.
+Each question has a unique ID containing letters, numbers, underscores, or dashes, with at most 1500 characters to fit a Firestore document ID. Every question must contain nonempty `text`, a supported `media` path, or both. `correctOrder` must contain every question ID exactly once. Nested `items` and `stages` shapes are refused. The builder validates imports and exports, and the server validates packs again when creating a room. Referenced media must exist in the pack.
 
-Opening sorting leaves the current foreground question in place. Activation creates one shuffled starting order and saves a copy for every team at revision `0`. Teams can start dragging immediately; they do not need to submit the initial arrangement or press a save button. An untouched starting order is still scored.
+In Firestore, the criterion belongs to `rooms/{roomId}/rounds/{roundId}`. Each sortable question is stored as Stage fields directly in `questions/{questionId}`; resolved media contains its Storage metadata. The single `answers/order` document contains `{ correctOrder: string[] }`. There is no synthetic question wrapping the list.
 
-Teams can drag from the item row with a mouse, or press and hold to drag on touch devices while ordinary swipes scroll. Keyboard users can focus a handle, press Space to pick up an item, use the up and down arrow keys to move it, then press Space to drop or Escape to cancel. Media playback and zoom controls remain independently usable. Reordering stays interactive while saves are in flight, and pending saves survive switching round tabs.
+Opening sorting leaves the current foreground presentation in place. Activation creates one shuffled starting order, saves it as the round metadata’s `startingOrder` for host presentation, and saves a copy for every team at revision `0`. The live team round document, `rooms/{roomId}/teams/{teamId}/rounds/{roundId}`, contains `{ order: string[], revision: number, user: string | null }`. Teams do not need to submit the initial arrangement or press a save button. Untouched starting orders are scored.
 
-Each drop sends a relative edit, such as “A after C” or “A before E,” with a unique edit ID. The server validates the edit and atomically applies it to the current team order, increments that team's revision, and records an acknowledgement receipt. Duplicate delivery of the same edit returns its original revision without applying the move again, including after the round has closed. Reusing an edit ID for a different operation is refused.
+Teams can drag from the question row with a mouse, or press and hold to drag on touch devices while ordinary swipes scroll. Keyboard users can focus a handle, press Space to pick up a question, use the up and down arrow keys to move it, then press Space to drop or Escape to cancel. Media playback and zoom controls remain independently usable. Reordering stays interactive while saves are in flight, and pending saves survive switching round tabs. Gameplay does not display routine saving/saved status text; failures retain visible recovery controls.
 
-The live team answer is `{ order: string[], revision: number, user: string | null }`. Clients retain the authoritative Firestore snapshot separately from their pending edits. Adopting a newer snapshot and retiring all edits covered by its revision happens in one UI state update; acknowledgements also retire edits immediately if an already-received snapshot covers them. Remaining edits are replayed over that authoritative order. Each client sends its own edits sequentially without freezing further interaction.
+Each drop sends a relative edit, such as “A after C” or “A before E,” with a unique edit ID. The server validates the edit and atomically applies it to the current team order, increments that team's revision, and records the acknowledgement in the live team round's `edits/{editId}` subcollection. Duplicate delivery returns its original revision without applying the move again, including after the round has closed. Reusing an edit ID for a different operation is refused.
 
-The host closes sorting independently. Closure atomically freezes the latest accepted order and revision; new edits after closing are refused with `round-closed`, while receipts for already accepted edits remain readable through the authenticated save API. Frozen answers retain the existing `{ answer: JSON.stringify(order), revision, user }` grading/history format. Revealing the correct order is a separate host action; the authored order stays in private answer data until reveal.
+Clients retain the authoritative Firestore snapshot separately from pending edits. Adopting a newer snapshot and retiring all edits covered by its revision happens in one UI state update; acknowledgements also retire edits immediately if an already-received snapshot covers them. Remaining edits are replayed over that authoritative order. Each client sends its edits sequentially without freezing further interaction.
 
-Each item in its correct position earns one point. With the correct order `A B C D`, submissions `A B C D`, `A C B D`, and `B A D C` earn 4, 2, and 0 points. These points contribute to round scores, standings, and published game history.
+The host closes sorting independently. Closure atomically freezes the latest accepted `order`, `revision`, and `user` on `rounds/{roundId}/teamAnswers/{teamId}`. New edits after closing are refused with `round-closed`, while receipts for already accepted edits remain available through the authenticated save API. Grading adds the total `awardedPoints`, `pointsByQuestion`, and grading metadata to that frozen document. Ended rounds leave the active-rounds panel.
+
+Each question in its correct position earns one point. With the correct order `A B C D`, submissions `A B C D`, `A C B D`, and `B A D C` earn 4, 2, and 0 points. These points contribute to round scores, standings, and published game history. Immediately after closure and scoring, the existing score breakdown modal shows the correct order, submitted order, points per entry, and round total, independently of the host's current presentation. Correct orders remain private to hosts while the round is active. The host can present the whole correct sequence from the round criterion, question documents, and `answers/order`, with no individual question selected.
 
 Successful answer API responses include `Server-Timing` entries for authentication and the save transaction. Browser performance entries `sorting-edit.request` and `sorting-edit.firestore` measure request and snapshot propagation separately. The Firestore rules and authenticated HTTP integration tests report local emulator timings, including cold concurrent requests and a warm sequential save. These are diagnostic observations, not production latency targets.

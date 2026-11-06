@@ -64,8 +64,8 @@ function parseScoring(data: Record<string, unknown>, questions: SourceDocument[]
       break;
     case "image": scoring = { type: "image" }; break;
     case "sorting": {
-      if (questions.length !== 1 || !Array.isArray(questions[0].data.items)) malformed("sorting question/items");
-      scoring = { type: "sorting", itemCount: questions[0].data.items.length };
+      if (questions.length < 2) malformed("sorting questions");
+      scoring = { type: "sorting" };
       break;
     }
     case "multi-step": {
@@ -98,8 +98,8 @@ export async function readEndedRoom(db: Firestore, gameId: string): Promise<Room
         round.data().type === "image" ? tx.get(round.ref.collection("prompts")) : null]);
       const teamAnswers = await Promise.all(teams.docs.map(async (team) => {
         const ref = round.ref.collection("teamAnswers").doc(team.id);
-        const [metadata, answers] = await Promise.all([tx.get(ref), tx.get(ref.collection("answers"))]);
-        return [team.id, { metadata: metadata.data() ?? null, answers: answers.docs.map((answer) => ({ id: answer.id, data: answer.data() })) }] as const;
+        const [metadata, answers] = await Promise.all([tx.get(ref), round.data().type === "sorting" ? null : tx.get(ref.collection("answers"))]);
+        return [team.id, { metadata: metadata.data() ?? null, answers: answers?.docs.map((answer) => ({ id: answer.id, data: answer.data() })) ?? [] }] as const;
       }));
       return { id: round.id, data: round.data(), questions: questions.docs.map((doc) => ({ id: doc.id, data: doc.data() })),
         prompts: prompts?.docs.map((doc) => ({ id: doc.id, data: doc.data() })),
@@ -163,48 +163,54 @@ function normalizeSource(source: RoomSource, snapshotId: string): StatsSnapshot 
     const questionCount = numeric(round.data.questionCount, "question count");
     if (questionCount !== null && (!Number.isSafeInteger(questionCount) || questionCount < 0)) malformed("question count");
     const teamScores = Object.fromEntries(source.teams.map((team) => [team.id, numeric(team.scores.find((score) => score.id === round.id)?.data.score, "round score")]));
-    const questionDocuments = ordered(sourceQuestions(round));
+    const criterion = scoring.type === "sorting" ? text(round.data.criterion, "sorting criterion") : null;
+    if (scoring.type === "sorting" && !criterion?.trim()) malformed("missing sorting criterion");
+    const sortingIds = scoring.type === "sorting" ? round.questions.map((question) => question.id) : null;
+    if (sortingIds && (new Set(sortingIds).size !== sortingIds.length || sortingIds.some((id) => !SORTING_ITEM_ID.test(id)))) malformed("sorting question IDs");
+    const correctOrder = sortingIds ? parseSortingOrder(round.answers.find((answer) => answer.id === "order")?.data.correctOrder, sortingIds) : null;
+    const questionDocuments = correctOrder ? correctOrder.map((id) => round.questions.find((question) => question.id === id)!) : ordered(sourceQuestions(round));
+    const sortingOrders = correctOrder ? Object.fromEntries(teams.map((team) => {
+      const frozen = round.teamAnswers[team.id]?.metadata;
+      const submitted = frozen === null || frozen === undefined ? null : parseSortingOrder(frozen.order, correctOrder);
+      if (frozen?.pointsByQuestion !== undefined) {
+        const points = object(frozen.pointsByQuestion, "sorting question awards");
+        if (Object.keys(points).some((id) => !correctOrder.includes(id))) malformed("sorting award references an unknown question");
+        for (const value of Object.values(points)) if (numeric(value, "sorting question points") === null || (value as number) < 0) malformed("sorting question points");
+      }
+      return [team.id, submitted];
+    })) : null;
     const legacyAwards = Object.fromEntries(teams.map((team) => [team.id,
       legacyOnePointAwards(round, questionDocuments, scoring, team.id, teamScores[team.id], questionCount)]));
     const questions = questionDocuments.map((question, order) => {
       const accepted = round.answers.find((answer) => answer.id === question.id)?.data;
-      const sorting = scoring.type === "sorting" ? (() => {
-        const items = (question.data.items as unknown[]).map((raw) => {
-          const item = object(raw, "sorting item"), id = text(item.id, "sorting item ID");
-          if (!id || !SORTING_ITEM_ID.test(id) || !Array.isArray(item.stages) || !item.stages.length) malformed("sorting item");
-          const content = stages(item);
-          if (content.some((stage) => !stage.text?.trim() && !stage.assetId)) malformed("empty sorting stage");
-          return { id, stages: content };
-        });
-        const ids = items.map((item) => item.id);
-        if (new Set(ids).size !== ids.length) malformed("duplicate sorting item IDs");
-        return { items, correctOrder: parseSortingOrder(accepted?.correctOrder, ids) };
-      })() : undefined;
+      if (correctOrder && (Object.keys(question.data).some((key) => key !== "text" && key !== "media") ||
+          !stages(question.data).some((stage) => stage.text?.trim() || stage.assetId))) malformed("sorting question stage");
       const imageId = scoring.type === "image" ? text(accepted?.answer, "accepted image ID") : null;
-      const answerStages = scoring.type === "image" ? imageId && imageIds.get(imageId) ? [{ text: null, assetId: imageIds.get(imageId)! }] : [] : stages(accepted);
+      const answerStages = correctOrder ? [{ text: `Position ${order + 1}`, assetId: null }] : scoring.type === "image" ? imageId && imageIds.get(imageId) ? [{ text: null, assetId: imageIds.get(imageId)! }] : [] : stages(accepted);
       const answers: Record<string, StatsRecordedAnswer> = {};
       for (const team of teams) {
-        const raw = round.teamAnswers[team.id]?.answers.find((answer) => answer.id === question.id)?.data;
+        const frozen = round.teamAnswers[team.id]?.metadata;
+        const submittedOrder = sortingOrders?.[team.id] ?? null;
+        const raw = correctOrder ? frozen ?? undefined : round.teamAnswers[team.id]?.answers.find((answer) => answer.id === question.id)?.data;
         let answer: string | null = null;
         const attempts = raw && scoring.type === "multi-step" ? parseAttempts(raw.attempts).map(({ answer, step }) => ({ answer, step })) : [];
         if (raw) {
-          if (scoring.type === "multi-step") answer = raw.attempts === undefined ? null : recordedAnswer(raw, scoring.type).answer;
+          if (correctOrder) answer = submittedOrder === null ? null : `Position ${submittedOrder.indexOf(question.id) + 1}`;
+          else if (scoring.type === "multi-step") answer = raw.attempts === undefined ? null : recordedAnswer(raw, scoring.type).answer;
           else answer = text(raw.answer, "submitted answer");
         }
         const legacyAward = legacyAwards[team.id].get(question.id);
-        const awardedPoints = numeric(raw?.awardedPoints, "awarded points") ?? legacyAward ?? null;
+        const awardedPoints = numeric(correctOrder ? (raw?.pointsByQuestion as Record<string, unknown> | undefined)?.[question.id] : raw?.awardedPoints, "awarded points") ?? legacyAward ?? null;
         const perceptionScore = numeric(raw?.perceptionScore, "perception score");
         if (perceptionScore !== null && (perceptionScore < 0 || perceptionScore > 10)) malformed("perception score");
         if (scoring.type === "color" && answer !== null && answer !== "" && !HEX_COLOR.test(answer)) malformed("submitted color");
-        const sortingOrder = sorting && answer !== null && answer !== "" ? parseSortingOrder(JSON.parse(answer), sorting.items.map((item) => item.id)) : null;
         let correctness = bool(raw?.correct, "recorded correctness");
         if (scoring.type === "image" && imageId && imageIds.has(imageId) && answer !== null) correctness = answer === imageId;
         if (scoring.type === "color" && scoring.scoring?.mode === "threshold" && perceptionScore !== null) correctness = perceptionScore >= scoring.scoring.threshold;
         if (scoring.type === "color" && scoring.scoring?.mode === "closest") correctness = null;
-        if (sorting && answer !== null) correctness = sortingOrder !== null && sortingOrder.every((id, index) => id === sorting.correctOrder[index]);
+        if (correctOrder && submittedOrder !== null) correctness = submittedOrder.indexOf(question.id) === order;
         answers[team.id] = { answer, attempts, correctness, awardedPoints, perceptionScore,
           ...(legacyAward !== undefined ? { awardedPointsProvenance: "legacy-correctness" as const } : {}),
-          ...(sorting ? { sortingOrder } : {}),
           assetId: scoring.type === "image" && answer !== null ? imageIds.get(answer) ?? null : null };
       }
       const colorValue = (value: unknown, label: string) => {
@@ -213,13 +219,12 @@ function normalizeSource(source: RoomSource, snapshotId: string): StatsSnapshot 
         return color;
       };
       return { id: question.id, order, prompt: stages(question.data, "prompt"), acceptedAnswer: answerStages, answerHint: text(accepted?.hint, "accepted answer hint"), answers,
-        ...(sorting ? { sorting } : {}),
         color: scoring.type === "color" ? { initialColor: colorValue(question.data.initialColor, "initial color"),
           targetColor: colorValue(accepted?.answer, "target color"), maskAssetId: asset(question.data.mask),
           regionIds: question.data.regionIds === undefined ? null : parseRegionIds(question.data.regionIds) } : null };
     });
     return { id: round.id, order: roundOrder, title: text(round.data.title, "round title") ?? "", scoring, gradingIncomplete, questionCount, questions,
-      teamScores };
+      teamScores, ...(criterion !== null ? { criterion } : {}) };
   });
   const completed = source.room.data.completedAt;
   const completedAt = completed === null || completed === undefined ? null : typeof completed === "string" ? completed

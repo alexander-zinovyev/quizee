@@ -2,57 +2,41 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import SortingOrder from "@/lib/components/stats/sorting-order";
-import type { StatsReview, StatsRoundScoring } from "@/types/stats";
+import StatsStages from "@/lib/components/stats/stages";
+import type { StatsReview } from "@/types/stats";
 import { inferQuestionMaximum } from "./metrics";
 import { projectGame } from "./projection";
-import { publicQuestion } from "./serializers";
+import { publicMetrics, publicQuestion } from "./serializers";
 import { normalizeRoomSource } from "./source";
-import { roomSourceFixture } from "./source.fixtures";
+import { sortingRoomSourceFixture } from "./source.fixtures";
+import { snapshotDocuments } from "./snapshots";
 
-function sortingSource() {
-  const source = roomSourceFixture(1, 1);
-  const round = source.rounds[0];
-  round.data = { ...round.data, type: "sorting", title: "Timeline" };
-  round.questions[0].data = { order: 0, stages: [{ text: "Earliest to latest" }], items: [
-    { id: "B", stages: [{ text: "Event B" }, { media: { storagePath: "rooms/demo/media/event-b.png" } }] },
-    { id: "D", stages: [{ text: "Event D" }] },
-    { id: "A", stages: [{ text: "Event A" }] },
-    { id: "C", stages: [{ media: { storagePath: "rooms/demo/media/event-c.mp3" } }] },
-  ] };
-  round.answers[0].data = { correctOrder: ["A", "B", "C", "D"] };
-  for (const team of source.teams) {
-    const points = team.id === "red" ? 4 : 2;
-    round.teamAnswers[team.id].answers[0].data = {
-      answer: JSON.stringify(team.id === "red" ? ["A", "B", "C", "D"] : ["A", "C", "B", "D"]), awardedPoints: points,
-    };
-    team.data.scoreTotal = points;
-    team.scores[0].data.score = points;
-  }
-  return source;
-}
+const review: StatsReview = { hostPersonId: null, mappings: {}, maxima: {}, completedAt: null, packLabel: null };
 
-test("sorting history retains item stages, authored and submitted orders, and configured maxima", () => {
-  const snapshot = normalizeRoomSource(sortingSource(), "sorting");
-  const round = snapshot.rounds[0], question = round.questions[0];
-  assert.deepEqual(round.scoring, { type: "sorting", itemCount: 4 });
-  assert.deepEqual(inferQuestionMaximum(round.scoring), { points: 4, provenance: "configured" });
-  assert.deepEqual(question.sorting?.correctOrder, ["A", "B", "C", "D"]);
-  assert.deepEqual(question.answers.blue.sortingOrder, ["A", "C", "B", "D"]);
-  assert.equal(question.answers.red.correctness, true);
-  assert.equal(question.answers.blue.correctness, false);
-  assert.equal(question.answers.blue.awardedPoints, 2);
-  const mediaItem = question.sorting!.items.find((item) => item.id === "B")!;
-  assert.equal(mediaItem.stages[0].text, "Event B");
-  assert.equal(snapshot.assets[mediaItem.stages[1].assetId!].storagePath, "rooms/demo/media/event-b.png");
-  const serialized = publicQuestion(question);
-  assert.deepEqual(serialized.sorting, question.sorting);
-  assert.deepEqual(serialized.answers.blue.sortingOrder, question.answers.blue.sortingOrder);
+test("sorting history retains real Stage questions, correct/submitted positions and one-point maxima", () => {
+  const snapshot = normalizeRoomSource(sortingRoomSourceFixture(), "sorting");
+  const round = snapshot.rounds[0];
+  assert.deepEqual(round.scoring, { type: "sorting" });
+  assert.equal(round.criterion, "Earliest to latest");
+  assert.equal(round.questionCount, 4);
+  assert.deepEqual(round.questions.map((question) => question.id), ["A", "B", "C", "D"]);
+  assert.deepEqual(round.questions.map((question) => question.acceptedAnswer[0].text), ["Position 1", "Position 2", "Position 3", "Position 4"]);
+  assert.deepEqual(round.questions.map((question) => question.answers.blue.answer), ["Position 1", "Position 3", "Position 2", "Position 4"]);
+  assert.deepEqual(round.questions.map((question) => question.answers.blue.correctness), [true, false, false, true]);
+  assert.deepEqual(round.questions.map((question) => question.answers.blue.awardedPoints), [1, 0, 0, 1]);
+  assert.deepEqual(inferQuestionMaximum(round.scoring), { points: 1, provenance: "configured" });
+  assert.ok(round.questions.every((question) => question.prompt.length === 1));
+  const mediaQuestion = round.questions.find((question) => question.id === "B")!;
+  assert.equal(mediaQuestion.prompt[0].text, "Event B");
+  assert.equal(snapshot.assets[mediaQuestion.prompt[0].assetId!].storagePath, "rooms/demo/media/event-b.png");
+  assert.deepEqual(publicQuestion(mediaQuestion), mediaQuestion);
+  const documents = snapshotDocuments(snapshot);
+  const questionPaths = documents.filter((document) => /\/questions\/[^/]+$/.test(document.path)).map((document) => document.path.split("/").at(-1));
+  assert.deepEqual(questionPaths, ["A", "B", "C", "D"], "Saved history must not invent an aggregate question wrapper");
 });
 
-test("sorting awards flow into final standings and ordinary point percentages", () => {
-  const snapshot = normalizeRoomSource(sortingSource(), "sorting");
-  const review: StatsReview = { hostPersonId: null, mappings: {}, maxima: {}, completedAt: null, packLabel: null };
+test("sorting per-question awards reconcile standings and use N available points per team", () => {
+  const snapshot = normalizeRoomSource(sortingRoomSourceFixture(), "sorting");
   const projection = projectGame(snapshot, review, 1), round = projection.metrics.rounds[0];
   assert.equal(round.type, "sorting");
   assert.equal(round.teams.red.percentage.value, 1);
@@ -61,53 +45,75 @@ test("sorting awards flow into final standings and ordinary point percentages", 
   assert.equal(projection.metrics.results.find((team) => team.id === "red")!.outcome, "win");
   assert.equal(projection.metrics.percentage.denominator, 8);
   assert.equal(projection.metrics.percentage.numerator, 6);
+  assert.equal(publicMetrics(projection.metrics).rounds[0].criterion, "Earliest to latest");
 });
 
-test("sorting history preserves blank and absent submissions and refuses malformed permutations", () => {
-  const source = sortingSource();
-  source.rounds[0].teamAnswers.red.answers[0].data = { answer: "", awardedPoints: 0 };
-  source.rounds[0].teamAnswers.blue.answers = [];
-  const question = normalizeRoomSource(source, "blank").rounds[0].questions[0];
-  assert.equal(question.answers.red.answer, "");
-  assert.equal(question.answers.red.sortingOrder, null);
-  assert.equal(question.answers.blue.answer, null);
-  assert.equal(question.answers.blue.sortingOrder, null);
-  for (const answer of ['["A","A","C","D"]', '["A","B"]', '["A","B","C","unknown"]', "not json"]) {
-    const invalid = sortingSource();
-    invalid.rounds[0].teamAnswers.red.answers[0].data.answer = answer;
-    assert.throws(() => normalizeRoomSource(invalid, "invalid"));
+test("sorting history preserves absent orders and unknown per-question awards without inventing points", () => {
+  const source = sortingRoomSourceFixture();
+  source.rounds[0].teamAnswers.red.metadata = null;
+  delete source.rounds[0].teamAnswers.blue.metadata!.pointsByQuestion;
+  const round = normalizeRoomSource(source, "missing").rounds[0];
+  for (const question of round.questions) {
+    assert.equal(question.answers.red.answer, null);
+    assert.equal(question.answers.red.correctness, null);
+    assert.equal(question.answers.red.awardedPoints, null);
+    assert.equal(question.answers.blue.awardedPoints, null);
   }
-  for (const correctOrder of [["A", "A", "C", "D"], ["A", "B"]]) {
-    const invalid = sortingSource();
-    invalid.rounds[0].answers[0].data.correctOrder = correctOrder;
-    assert.throws(() => normalizeRoomSource(invalid, "invalid"));
-  }
-  for (const itemCount of [0, -1, 1, 1.5, Infinity]) {
-    assert.throws(() => inferQuestionMaximum({ type: "sorting", itemCount } as StatsRoundScoring));
-  }
+  assert.deepEqual(round.questions.map((question) => question.answers.blue.answer), ["Position 1", "Position 3", "Position 2", "Position 4"]);
 });
 
-test("public sorting serialization allowlists nested item stages and order evidence", () => {
-  const question = normalizeRoomSource(sortingSource(), "sorting").rounds[0].questions[0];
-  const dirty = { ...question, sorting: { ...question.sorting!, secret: "PRIVATE", items: question.sorting!.items.map((item) => ({
-    ...item, secret: "PRIVATE", stages: item.stages.map((stage) => ({ ...stage, storagePath: "PRIVATE" })),
-  })) }, answers: { ...question.answers, red: { ...question.answers.red, user: "PRIVATE" } } };
+test("sorting history refuses malformed orders, question stages and award maps", () => {
+  for (const order of [["A", "A", "C", "D"], ["A", "B"], ["A", "B", "C", "unknown"], "not an array", null]) {
+    const source = sortingRoomSourceFixture();
+    source.rounds[0].teamAnswers.red.metadata!.order = order;
+    assert.throws(() => normalizeRoomSource(source, "invalid"));
+    const invalidCorrect = sortingRoomSourceFixture();
+    invalidCorrect.rounds[0].answers[0].data.correctOrder = order;
+    assert.throws(() => normalizeRoomSource(invalidCorrect, "invalid"));
+  }
+  for (const stage of [{}, { stages: [{ text: "Old shape" }] }, { text: "A", stages: [] }, { media: { storagePath: "outside/room.png" } }]) {
+    const source = sortingRoomSourceFixture();
+    source.rounds[0].questions[0].data = stage;
+    assert.throws(() => normalizeRoomSource(source, "invalid"));
+  }
+  for (const points of [{ unknown: 1 }, { A: NaN }, { A: -1 }, { A: "1" }, []]) {
+    const source = sortingRoomSourceFixture();
+    source.rounds[0].teamAnswers.red.metadata!.pointsByQuestion = points;
+    assert.throws(() => normalizeRoomSource(source, "invalid"));
+  }
+  const source = sortingRoomSourceFixture();
+  source.rounds[0].questions = source.rounds[0].questions.slice(0, 1);
+  assert.throws(() => normalizeRoomSource(source, "invalid"));
+});
+
+test("sorting normalization is deterministic across question document delivery order", () => {
+  const source = sortingRoomSourceFixture();
+  const expected = normalizeRoomSource(source, "sorting");
+  source.rounds[0].questions.reverse();
+  assert.deepEqual(normalizeRoomSource(source, "sorting"), expected);
+});
+
+test("public sorting question serialization drops private source data", () => {
+  const question = normalizeRoomSource(sortingRoomSourceFixture(), "sorting").rounds[0].questions[1];
+  const dirty = { ...question, user: "PRIVATE", prompt: question.prompt.map((stage) => ({ ...stage, storagePath: "PRIVATE" })),
+    answers: { ...question.answers, red: { ...question.answers.red, user: "PRIVATE" } } };
   assert.equal(JSON.stringify(publicQuestion(dirty)).includes("PRIVATE"), false);
 });
 
-test("sorting history renders readable ordered items, media, and positional comparisons", () => {
-  const snapshot = normalizeRoomSource(sortingSource(), "sorting"), question = snapshot.rounds[0].questions[0];
-  const html = renderToStaticMarkup(createElement(SortingOrder, {
-    sorting: question.sorting!, order: question.answers.blue.sortingOrder!,
-    assets: Object.fromEntries(Object.entries(snapshot.assets).map(([id, value]) => [id, { filename: value.storagePath.split("/").at(-1)! }])),
-    assetUrl: (id) => `/assets/${id}`, label: "Blue submitted order", compare: true,
-  }));
-  assert.ok(html.indexOf("Event A") < html.indexOf("<audio"));
-  assert.ok(html.indexOf("<audio") < html.indexOf("Event B"));
-  assert.ok(html.indexOf("Event B") < html.indexOf("Event D"));
-  assert.match(html, /Position 1 · Correct position/);
-  assert.match(html, /Position 2 · Correct position: 3/);
-  assert.match(html, /Position 3 · Correct position: 2/);
+test("sorting history renders each Stage with readable positions, image and audio media", () => {
+  const snapshot = normalizeRoomSource(sortingRoomSourceFixture(), "sorting");
+  const assets = Object.fromEntries(Object.entries(snapshot.assets).map(([id, value]) => [id, { filename: value.storagePath.split("/").at(-1)! }]));
+  const html = snapshot.rounds[0].questions.map((question) => renderToStaticMarkup(createElement("section", null,
+    createElement(StatsStages, { stages: question.prompt, assets, assetUrl: (id) => `/assets/${id}`, label: question.id }),
+    createElement(StatsStages, { stages: question.acceptedAnswer, assets, assetUrl: (id) => `/assets/${id}`, label: "Correct position" }),
+    createElement("p", null, `Blue submitted: ${question.answers.blue.answer}, points: ${question.answers.blue.awardedPoints}`),
+  ))).join("");
+  assert.ok(html.indexOf("Event A") < html.indexOf("Event B"));
+  assert.ok(html.indexOf("Event B") < html.indexOf("<audio"));
+  assert.ok(html.indexOf("<audio") < html.indexOf("Event D"));
+  assert.match(html, /Position 2/);
+  assert.match(html, /Blue submitted: Position 3, points: 0/);
   assert.match(html, /<audio/);
   assert.match(html, /<img/);
+  assert.doesNotMatch(html, /Stage 1/);
 });

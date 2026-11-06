@@ -3,7 +3,7 @@ import type { ColorScoring } from "./color";
 export type StatsRoundScoring =
   | { type: "text"; allowWager: boolean | null }
   | { type: "image" }
-  | { type: "sorting"; itemCount: number }
+  | { type: "sorting" }
   | { type: "multi-step"; pointsPerStep: number[] | null }
   | { type: "color"; scoring: ColorScoring | null };
 
@@ -28,8 +28,6 @@ export type StatsRecordedAnswer = {
   awardedPointsProvenance?: "legacy-correctness";
   perceptionScore: number | null;
   assetId: string | null;
-  /** Present for sorting rounds; null distinguishes unanswered or absent orders. */
-  sortingOrder?: string[] | null;
 };
 
 export type StatsQuestion = {
@@ -39,12 +37,11 @@ export type StatsQuestion = {
   acceptedAnswer: StatsStage[];
   answerHint: string | null;
   color: { initialColor: string | null; targetColor: string | null; maskAssetId: string | null; regionIds: string[] | null } | null;
-  /** Optional for compatibility with snapshots created before sorting rounds existed. */
-  sorting?: { items: Array<{ id: string; stages: StatsStage[] }>; correctOrder: string[] };
   answers: Record<string, StatsRecordedAnswer>;
 };
 
 export type StatsRound = {
+  criterion?: string;
   id: string;
   order: number;
   title: string;
@@ -143,6 +140,7 @@ export type StatsHistoryResult = {
 
 export type StatsGameWarning = { code: string; roundId?: string; questionId?: string; teamId?: string; difference?: number };
 export type StatsRoundMetrics = {
+  criterion?: string;
   id: string;
   title: string;
   type: string;

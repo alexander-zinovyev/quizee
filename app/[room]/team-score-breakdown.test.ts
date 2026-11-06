@@ -13,10 +13,12 @@ assert.equal(parseDraftPoints("-2", { type: "multi-step" }), -2);
 assert.equal(parseDraftPoints("-2", { type: "text" }), 0);
 for (const value of ["", " ", "NaN", "Infinity", "2oops"]) assert.equal(parseDraftPoints(value, { type: "multi-step" }), null);
 
-const items = [{ id: "a", stages: [{ text: "Event A" }] }, { id: "b", stages: [{ media: { storagePath: "rooms/demo/media/b.mp3" } }] }];
-const sorting = parseBreakdownSortingOrder('["b","a"]', items)!;
-assert.deepEqual(sorting.order.map((id) => sorting.items.find((item) => item.id === id)?.stages), [items[1].stages, items[0].stages]);
-assert.equal(parseBreakdownSortingOrder("", items), undefined);
-assert.throws(() => parseBreakdownSortingOrder('["a","a"]', items));
-assert.throws(() => parseBreakdownSortingOrder("bad JSON", items));
+const questions = [{ id: "a", text: "Event A" }, { id: "b", media: { storagePath: "rooms/demo/media/b.mp3" } }];
+const sorting = parseBreakdownSortingOrder({ order: ["b", "a"], pointsByQuestion: {a:0,b:0} }, ["a", "b"], questions, true);
+assert.deepEqual(sorting.order, ["b", "a"]);
+assert.deepEqual(sorting.correctOrder, ["a", "b"]);
+assert.deepEqual(sorting.pointsByQuestion, {a:0,b:0});
+assert.equal(parseBreakdownSortingOrder({order:["a","b"]}, null, questions, false).correctOrder, null);
+assert.throws(() => parseBreakdownSortingOrder({order:["a","a"]}, ["a","b"], questions, true));
+assert.throws(() => parseBreakdownSortingOrder({order:["a","b"],pointsByQuestion:{a:1}}, ["a","b"], questions, true));
 assert.equal(parseDraftPoints("2", { type: "sorting" }), 2);
