@@ -4,7 +4,7 @@ import { useEffect, useId, useState } from "react";
 import { closestCenter, pointerWithin, type CollisionDetection, type KeyboardCoordinateGetter, DndContext, KeyboardSensor, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical } from "lucide-react";
+import Image from "next/image";
 import { doc, getDocFromServer, onSnapshot } from "firebase/firestore";
 import { getDownloadURL, getStorage, ref } from "firebase/storage";
 import { useFirebaseAuth } from "@/app/providers/firebase-auth-provider";
@@ -33,29 +33,28 @@ function SortingMedia({ media, label }: { media: NonNullable<Question["media"]>;
 
 function SortingItemContent({ item, index }: { item: SortingItem; index: number }) {
   return <>
-    <span className="text-sm font-semibold">{index + 1}.</span>
     <div className="min-w-0 flex-1 space-y-2">
       {item.stages.map((stage, stageIndex) => <div key={stageIndex} className="space-y-2">
-        {stage.text ? <p className="whitespace-pre-wrap text-sm">{stage.text}</p> : null}
+        {stage.text ? <p className="whitespace-pre-wrap text-sm font-normal">{stage.text}</p> : null}
         {stage.media ? <SortingMedia media={stage.media} label={stage.text ?? `Item ${index + 1}`} /> : null}
       </div>)}
     </div>
   </>;
 }
 
-const itemClassName = "relative flex items-start gap-3 rounded-xl border border-zinc-400/40 p-3";
+const itemClassName = "relative flex items-start gap-3 rounded-[5px] bg-zinc-300/50 p-1.5 ring-1 ring-inset ring-zinc-400/40 dark:bg-zinc-800/60";
 
 function SortableSortingItem({ item, index, disabled }: { item: SortingItem; index: number; disabled: boolean }) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: item.id, disabled });
-  return <li ref={setNodeRef} data-item-id={item.id} className={`${itemClassName} ${isDragging ? "z-10 bg-emerald-50 shadow-lg ring-2 ring-emerald-500 dark:bg-zinc-800" : ""}`}
+  return <li ref={setNodeRef} data-item-id={item.id} className={`${itemClassName} ${isDragging ? "z-10 shadow-lg outline-2 outline-emerald-500" : ""}`}
     style={{ transform: CSS.Transform.toString(transform), transition }}>
-    <SortingItemContent item={item} index={index} />
     <button ref={setActivatorNodeRef} type="button" {...attributes} {...listeners}
       aria-label={`Reorder item ${index + 1}`} aria-disabled={disabled} tabIndex={disabled ? -1 : 0}
       title="Drag to reorder"
-      className="inline-flex h-11 w-11 shrink-0 touch-none cursor-grab items-center justify-center rounded-lg border border-zinc-400/40 text-zinc-500 hover:bg-emerald-100 focus-visible:outline-2 focus-visible:outline-emerald-500 active:cursor-grabbing aria-disabled:cursor-default aria-disabled:opacity-30 dark:text-zinc-300 dark:hover:bg-zinc-700">
-      <GripVertical aria-hidden="true" className="h-5 w-5" />
+      className="relative inline-flex size-5 shrink-0 touch-none cursor-grab items-center justify-center rounded-sm before:absolute before:-inset-1.5 before:content-[''] focus-visible:outline-2 focus-visible:outline-emerald-500 active:cursor-grabbing aria-disabled:cursor-default aria-disabled:opacity-30">
+      <Image src="/sorting-grip.svg" alt="" width={20} height={20} className="pointer-events-none" />
     </button>
+    <SortingItemContent item={item} index={index} />
   </li>;
 }
 
@@ -179,7 +178,7 @@ export function SortingRound({ roomSlug, teamId, roundId, question, state, readO
     } finally { setPending(null); }
   }
   if (items.length < 2) return <p>Loading sorting items…</p>;
-  return <div className="min-h-0 space-y-3 overflow-auto p-2">
+  return <div className="min-h-0 space-y-3 overflow-auto p-2 [scrollbar-gutter:stable]">
     <h2 className="whitespace-pre-wrap font-semibold">{question.prompt}</h2>
     {error ? <p role="alert" className="text-red-500">{error} <button type="button" className="underline" onClick={() => setError(null)}>Dismiss</button></p> : null}
     <SortingItems items={items} order={order} disabled={disabled} onMove={readOnly || state === "closed" ? undefined : (from, to) => {

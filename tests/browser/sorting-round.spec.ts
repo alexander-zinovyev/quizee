@@ -1,7 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { build } from "esbuild";
 
-test.use({ hasTouch: true });
+test.use({ hasTouch: true, colorScheme: "light" });
 
 async function bundle() {
   const result = await build({
@@ -11,6 +11,7 @@ async function bundle() {
       import { flushSync } from 'react-dom';
       import RoomRoundsPanel from './app/[room]/room-rounds-panel';
       import { SortingRound } from './lib/components/sorting-round';
+      import QuizRound from './lib/components/quiz-round';
       const question = { id:'question-1', prompt:'Order events from earliest to latest', items:[
         {id:'a',stages:[{text:'A'}]},
         {id:'b',stages:[{text:'B',media:{storagePath:'images/b.svg',filename:'b.svg'}}]},
@@ -34,8 +35,15 @@ async function bundle() {
         question.items[1].stages.push({text:'Extra context',media:{storagePath:'images/extra.svg',filename:'extra.svg'}});
         window.renderSortingViews();
       };
+      window.renderSortingDesign = () => {
+        document.getElementById('red').className = 'flex h-[337px] w-[437px] flex-col';
+        ['teammate','blue','foreground'].forEach(id => { document.getElementById(id).style.display = 'none'; });
+        flushSync(() => roots[0].render(<QuizRound id="sorting" type="sorting" title="Сортуємо" roundNumber={1}
+          state="active" roomSlug="demo" teamId="red" questions={[{id:'question-1',prompt:'Від найстарішого до найновішого',items:
+            ['IKEA','Samsung','Sony','Disney','LEGO','Apple','Nintendo','McDonalds'].map((text,index) => ({id:String(index),stages:[{text}]}))}]} />));
+      };
       window.renderSortingViews();`, resolveDir: process.cwd(), loader: "tsx" },
-    bundle: true, write: false, jsx: "automatic", define: { "process.env.NODE_ENV": '"development"' },
+    bundle: true, write: false, jsx: "automatic", define: { "process.env": "{}", "process.env.NODE_ENV": '"development"' },
     plugins: [{ name: "sorting-test-transport", setup(builder) {
       builder.onResolve({ filter: /^(firebase\/(firestore|storage)|@\/lib\/firebase\/client|@\/app\/providers\/firebase-auth-provider)$/ }, (args) => ({ path: args.path, namespace: "sorting-mock" }));
       builder.onLoad({ filter: /.*/, namespace: "sorting-mock" }, (args) => {
@@ -58,6 +66,7 @@ async function bundle() {
 }
 
 type Harness = {
+  renderSortingDesign: () => void;
   expandSortingItem: () => void;
   renderSortingViews: (state?: "active" | "closed", reveal?: boolean, reconnect?: boolean, foreground?: string) => void;
   sortingReads: string[];
@@ -100,8 +109,7 @@ async function dragItem(page: Page, region: Locator, id: string, targetId: strin
   });
 }
 
-for (const width of [1440, 390]) test(`sorting team workflow across foreground transitions at ${width}px`, async ({ page }) => {
-  await page.setViewportSize({ width, height: 900 });
+async function setupSortingPage(page: Page) {
   await page.goto("/build");
   await expect(page.getByRole("button", { name: "Add round", exact: true })).toBeVisible();
   const stylesheets = await page.locator('link[rel="stylesheet"]').evaluateAll((links) => links.map((link) => (link as HTMLLinkElement).href));
@@ -158,6 +166,11 @@ for (const width of [1440, 390]) test(`sorting team workflow across foreground t
     };
   });
   await page.addScriptTag({ content: await bundle() });
+}
+
+for (const width of [1440, 390]) test(`sorting team workflow across foreground transitions at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 900 });
+  await setupSortingPage(page);
   const red = page.getByRole("region", { name: "red view", exact: true });
   const teammate = page.getByRole("region", { name: "teammate view", exact: true });
   const blue = page.getByRole("region", { name: "blue view", exact: true });
@@ -165,6 +178,35 @@ for (const width of [1440, 390]) test(`sorting team workflow across foreground t
   const correctPath = "rooms/demo/rounds/sorting/answers/question-1";
   await expect(red.getByRole("button", { name: "Reorder item 1", exact: true })).toBeEnabled();
   await expect(red.getByRole("button", { name: /^Move item/ })).toHaveCount(0);
+  const firstRow = red.locator('[data-item-id="a"]');
+  const firstGrip = firstRow.getByRole("button", { name: "Reorder item 1", exact: true });
+  const rowBounds = (await firstRow.boundingBox())!;
+  const gripBounds = (await firstGrip.boundingBox())!;
+  const textBounds = (await firstRow.getByText("A", { exact: true }).boundingBox())!;
+  expect(rowBounds.height).toBe(32);
+  expect(gripBounds.width).toBe(20);
+  expect(gripBounds.height).toBe(20);
+  expect(gripBounds.x - rowBounds.x).toBe(6);
+  expect(textBounds.x - rowBounds.x).toBe(38);
+  await expect(firstRow).toHaveText("A");
+  const rowColor = await firstRow.evaluate((row) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 1;
+    const context = canvas.getContext("2d")!;
+    context.fillStyle = getComputedStyle(row).backgroundColor;
+    context.fillRect(0, 0, 1, 1);
+    const actual = [...context.getImageData(0, 0, 1, 1).data];
+    context.clearRect(0, 0, 1, 1);
+    context.fillStyle = "rgba(212, 212, 216, 0.5)";
+    context.fillRect(0, 0, 1, 1);
+    return { actual, expected: [...context.getImageData(0, 0, 1, 1).data] };
+  });
+  expect(rowColor.actual).toEqual(rowColor.expected);
+  await expect(firstRow).toHaveCSS("border-radius", "5px");
+  const gripImage = firstGrip.locator('img');
+  await expect(gripImage).toHaveAttribute("src", "/sorting-grip.svg");
+  await expect.poll(() => gripImage.evaluate((image) => (image as HTMLImageElement).naturalWidth)).toBe(20);
+
   await expect(red.getByRole("button", { name: "Save order" })).toBeEnabled();
   await expect(red.getByRole("img", { name: "B", exact: true })).toBeVisible();
   await red.getByRole("button", { name: "Zoom image", exact: true }).click();
@@ -269,4 +311,20 @@ for (const width of [1440, 390]) test(`sorting team workflow across foreground t
   await expect(red.getByRole("region", { name: "Correct order", exact: true })).toBeVisible();
   await expect.poll(() => order(red.getByRole("region", { name: "Correct order", exact: true }))).toEqual(["a", "b", "c", "d"]);
   await expect.poll(() => page.evaluate(() => (window as unknown as Harness).sortingReads.includes("rooms/demo/rounds/sorting/answers/question-1"))).toBe(true);
+});
+
+
+test("sorting list matches the Figma frame", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 800, height: 600 });
+  await setupSortingPage(page);
+  await page.evaluate(() => (window as unknown as Harness).renderSortingDesign());
+  const panel = page.getByRole("region", { name: "Сортуємо", exact: true });
+  await expect(panel.getByRole("heading", { name: "Від найстарішого до найновішого" })).toBeVisible();
+  await expect(panel.locator('[data-item-id="0"]')).toHaveCSS("height", "32px");
+  await expect(panel.getByRole("button", { name: "Reorder item 1", exact: true }).locator('img')).toBeVisible();
+  const gripImages = panel.locator('button[title="Drag to reorder"] img');
+  await expect(gripImages).toHaveCount(8);
+  await expect.poll(() => gripImages.evaluateAll((images) => images.every((image) => (image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth === 20))).toBe(true);
+  expect((await panel.locator('[data-item-id="0"]').boundingBox())!.width).toBeCloseTo(372, 0);
+  await panel.screenshot({ path: testInfo.outputPath("sorting-figma.png") });
 });
