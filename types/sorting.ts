@@ -10,6 +10,9 @@ export type SortingPackRound = {
   correctOrder: string[];
 };
 
+export type SortingEdit = { id: string; itemId: string; anchorId: string; placement: "before" | "after" };
+export type SortingSnapshot = { order: string[]; revision: number };
+
 export const SORTING_ITEM_ID = /^[A-Za-z0-9_-]+$/;
 const MEDIA_PATH = /^(?!\/)(?!media\/)(?!.*(?:^|\/)\.\.?(?:\/|$))(?!.*[:\\\x00-\x1f]).+\.(png|jpg|jpeg|gif|webp|svg|mp3|wav|ogg|m4a|aac|mp4|mov|webm)$/;
 
@@ -61,4 +64,29 @@ export function parseSortingRound(raw: unknown): SortingPackRound {
   const correctOrder = parseSortingOrder(round.correctOrder, itemIds);
   if (JSON.stringify(correctOrder).length > MAX_ANSWER_LENGTH) throw new Error(`Sorting order must fit within the ${MAX_ANSWER_LENGTH}-character answer limit.`);
   return { type: "sorting", title, criterion, items, correctOrder };
+}
+
+export function parseSortingEdit(raw: unknown): SortingEdit {
+  const edit = object(raw, ["id", "itemId", "anchorId", "placement"], "sorting edit");
+  if (typeof edit.id !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(edit.id) ||
+      typeof edit.itemId !== "string" || !SORTING_ITEM_ID.test(edit.itemId) ||
+      typeof edit.anchorId !== "string" || !SORTING_ITEM_ID.test(edit.anchorId) || edit.itemId === edit.anchorId ||
+      (edit.placement !== "before" && edit.placement !== "after")) throw new Error("Invalid sorting edit.");
+  return { id: edit.id, itemId: edit.itemId, anchorId: edit.anchorId, placement: edit.placement };
+}
+
+export function parseSortingSnapshot(raw: unknown, itemIds: readonly string[]): SortingSnapshot {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Invalid sorting snapshot.");
+  const snapshot = raw as Record<string, unknown>;
+  if (!Number.isSafeInteger(snapshot.revision) || (snapshot.revision as number) < 0 || itemIds.length < 2) throw new Error("Invalid sorting revision.");
+  return { order: parseSortingOrder(snapshot.order, itemIds), revision: snapshot.revision as number };
+}
+
+export function applySortingEdit(order: readonly string[], rawEdit: SortingEdit): string[] {
+  const edit = parseSortingEdit(rawEdit);
+  if (!order.includes(edit.itemId) || !order.includes(edit.anchorId)) throw new Error("Sorting edit references an unknown item.");
+  const next = parseSortingOrder(order, order).filter((id) => id !== edit.itemId);
+  const anchorIndex = next.indexOf(edit.anchorId);
+  next.splice(anchorIndex + Number(edit.placement === "after"), 0, edit.itemId);
+  return next;
 }

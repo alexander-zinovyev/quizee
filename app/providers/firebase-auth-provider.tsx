@@ -59,8 +59,8 @@ export function FirebaseAuthProvider({
         const auth = getAuth(getFirebaseClientApp());
         const current = auth.currentUser;
 
-        if (!current) {
-          throw new Error("User not authenticated");
+        if (!current || current.uid !== user?.uid) {
+          throw new Error("Authentication changed. Reload your answers.");
         }
 
         return current.getIdToken();
