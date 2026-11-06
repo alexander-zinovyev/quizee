@@ -46,6 +46,10 @@ export function database(type: "text" | "multi-step" = "multi-step", allowAnswer
           return { docs: [...docs.keys()].filter((path) => path.startsWith(`${ref.path}/`) && !path.slice(ref.path.length + 1).includes("/"))
             .map((path) => snapshot(new Ref(path))) };
         },
+        getAll: async (...refs: Ref[]) => {
+          assert.equal(writes.length, 0, "Transactions must finish reading before writing");
+          return refs.map(snapshot);
+        },
         set: (ref: Ref, data: Data, options: { merge?: boolean } = {}) => writes.push(() => docs.set(ref.path,
           options.merge ? { ...docs.get(ref.path), ...data } : data)),
         update: (ref: Ref, data: Data) => writes.push(() => docs.set(ref.path, { ...docs.get(ref.path), ...data })),

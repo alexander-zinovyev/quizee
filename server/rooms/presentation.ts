@@ -1,4 +1,5 @@
-import { parseSortingOrder } from "@/types/sorting";
+import { randomInt } from "node:crypto";
+import { parseSortingSnapshot } from "@/types/sorting";
 import { Timestamp, type Firestore, type DocumentData, type DocumentReference } from "firebase-admin/firestore";
 import { parseTeamAnswer, type TeamAnswer } from "@/lib/answers";
 import { captureMultiStepAnswer, snapshotTeamAnswer, parsePointsPerStep } from "./multi-step-submission";
@@ -96,15 +97,36 @@ export async function transitionPresentation(
       if (!question.exists) throw new Error("Question not found.");
       finalizedStep = question.data()?.finalizedStep ?? -1;
     }
+    const initializingSorting = options.activateRound && rounds.get(options.activateRound)?.type === "sorting"
+      ? await tx.get(roomRef.collection("rounds").doc(options.activateRound).collection("questions")) : null;
+    let startingSortingOrder: string[] | null = null;
+    if (initializingSorting) {
+      if (initializingSorting.docs.length !== 1) throw new Error("Sorting requires one item list.");
+      const question = initializingSorting.docs[0];
+      const items: unknown = question.data().items;
+      if (!Array.isArray(items)) throw new Error("Missing sorting items.");
+      const shuffled = [...items];
+      for (let index = shuffled.length - 1; index > 0; index--) {
+        const other = randomInt(index + 1);
+        [shuffled[index], shuffled[other]] = [shuffled[other], shuffled[index]];
+      }
+      const ids = shuffled.map((item: { id: string }) => item.id);
+      startingSortingOrder = parseSortingSnapshot({ order: ids, revision: 0 }, ids).order;
+      writes.push({ ref: question.ref, data: { items: shuffled }, merge: true });
+    }
     const now = Timestamp.now();
     const sortingQuestions = options.closeRound && rounds.get(options.closeRound)?.type === "sorting"
       ? await tx.get(roomRef.collection("rounds").doc(options.closeRound).collection("questions")) : null;
     const colorQuestions = options.closeRound && rounds.get(options.closeRound)?.type === "color"
       ? await tx.get(roomRef.collection("rounds").doc(options.closeRound).collection("questions")) : null;
-    if (capture || options.closeRound) {
+    if (capture || options.closeRound || initializingSorting) {
       const teams = await tx.get(roomRef.collection("teams"));
       for (const team of teams.docs) {
         const teamRounds = team.ref.collection("rounds");
+        if (initializingSorting && startingSortingOrder) {
+          const answerRef = teamRounds.doc(options.activateRound!).collection("answers").doc(initializingSorting.docs[0].id);
+          writes.push({ ref: answerRef, data: { order: startingSortingOrder, revision: 0, user: null }, merge: false });
+        }
         let captured: TeamAnswer | null = null;
         if (capture && current.promptPage > finalizedStep) {
           const answerRef = teamRounds.doc(current.round!).collection("answers").doc(current.question!);
@@ -121,9 +143,10 @@ export async function transitionPresentation(
           if (sortingQuestions) {
             for (const question of sortingQuestions.docs) {
               const saved = answers.docs.find((answer) => answer.id === question.id)?.data();
-              const answer = saved?.answer ?? "";
-              if (answer !== "") parseSortingOrder(JSON.parse(answer), question.data().items.map((item: { id: string }) => item.id));
-              writes.push({ ref: target.collection("answers").doc(question.id), data: { answer, user: saved?.user ?? null }, merge: false });
+              const snapshot = parseSortingSnapshot(saved, question.data().items.map((item: { id: string }) => item.id));
+              writes.push({ ref: target.collection("answers").doc(question.id), data: {
+                answer: JSON.stringify(snapshot.order), revision: snapshot.revision, user: saved?.user ?? null,
+              }, merge: false });
             }
             continue;
           }

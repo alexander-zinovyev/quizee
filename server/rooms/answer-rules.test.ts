@@ -7,6 +7,7 @@ import { getFirestore as getAdminFirestore } from "firebase-admin/firestore";
 import { transitionPresentation } from "./presentation";
 import { parseAnswerSave, saveTeamAnswer } from "./answer-input";
 import { recordedAnswer } from "@/lib/answers";
+import { applySortingEdit, parseSortingSnapshot, type SortingEdit } from "@/types/sorting";
 import { gradeSortingRound } from "./sorting";
 
 async function main() {
@@ -171,6 +172,20 @@ async function main() {
       const privatePath = `${roundPath}/answers/${questionId}`;
       const frozenPath = `${roundPath}/teamAnswers/red/answers/${questionId}`;
       const correctOrder = ["a", "b", "c", "d"];
+      let editNumber = 0;
+      const edit = (itemId: string, anchorId: string, placement: SortingEdit["placement"] = "after"): SortingEdit => ({ id: `emulator-edit-${++editNumber}`, itemId, anchorId, placement });
+      const save = async (uid: string, teamId: string, operation: SortingEdit) => {
+        const ack = await saveTeamAnswer(admin, roomId, "sorting", questionId, uid, parseAnswerSave({ teamId, edit: operation }));
+        assert.ok("editId" in ack);
+        return ack;
+      };
+      const live = async (teamId = "red") => parseSortingSnapshot((await admin.doc(`${path}/teams/${teamId}/rounds/sorting/answers/${questionId}`).get()).data(), correctOrder);
+      const arrange = async (uid: string, teamId: string, desired: string[]) => {
+        for (let index = 0; index < desired.length; index++) {
+          const current = (await live(teamId)).order;
+          if (current[index] !== desired[index]) await save(uid, teamId, edit(desired[index], current[index], "before"));
+        }
+      };
       await admin.doc(path).set({ state: "playing", presenting: foreground });
       for (const { uid } of apps) await admin.doc(`${path}/members/${uid}`).set({
         role: uid === "host" ? "host" : "player", team: uid === "outsider" ? "blue" : "red",
@@ -187,53 +202,80 @@ async function main() {
         items: correctOrder.map((id) => ({ id, stages: [{ text: id.toUpperCase() }] })),
       });
       await admin.doc(privatePath).set({ correctOrder });
-      const save = (uid: string, teamId: string, order: string[]) => saveTeamAnswer(admin, roomId, "sorting", questionId, uid,
-        parseAnswerSave({ teamId, answer: JSON.stringify(order) }));
       await transitionPresentation(admin, roomId, "host", foreground, foreground, { activateRound: "sorting" });
       assert.deepEqual((await admin.doc(path).get()).data()?.presenting, foreground);
+      const initial = await live();
+      assert.equal(initial.revision, 0);
+      assert.deepEqual(await live("blue"), initial);
+      assert.deepEqual((await getDocFromServer(doc(b.db, answerPath))).data()?.order, initial.order);
       await denied(getDocFromServer(doc(a.db, privatePath)));
       assert.deepEqual((await getDocFromServer(doc(hostClient.db, privatePath))).data()?.correctOrder, correctOrder);
       await denied(updateDoc(doc(hostClient.db, roundPath), { state: "closed" }));
-      await denied(setDoc(doc(a.db, answerPath), { answer: JSON.stringify(correctOrder) }));
+      await denied(setDoc(doc(a.db, answerPath), { order: correctOrder, revision: 100 }));
       await denied(setDoc(doc(a.db, frozenPath), { answer: JSON.stringify(correctOrder), awardedPoints: 999 }));
-      await assert.rejects(save("outsider", "red", correctOrder), /Team changed/);
+      await assert.rejects(save("outsider", "red", edit("a", "b")), /Team changed/);
       await assert.rejects(transitionPresentation(admin, roomId, "host", foreground,
         { ...foreground, round: "sorting", question: questionId, withAnswer: true }));
-      // Even a forged presentation flag cannot make an active sorting answer readable.
       await admin.doc(path).update({ presenting: { ...foreground, round: "sorting", question: questionId, withAnswer: true } });
       await denied(getDocFromServer(doc(a.db, privatePath)));
       await admin.doc(path).update({ presenting: foreground });
-      const observed = new Promise<string>((resolve, reject) => {
+      const propagationStarted = performance.now();
+      const observed = new Promise<number>((resolve, reject) => {
         const unsubscribe = onSnapshot(doc(b.db, answerPath), (snapshot) => {
-          if (snapshot.metadata.fromCache || snapshot.data()?.answer !== JSON.stringify(correctOrder)) return;
+          if (snapshot.metadata.fromCache || snapshot.data()?.revision !== 1) return;
           unsubscribe();
-          resolve(snapshot.data()!.answer);
+          resolve(performance.now() - propagationStarted);
         }, reject);
       });
-      await save("a", "red", correctOrder);
-      assert.equal(await observed, JSON.stringify(correctOrder));
-      await save("outsider", "blue", ["b", "a", "d", "c"]);
-      assert.equal((await getDocFromServer(doc(b.db, answerPath))).data()?.answer, JSON.stringify(correctOrder));
+      const firstEdit = edit(initial.order[0], initial.order.at(-1)!);
+      const firstAck = await save("a", "red", firstEdit);
+      const saveDuration = performance.now() - propagationStarted;
+      assert.deepEqual(firstAck, { editId: firstEdit.id, revision: 1 });
+      const snapshotDuration = await observed;
+      console.log(JSON.stringify({ event: "sorting.propagation", environment: "local-firestore-emulator", saveMs: Math.round(saveDuration), teammateSnapshotMs: Math.round(snapshotDuration) }));
+      assert.deepEqual((await getDocFromServer(doc(b.db, answerPath))).data()?.order, applySortingEdit(initial.order, firstEdit));
       await denied(getDocFromServer(doc(outsider.db, answerPath)));
-      await save("b", "red", ["a", "c", "b", "d"]);
+      await denied(getDocFromServer(doc(a.db, `${answerPath}/edits/${firstEdit.id}`)));
+      await denied(setDoc(doc(a.db, `${answerPath}/edits/forged`), { revision: 999 }));
+
+      await arrange("a", "red", correctOrder);
+      const beforeConcurrent = (await live()).revision;
+      const concurrent = [edit("a", "b"), edit("d", "c", "before")];
+      const acknowledgements = await Promise.all([save("a", "red", concurrent[0]), save("b", "red", concurrent[1])]);
+      assert.deepEqual(acknowledgements.map((ack) => ack.revision).sort((left, right) => left - right), [beforeConcurrent + 1, beforeConcurrent + 2]);
+      assert.deepEqual((await live()).order, ["b", "a", "d", "c"], "Concurrent teammates preserve both edits");
+      const duplicate = edit("a", "c");
+      const beforeDuplicate = (await live()).revision;
+      const duplicates = await Promise.all([save("a", "red", duplicate), save("b", "red", duplicate)]);
+      assert.deepEqual(duplicates[0], duplicates[1]);
+      assert.equal((await live()).revision, beforeDuplicate + 1, "Concurrent duplicate delivery applies once");
+      await save("b", "red", edit("a", "b", "before"));
+      const afterNewMove = await live();
+      assert.deepEqual(await save("a", "red", duplicate), duplicates[0]);
+      assert.deepEqual(await live(), afterNewMove, "Receipt replay cannot overwrite a later teammate move");
+      await assert.rejects(save("a", "red", { ...duplicate, anchorId: "d" }), /already been used/);
+      await arrange("outsider", "blue", ["b", "a", "d", "c"]);
+      await arrange("b", "red", ["a", "c", "b", "d"]);
       const secondForeground = { ...foreground, round: "foreground-two" };
       await transitionPresentation(admin, roomId, "host", foreground, secondForeground, { activateRound: "foreground-two" });
-      // A fresh client represents a reconnect, with no cached order from either teammate.
       const reconnectApp = initializeApp({ projectId, apiKey: "fake" }, "sorting-reconnect");
       const reconnect = getFirestore(reconnectApp);
       connectFirestoreEmulator(reconnect, host, Number(port), { mockUserToken: { sub: "a", user_id: "a" } });
       try {
-        assert.equal((await getDocFromServer(doc(reconnect, answerPath))).data()?.answer, '["a","c","b","d"]');
+        assert.deepEqual((await getDocFromServer(doc(reconnect, answerPath))).data()?.order, ["a", "c", "b", "d"]);
       } finally {
         await terminate(reconnect);
         await deleteApp(reconnectApp);
       }
+      const accepted = await live();
       await transitionPresentation(admin, roomId, "host", secondForeground, secondForeground, { closeRound: "sorting" });
       assert.deepEqual((await admin.doc(path).get()).data()?.presenting, secondForeground);
-      assert.equal((await getDocFromServer(doc(a.db, frozenPath))).data()?.answer, '["a","c","b","d"]');
-      await assert.rejects(save("a", "red", correctOrder), /Round/);
-      await assert.rejects(save("outsider", "blue", correctOrder), /Round/);
-      await denied(updateDoc(doc(a.db, answerPath), { answer: JSON.stringify(correctOrder) }));
+      const frozen = (await getDocFromServer(doc(a.db, frozenPath))).data()!;
+      assert.equal(frozen.answer, '["a","c","b","d"]');
+      assert.equal(frozen.revision, accepted.revision);
+      await assert.rejects(save("a", "red", edit("a", "b")), (error: unknown) => (error as { code: string }).code === "round-closed");
+      assert.deepEqual(await save("a", "red", duplicate), duplicates[0], "An accepted edit can be acknowledged after closing");
+      await denied(updateDoc(doc(a.db, answerPath), { order: correctOrder, revision: accepted.revision + 1 }));
       await denied(getDocFromServer(doc(a.db, privatePath)));
       await gradeSortingRound(admin, roomId, "sorting", "host");
       assert.equal((await getDocFromServer(doc(a.db, frozenPath))).data()?.awardedPoints, 2);
@@ -245,20 +287,21 @@ async function main() {
       await transitionPresentation(admin, roomId, "host", secondForeground,
         { ...secondForeground, round: "sorting", question: questionId, withAnswer: true });
       assert.deepEqual((await getDocFromServer(doc(a.db, privatePath))).data()?.correctOrder, correctOrder);
-      // The real emulator exercises transaction conflicts between a late save and closure.
       await admin.doc(path).update({ presenting: secondForeground });
       await admin.doc(roundPath).update({ state: "active" });
+      const lateEdit = edit("a", "d");
       const [closing, saving] = await Promise.allSettled([
         transitionPresentation(admin, roomId, "host", secondForeground, secondForeground, { closeRound: "sorting" }),
-        save("a", "red", correctOrder),
+        save("a", "red", lateEdit),
       ]);
       assert.equal(closing.status, "fulfilled");
-      if (saving.status === "rejected") assert.match(String(saving.reason), /Round/);
-      const liveAnswer = (await admin.doc(answerPath).get()).data()?.answer;
-      const frozenAnswer = (await admin.doc(frozenPath).get()).data()?.answer;
-      assert.equal(frozenAnswer, liveAnswer);
-      assert.equal(liveAnswer, saving.status === "fulfilled" ? JSON.stringify(correctOrder) : '["a","c","b","d"]');
-      await assert.rejects(save("b", "red", ["d", "c", "b", "a"]), /Round/);
+      if (saving.status === "rejected") assert.equal(saving.reason.code, "round-closed");
+      const liveSnapshot = await live();
+      const frozenSnapshot = (await admin.doc(frozenPath).get()).data()!;
+      assert.equal(frozenSnapshot.answer, JSON.stringify(liveSnapshot.order));
+      assert.equal(frozenSnapshot.revision, liveSnapshot.revision);
+      assert.deepEqual(liveSnapshot.order, saving.status === "fulfilled" ? applySortingEdit(accepted.order, lateEdit) : accepted.order);
+      await assert.rejects(save("b", "red", edit("d", "c")), /Round/);
       assert.deepEqual((await admin.doc(path).get()).data()?.presenting, secondForeground);
     }
     const roomPath = "rooms/rules-multi-step";

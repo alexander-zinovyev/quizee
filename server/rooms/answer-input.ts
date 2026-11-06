@@ -3,14 +3,20 @@ import { isAnswerCommitted, MAX_ANSWER_LENGTH, parseTeamAnswer, type AnswerMutat
 import { RoomOperationError } from "./operation-error";
 import { parsePresentation } from "./presentation";
 import { parsePointsPerStep } from "./multi-step-submission";
-import { parseSortingOrder } from "@/types/sorting";
+import { parseSortingEdit, type SortingEdit } from "@/types/sorting";
+import { saveSortingEdit } from "./sorting-edits";
 import { HEX_COLOR } from "@/types/color";
 
-export type AnswerSave = { teamId: string; expectedStep?: number; mutation: AnswerMutation };
+export type AnswerSave = { teamId: string; expectedStep?: number; mutation: AnswerMutation } | { teamId: string; edit: SortingEdit };
 
 export function parseAnswerSave(raw: unknown): AnswerSave {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Invalid answer request.");
   const data = raw as Record<string, unknown>;
+  if ("edit" in data) {
+    if (Object.keys(data).some((key) => !["teamId", "edit"].includes(key)) ||
+        typeof data.teamId !== "string" || !data.teamId || data.teamId.includes("/")) throw new Error("Invalid sorting edit request.");
+    return { teamId: data.teamId, edit: parseSortingEdit(data.edit) };
+  }
   if (Object.keys(data).some((key) => !["teamId", "expectedStep", "answer", "locked", "wagered"].includes(key)) ||
       typeof data.teamId !== "string" || !data.teamId || data.teamId.includes("/") ||
       (data.expectedStep !== undefined && (!Number.isInteger(data.expectedStep) || (data.expectedStep as number) < 0))) {
@@ -31,6 +37,7 @@ export function parseAnswerSave(raw: unknown): AnswerSave {
 export async function saveTeamAnswer(
   db: Firestore, roomId: string, roundId: string, questionId: string, uid: string, save: AnswerSave
 ) {
+  if ("edit" in save) return saveSortingEdit(db, roomId, roundId, questionId, uid, save);
   const roomRef = db.collection("rooms").doc(roomId);
   return db.runTransaction(async (tx) => {
     const room = await tx.get(roomRef);
@@ -50,16 +57,7 @@ export async function saveTeamAnswer(
     if ("wagered" in save.mutation && (roundData.type !== "text" || roundData.allowWager !== true)) {
       throw new RoomOperationError("Wagers are not enabled for this round.", 400);
     }
-    if (roundData.type === "sorting") {
-      if (typeof save.mutation.answer !== "string" || save.expectedStep !== undefined) throw new RoomOperationError("Sorting accepts an order only.", 400);
-      try {
-        const items = question.data()?.items;
-        if (!Array.isArray(items)) throw new Error("Missing sorting items.");
-        parseSortingOrder(JSON.parse(save.mutation.answer), items.map((item) => item.id));
-      } catch {
-        throw new RoomOperationError("Expected a complete order of unique sorting item IDs.", 400);
-      }
-    }
+    if (roundData.type === "sorting") throw new RoomOperationError("Sorting accepts relative edits only.", 400);
     if (roundData.type === "color") {
       const current = parsePresentation(room.data()?.presenting);
       if (current.round !== roundId || current.question !== questionId || current.withAnswer) throw new RoomOperationError("Question is not accepting colors.");
