@@ -14,6 +14,7 @@ export type HostRound = {
   type: "text" | "image" | "multi-step" | "color" | "sorting";
   questions: HostRoundQuestion[];
   gradingRequired?: boolean;
+  criterion?: string;
 };
 
 export function resolveHostRoundId(
@@ -33,6 +34,7 @@ export function resolveHostRoundId(
 }
 
 export function getVisibleHostQuestions(round: HostRound): HostRoundQuestion[] {
+  if (round.type === "sorting") return [];
   if (round.type !== "text") {
     return round.questions;
   }

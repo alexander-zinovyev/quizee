@@ -4,7 +4,7 @@ import { getFirestore, type Firestore, type Transaction } from "firebase-admin/f
 import { StatsError } from "./error";
 import { statsPaths, STATS_ROOT } from "./model";
 import { normalizeRoomSource, readEndedRoom } from "./source";
-import { legacyRoomSourceFixture, roomSourceFixture, sourceFixtureDocuments } from "./source.fixtures";
+import { legacyRoomSourceFixture, roomSourceFixture, sortingRoomSourceFixture, sourceFixtureDocuments } from "./source.fixtures";
 import { loadSnapshot, prepareSnapshot, saveSnapshot, snapshotDocuments } from "./snapshots";
 
 async function verifyLegacyRefresh(db: Firestore) {
@@ -66,6 +66,34 @@ async function verifyLegacyRefresh(db: Firestore) {
   }
 }
 
+async function verifySortingSnapshot(db: Firestore) {
+  const source = sortingRoomSourceFixture("sorting-history");
+  const room = db.doc(`rooms/${source.room.id}`);
+  const game = db.doc(statsPaths.game(source.room.id));
+  const documents = sourceFixtureDocuments(source);
+  try {
+    const batch = db.batch();
+    for (const document of documents) batch.set(db.doc(document.path), document.data);
+    await batch.commit();
+    const read = await readEndedRoom(db, source.room.id);
+    assert.ok(Object.values(read.rounds[0].teamAnswers).every((team) => team.answers.length === 0));
+    const snapshot = normalizeRoomSource(read, "flat-sorting");
+    const before = await db.getAll(...documents.map(({ path }) => db.doc(path)));
+    await saveSnapshot(db, snapshot);
+    const saved = await db.runTransaction((tx) => loadSnapshot(tx, db, source.room.id, snapshot.id), { readOnly: true });
+    assert.deepEqual(saved, snapshot);
+    assert.deepEqual(saved.rounds[0].questions.map((question) => question.id), ["A", "B", "C", "D"]);
+    assert.deepEqual(saved.rounds[0].questions.map((question) => question.answers.blue.awardedPoints), [1, 0, 0, 1]);
+    assert.deepEqual(saved.rounds[0].questions.map((question) => question.answers.blue.answer), ["Position 1", "Position 3", "Position 2", "Position 4"]);
+    const after = await db.getAll(...documents.map(({ path }) => db.doc(path)));
+    assert.deepEqual(after.map((document) => document.updateTime), before.map((document) => document.updateTime));
+    console.log("Flat sorting snapshot verified: real Stage questions, round-level frozen orders and per-question awards survive Firestore read/save/load without source writes.");
+  } finally {
+    await db.recursiveDelete(room);
+    await db.recursiveDelete(game);
+  }
+}
+
 async function main() {
   if (!process.env.FIRESTORE_EMULATOR_HOST) throw new Error("Snapshot integration tests require the Firestore emulator.");
   const app = initializeApp({ projectId: "demo-quizee-drafts" }, "stats-snapshots");
@@ -82,6 +110,7 @@ async function main() {
     }
     await admin.set({ admin: true });
     await verifyLegacyRefresh(db);
+    await verifySortingSnapshot(db);
     const rejectsCode = (promise: Promise<unknown>, code: string) => assert.rejects(promise, (error: unknown) => error instanceof StatsError && error.code === code);
     await rejectsCode(prepareSnapshot(db, "demo", "not-admin", 0), "forbidden");
     await room.update({ state: "playing" });

@@ -127,16 +127,16 @@ export function buildQuizFromBuilderState(rounds: BuildRound[], mediaFiles: Medi
     }
 
     if (round.type === "sorting") {
-      const items = (round.sortingItems ?? []).map((item, itemIndex) => ({ id: item.id, stages: item.stages.map((stage, stageIndex) => {
-        const normalized = normalizeBuilderStage(stage);
-        if (!normalized) errors.push(`Round ${roundNo}, item ${itemIndex + 1}, stage ${stageIndex + 1}: add text or media.`);
+      const questions = (round.sortingQuestions ?? []).map((question, questionIndex) => {
+        const normalized = normalizeBuilderStage(question);
+        if (!normalized) errors.push(`Round ${roundNo}, question ${questionIndex + 1}: add text or media.`);
         if (normalized?.media) {
-          if (!mediaByPath.has(normalized.media)) errors.push(`Round ${roundNo}, item ${itemIndex + 1}: media file not found (${normalized.media}).`);
+          if (!mediaByPath.has(normalized.media)) errors.push(`Round ${roundNo}, question ${questionIndex + 1}: media file not found (${normalized.media}).`);
           else usedMediaPaths.add(normalized.media);
         }
-        return normalized ?? {};
-      }) }));
-      try { quizRounds.push(parseSortingRound({ type: "sorting", title, criterion: round.sortingCriterion, items, correctOrder: round.sortingCorrectOrder })); }
+        return { id: question.id, ...normalized };
+      });
+      try { quizRounds.push(parseSortingRound({ type: "sorting", title, criterion: round.sortingCriterion, questions, correctOrder: round.sortingCorrectOrder })); }
       catch (error) { errors.push(`Round ${roundNo}: ${(error as Error).message}`); }
       return;
     }
@@ -349,7 +349,7 @@ function collectReferencedMediaPaths(rounds: QuizRound[]): Set<string> {
   const refs = new Set<string>();
 
   rounds.forEach((round) => {
-    if (round.type === "sorting") { round.items.forEach((item) => item.stages.forEach((stage) => { if (stage.media) refs.add(stage.media); })); return; }
+    if (round.type === "sorting") { round.questions.forEach((question) => { if (question.media) refs.add(question.media); }); return; }
     if (round.type === "color") { round.questions.forEach((q) => { refs.add(q.image); if (q.mask) refs.add(q.mask); }); return; }
     if (round.type === "text") {
       round.questions.forEach((question) => {
@@ -388,7 +388,7 @@ function mapQuizRoundsToBuildRounds(rounds: QuizRound[]): BuildRound[] {
   return rounds.map((round) => {
     if (round.type === "sorting") return {
       id: makeId(), collapsed: false, name: round.title, type: "sorting", textQuestions: [], imageItems: [], multiStepQuestions: [], pointsPerStep: [1], allowAnswerChanges: false,
-      sortingCriterion: round.criterion, sortingItems: round.items.map((item) => ({ id: item.id, stages: item.stages.map(toStage) })), sortingCorrectOrder: [...round.correctOrder],
+      sortingCriterion: round.criterion, sortingQuestions: round.questions.map((question) => ({ ...toStage(question), id: question.id })), sortingCorrectOrder: [...round.correctOrder],
     } satisfies BuildRound;
     if (round.type === "color") return {
       id: makeId(), collapsed: false, name: round.title, type: "color", textQuestions: [], imageItems: [], multiStepQuestions: [], pointsPerStep: [1], allowAnswerChanges: false,

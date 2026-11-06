@@ -1,26 +1,25 @@
 import assert from "node:assert/strict";
 import { applySortingEdit, parseSortingEdit, parseSortingSnapshot, type SortingEdit } from "@/types/sorting";
 import { parseAnswerSave, saveTeamAnswer } from "./answer-input";
+import { parseSortingEditSave, saveSortingEdit } from "./sorting-edits";
 import { transitionPresentation } from "./presentation";
 import { gradeSortingRound, scoreSortingOrder } from "./sorting";
+import { sortingQuestionIds } from "./sorting-questions";
 import { current, database } from "./test-database";
 
 const correctOrder = ["a", "b", "c", "d"];
 const roundPath = "rooms/demo/rounds/sorting";
-const questionId = "question-1";
-const inputPath = (team: string) => `rooms/demo/teams/${team}/rounds/sorting/answers/${questionId}`;
-const frozenPath = (team: string) => `${roundPath}/teamAnswers/${team}/answers/${questionId}`;
+const questionId = "a";
+const inputPath = (team: string) => `rooms/demo/teams/${team}/rounds/sorting`;
+const frozenPath = (team: string) => `${roundPath}/teamAnswers/${team}`;
 let editNumber = 0;
 const edit = (itemId: string, anchorId: string, placement: SortingEdit["placement"] = "after"): SortingEdit => ({ id: `edit-${++editNumber}`, itemId, anchorId, placement });
 
 function fixture() {
   const fixture = database("text");
   fixture.docs.set(roundPath, { type: "sorting", state: "scheduled", activeWindow: { startedAt: null, endedAt: null }, gradingRequired: false });
-  fixture.docs.set(`${roundPath}/questions/${questionId}`, {
-    order: 0, text: "Earliest to latest", stages: [{ text: "Earliest to latest" }],
-    items: correctOrder.map((id) => ({ id, stages: [{ text: id.toUpperCase() }] })),
-  });
-  fixture.docs.set(`${roundPath}/answers/${questionId}`, { correctOrder });
+  correctOrder.forEach((id) => fixture.docs.set(`${roundPath}/questions/${id}`, { text: id.toUpperCase() }));
+  fixture.docs.set(`${roundPath}/answers/order`, { correctOrder });
   fixture.docs.set("rooms/demo/rounds/r2/questions/q1", { order: 0, stages: [{ text: "Foreground two" }] });
   return fixture;
 }
@@ -28,7 +27,7 @@ function fixture() {
 function helpers(value: ReturnType<typeof fixture>) {
   const { db, docs } = value;
   const save = async (uid: string, teamId: string, operation: SortingEdit) => {
-    const ack = await saveTeamAnswer(db, "demo", "sorting", questionId, uid, parseAnswerSave({ teamId, edit: operation }));
+    const ack = await saveSortingEdit(db, "demo", "sorting", uid, parseSortingEditSave({ teamId, edit: operation }));
     assert.ok("editId" in ack);
     return ack;
   };
@@ -43,6 +42,29 @@ function helpers(value: ReturnType<typeof fixture>) {
 }
 
 async function main() {
+  for (const malformed of [{}, { text: " " }, { media: {} }, { text: "A", stages: [] }, { text: "A", items: [] }, { text: "A", order: 0 }]) {
+    const { db, docs } = fixture();
+    docs.set(`${roundPath}/questions/a`, malformed);
+    await assert.rejects(transitionPresentation(db, "demo", "host", current, current, { activateRound: "sorting" }));
+    assert.equal(docs.get(roundPath)?.state, "scheduled");
+    assert.equal(docs.has(inputPath("red")), false, "Malformed content must not initialize team orders");
+  }
+  assert.deepEqual(sortingQuestionIds([
+    { id: "a", data: () => ({ text: "A", media: null }) },
+    { id: "b", data: () => ({ text: null, media: { storagePath: "media/b.png" } }) },
+  ]), ["a", "b"]);
+  {
+    const { db, docs } = fixture();
+    const { save, order } = helpers({ db, docs });
+    await transitionPresentation(db, "demo", "host", current, current, { activateRound: "sorting" });
+    const before = order("red");
+    docs.set(`${roundPath}/questions/a`, { stages: [{ text: "A" }] });
+    await assert.rejects(save("player", "red", edit("a", "b")), /flat Stage/);
+    assert.deepEqual(order("red"), before, "Malformed stored questions must not advance the revision");
+    await assert.rejects(transitionPresentation(db, "demo", "host", current, current, { closeRound: "sorting" }));
+    assert.equal(docs.get(roundPath)?.state, "active");
+    assert.equal(docs.has(frozenPath("red")), false);
+  }
   for (const [order, expected] of [
     [["a", "b", "c", "d"], 4], [["a", "c", "b", "d"], 2], [["b", "a", "d", "c"], 0],
   ] as const) assert.equal(scoreSortingOrder(order, correctOrder), expected);
@@ -55,8 +77,13 @@ async function main() {
   assert.throws(() => applySortingEdit(correctOrder, edit("unknown", "a")));
   for (const revision of [-1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, "0"]) assert.throws(() => parseSortingSnapshot({ order: correctOrder, revision }, correctOrder));
   for (const malformed of [["a"], ["a", "a", "c", "d"], ["a", "b", "c", "unknown"]]) assert.throws(() => parseSortingSnapshot({ order: malformed, revision: 0 }, correctOrder));
+  for (const malformed of [null, [], {}, { teamId: "red", answer: "[]" },
+    { teamId: "red/blue", edit: edit("a", "b") }, { teamId: "", edit: edit("a", "b") },
+    { teamId: "red", edit: { ...edit("a", "b"), placement: "between" } }]) {
+    assert.throws(() => parseSortingEditSave(malformed));
+  }
   for (const extra of [{ answer: "[]" }, { expectedStep: 0 }, { locked: true }, { wagered: false }]) {
-    assert.throws(() => parseAnswerSave({ teamId: "red", edit: edit("a", "b"), ...extra }));
+    assert.throws(() => parseSortingEditSave({ teamId: "red", edit: edit("a", "b"), ...extra }));
   }
 
   {
@@ -70,12 +97,14 @@ async function main() {
     assert.equal(starting.revision, 0);
     assert.deepEqual([...starting.order].sort(), correctOrder);
     assert.deepEqual(order("blue"), starting);
+    assert.deepEqual(docs.get(roundPath)?.startingOrder, starting.order);
     assert.equal(docs.get(inputPath("red"))?.user, null);
-    assert.deepEqual((docs.get(`${roundPath}/questions/${questionId}`)?.items as Array<{ id: string }>).map((item) => item.id), starting.order);
-    assert.deepEqual(docs.get(`${roundPath}/answers/${questionId}`), { correctOrder });
+    assert.deepEqual(docs.get(`${roundPath}/questions/a`), { text: "A" });
+    assert.deepEqual(docs.get(`${roundPath}/answers/order`), { correctOrder });
+    assert.ok(!docs.has(`${roundPath}/questions/question-1`));
     await assert.rejects(transitionPresentation(db, "demo", "host", current, current, { activateRound: "sorting" }), /activated/);
     await assert.rejects(transitionPresentation(db, "demo", "host", current,
-      { ...current, round: "sorting", question: questionId, withAnswer: true }));
+      { ...current, round: "sorting", question: null, withAnswer: true }));
     await arrange("player", "red", correctOrder);
     const before = order("red").revision;
     const first = edit("a", "c");
@@ -94,7 +123,8 @@ async function main() {
     for (const mutation of [{ answer: JSON.stringify(correctOrder) }, { locked: true }, { wagered: true }]) {
       await assert.rejects(saveTeamAnswer(db, "demo", "sorting", questionId, "player", parseAnswerSave({ teamId: "red", ...mutation })), /relative edits|Wagers/);
     }
-    await assert.rejects(saveTeamAnswer(db, "demo", "r1", "q1", "player", parseAnswerSave({ teamId: "red", edit: edit("a", "b") })), /sorting round/);
+    assert.throws(() => parseAnswerSave({ teamId: "red", edit: edit("a", "b") }));
+    await assert.rejects(saveSortingEdit(db, "demo", "r1", "player", parseSortingEditSave({ teamId: "red", edit: edit("a", "b") })), /sorting round/);
     await assert.rejects(gradeSortingRound(db, "demo", "sorting", "host"));
 
     const secondForeground = { ...current, round: "r2", question: "q1" };
@@ -110,20 +140,27 @@ async function main() {
     await transitionPresentation(db, "demo", "host", secondForeground, secondForeground, { closeRound: "sorting" });
     assert.deepEqual(docs.get("rooms/demo")?.presenting, secondForeground);
     assert.equal(docs.get("rooms/demo/rounds/r2")?.state, "active");
-    assert.deepEqual(docs.get(frozenPath("red")), { answer: JSON.stringify(red.order), revision: red.revision, user: "teammate" });
-    assert.equal(docs.get(frozenPath("blue"))?.answer, JSON.stringify(blue.order));
+    assert.deepEqual(parseSortingSnapshot(docs.get(frozenPath("red")), correctOrder), red);
+    assert.equal(docs.get(frozenPath("red"))?.user, "teammate");
+    assert.deepEqual(docs.get(frozenPath("blue"))?.order, blue.order);
+    assert.equal(docs.get(frozenPath("red"))?.graded, false);
     await assert.rejects(save("teammate", "red", edit("a", "c")), (error: unknown) => (error as { code: string }).code === "round-closed");
     assert.deepEqual(await save("player", "red", accepted), acceptedAck, "An accepted edit can be acknowledged after closure");
     await assert.rejects(gradeSortingRound(db, "demo", "sorting", "player"), /Forbidden/);
     await gradeSortingRound(db, "demo", "sorting", "host");
     assert.equal(docs.get(frozenPath("red"))?.awardedPoints, 4);
     assert.equal(docs.get(frozenPath("blue"))?.awardedPoints, 0);
+    assert.deepEqual(docs.get(frozenPath("red"))?.pointsByQuestion, { a: 1, b: 1, c: 1, d: 1 });
+    assert.deepEqual(docs.get(frozenPath("blue"))?.pointsByQuestion, { a: 0, b: 0, c: 0, d: 0 });
     assert.equal(docs.get("rooms/demo/teams/red")?.scoreTotal, 4);
     assert.equal(docs.get(roundPath)?.gradingRequired, false);
     await gradeSortingRound(db, "demo", "sorting", "host");
     assert.equal(docs.get("rooms/demo/teams/red")?.scoreTotal, 4);
-    await transitionPresentation(db, "demo", "host", secondForeground,
-      { ...secondForeground, round: "sorting", question: questionId, withAnswer: true });
+    const answerPresentation = { ...secondForeground, round: "sorting", question: null, withAnswer: true };
+    await transitionPresentation(db, "demo", "host", secondForeground, answerPresentation);
+    assert.deepEqual(docs.get("rooms/demo")?.presenting, answerPresentation);
+    await assert.rejects(transitionPresentation(db, "demo", "host", answerPresentation,
+      { ...answerPresentation, question: "a" }), /whole round/);
   }
   {
     const value = fixture(), { db, docs } = value, { order } = helpers(value);

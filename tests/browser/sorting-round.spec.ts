@@ -15,30 +15,35 @@ async function bundle() {
       import QuizRound from './lib/components/quiz-round';
       import { HarnessAuthProvider } from '@/app/providers/firebase-auth-provider';
       import { applySortingEdit } from './types/sorting';
+      import { closeSortingRound } from './lib/hooks/use-sorting-order';
+      import { getActiveRounds } from './lib/hooks/use-room-rounds';
       window.applySortingEdit = applySortingEdit;
-      const question = { id:'question-1', prompt:'Order events from earliest to latest', items:[
-        {id:'a',stages:[{text:'A'}]},
-        {id:'b',stages:[{text:'B',media:{storagePath:'images/b.svg',filename:'b.svg'}}]},
-        {id:'c',stages:[{text:'C'}]}, {id:'d',stages:[{text:'D'}]}
-      ]};
+      const criterion = 'Order events from earliest to latest';
+      const questions = [
+        {id:'a',text:'A'},
+        {id:'b',text:'B',media:{storagePath:'images/b.svg',filename:'b.svg'}},
+        {id:'c',text:'C'}, {id:'d',text:'D'}
+      ];
       const roots = ['red', 'teammate', 'blue', 'foreground'].map(id => createRoot(document.getElementById(id)));
       let generation = 0;
       window.renderSortingViews = (state = 'active', reveal = false, reconnect = false, foreground = 'Foreground one') => {
         if (reconnect) generation++;
-        if (state === 'closed') window.sortingTransport.freeze();
+        if (state === 'closed') {window.sortingTransport.freeze();closeSortingRound('demo','sorting');}
         flushSync(() => {
           ['red','red','blue'].forEach((teamId,index) => roots[index].render(
-            <HarnessAuthProvider uid={['red-player','red-teammate','blue-player'][index]}>
-              <RoomRoundsPanel key={generation} roomSlug="demo" teamId={teamId} rounds={[
-                {id:'sorting',type:'sorting',title:'History sorting',roundNumber:1,state,questions:[question],presenting:reveal ? {round:'sorting',withAnswer:true}:null},
-                {id:'foreground',type:'text',title:foreground,roundNumber:2,questions:[],emptyLabel:foreground}
-              ]} />
-            </HarnessAuthProvider>));
-          roots[3].render(<HarnessAuthProvider uid="host"><SortingRound key={generation} roomSlug="demo" roundId="sorting" question={question} state={state} readOnly reveal={reveal} /></HarnessAuthProvider>);
+            <React.Profiler id={teamId+index} onRender={() => {
+              if (index === 0 && window.renderedOrders) window.renderedOrders.push([...document.getElementById('red').querySelectorAll('ol[aria-label="Sorting order"] > li')].map(row => row.getAttribute('data-item-id')));
+            }}><HarnessAuthProvider uid={['red-player','red-teammate','blue-player'][index]}>
+              <RoomRoundsPanel key={generation} roomSlug="demo" teamId={teamId} rounds={getActiveRounds([
+                {id:'sorting',type:'sorting',title:'History sorting',roundNumber:1,state,criterion,questions,presenting:reveal ? {round:'sorting',question:null,withAnswer:true}:null},
+                {id:'foreground',type:'text',title:foreground,roundNumber:2,state:'active',questions:[],emptyLabel:foreground}
+              ])} />
+            </HarnessAuthProvider></React.Profiler>));
+          roots[3].render(<HarnessAuthProvider uid="host"><SortingRound key={generation} roomSlug="demo" roundId="sorting" criterion={criterion} questions={questions} state={state} readOnly reveal={reveal} /></HarnessAuthProvider>);
         });
       };
       window.expandSortingItem = () => {
-        question.items[1].stages.push({text:'Extra context',media:{storagePath:'images/extra.svg',filename:'extra.svg'}});
+        questions[1].text = 'B\\n' + Array.from({length:7}, (_, index) => 'Extra context ' + index).join('\\n');
         window.renderSortingViews();
       };
       window.renderSortingDesign = () => {
@@ -46,8 +51,8 @@ async function bundle() {
         ['teammate','blue','foreground'].forEach(id => { document.getElementById(id).style.display = 'none'; });
         window.sortingTransport.initializeDesign();
         flushSync(() => roots[0].render(<HarnessAuthProvider uid="design-player"><QuizRound id="sorting-design" type="sorting" title="Сортуємо" roundNumber={1}
-          state="active" roomSlug="demo" teamId="red" questions={[{id:'question-1',prompt:'Від найстарішого до найновішого',items:
-            ['IKEA','Samsung','Sony','Disney','LEGO','Apple','Nintendo','McDonalds'].map((text,index) => ({id:String(index),stages:[{text}]}))}]} /></HarnessAuthProvider>));
+          state="active" roomSlug="demo" teamId="red" criterion="Від найстарішого до найновішого" questions={
+            ['IKEA','Samsung','Sony','Disney','LEGO','Apple','Nintendo','McDonalds'].map((text,index) => ({id:String(index),text}))} /></HarnessAuthProvider>));
       };
       window.renderSortingViews();`, resolveDir: process.cwd(), loader: "tsx" },
     bundle: true, write: false, jsx: "automatic", define: { "process.env": "{}", "process.env.NODE_ENV": '"development"' },
@@ -56,7 +61,7 @@ async function bundle() {
       builder.onLoad({ filter: /.*/, namespace: "sorting-mock" }, (args) => {
         if (args.path === "firebase/firestore") return { contents: `
           export const doc = (_, ...parts) => parts.join('/');
-          export const collection = doc;
+          export const collection = doc; export const query=path=>path; export const orderBy=()=>null;
           export const setDoc = () => { throw new Error('Direct answer writes are forbidden'); };
           export const onSnapshot = (path, optionsOrCallback, callback) => window.sortingTransport.subscribe(path, typeof optionsOrCallback === 'function' ? optionsOrCallback : callback);
           export const getDocFromServer = () => { throw new Error('Sorting must not force a server read after saving'); };` };
@@ -97,10 +102,10 @@ type Harness = {
     releaseSnapshots: (latestFirst?: boolean) => void;
     initializeDesign: () => void;
     freeze: () => void;
+    listenerCount: () => number;
   };
 };
 const view = (page: Page, name: string) => page.getByRole("region", { name: `${name} view`, exact: true });
-const saving = (region: Locator) => region.getByRole("status", { name: "Order saving status" });
 const order = (region: Locator) => region.getByRole("list", { name: "Sorting order", exact: true }).first().locator(":scope > li").evaluateAll((items) => items.map((item) => item.getAttribute("data-item-id")));
 const nextFrame = (page: Page) => page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
 
@@ -132,10 +137,10 @@ async function setupSortingPage(page: Page) {
       region.id = id; region.setAttribute("aria-label", `${id} view`); region.className = "flex h-[650px] flex-col border p-2";
       root.append(region);
     }
-    type Saved = { order?: string[]; revision?: number; answer?: string; correctOrder?: string[]; awardedPoints?: number };
-    const path = (team: string, round = "sorting") => `rooms/demo/teams/${team}/rounds/${round}/answers/question-1`;
+    type Saved = { order?: string[]; revision?: number; correctOrder?: string[]; awardedPoints?: number; pointsByQuestion?: Record<string, number>; graded?: boolean };
+    const path = (team: string, round = "sorting") => `rooms/demo/teams/${team}/rounds/${round}`;
     const docs: Record<string, Saved> = {
-      "rooms/demo/rounds/sorting/answers/question-1": { correctOrder: ["a", "b", "c", "d"] },
+      "rooms/demo/rounds/sorting/answers/order": { correctOrder: ["a", "b", "c", "d"] },
       [path("red")]: { order: ["a", "b", "c", "d"], revision: 0 },
       [path("blue")]: { order: ["a", "b", "c", "d"], revision: 0 },
     };
@@ -160,6 +165,7 @@ async function setupSortingPage(page: Page) {
         queueMicrotask(() => callback(value));
         return () => listeners.get(key)!.delete(callback);
       },
+      listenerCount: () => [...listeners.values()].reduce((sum, entries) => sum + entries.size, 0),
       initializeDesign: () => { docs[path("red", "sorting-design")] = { order: Array.from({ length: 8 }, (_, index) => String(index)), revision: 0 }; },
       team: (team: string) => structuredClone(docs[path(team)]) as { order: string[]; revision: number },
       setTeam: (team: string, order: string[]) => { docs[path(team)] = { order, revision: (docs[path(team)].revision ?? 0) + 1 }; emit(path(team)); },
@@ -173,17 +179,19 @@ async function setupSortingPage(page: Page) {
       freeze: () => {
         closed = true;
         for (const team of ["red", "blue"]) {
-          const key = `rooms/demo/rounds/sorting/teamAnswers/${team}/answers/question-1`;
+          const key = `rooms/demo/rounds/sorting/teamAnswers/${team}`;
           if (docs[key]) continue;
           const current = docs[path(team)];
           const order = current.order!;
-          docs[key] = { answer: JSON.stringify(order), revision: current.revision,
+          docs[key] = { order: [...order], revision: current.revision, graded: true,
+            pointsByQuestion: Object.fromEntries(order.map((id, index) => [id, Number(id === ["a", "b", "c", "d"][index])])),
             awardedPoints: order.reduce((score, id, index) => score + Number(id === ["a", "b", "c", "d"][index]), 0) };
           emit(key);
         }
       },
     } as Harness["sortingTransport"];
-    window.fetch = async (_url, options) => {
+    window.fetch = async (url, options) => {
+      if (!String(url).endsWith("/rounds/sorting/answer")) throw new Error("Expected a round-level sorting answer endpoint.");
       const body = JSON.parse(options!.body as string) as Omit<Write, "actor">;
       const actor = new Headers(options?.headers).get("authorization")?.replace(/^Bearer /, "") ?? "unknown";
       w.sortingWrites.push({ ...body, actor });
@@ -216,7 +224,7 @@ async function setupSortingPage(page: Page) {
     };
   });
   await page.addScriptTag({ content: await bundle() });
-  await expect(saving(view(page, "red"))).toHaveText("Order saved");
+  await expect(view(page, "red").getByRole("button", { name: "Reorder item 1", exact: true })).toHaveAttribute("aria-disabled", "false");
 }
 
 async function startMouseDrag(page: Page, region: Locator, id: string, area: "text" | "image" | "blank" = "text") {
@@ -302,6 +310,8 @@ for (const width of [1440, 390]) test(`sorting team workflow across foreground t
   await expect(firstGrip.locator("img")).toHaveAttribute("src", "/sorting-grip.svg");
   await expect.poll(() => firstGrip.locator("img").evaluate((image) => (image as HTMLImageElement).naturalWidth)).toBe(20);
   await expect(page.getByRole("button", { name: "Save order", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("status", { name: "Order saving status" })).toHaveCount(0);
+  await expect(page.getByText(/^(Saving…|Order saved)$/)).toHaveCount(0);
   await expect(foreground.getByRole("button", { name: /^Reorder item/ })).toHaveCount(0);
   await red.getByRole("button", { name: "Zoom image", exact: true }).click();
   await expect(page.getByRole("dialog", { name: "B", exact: true })).toBeVisible();
@@ -323,7 +333,7 @@ for (const width of [1440, 390]) test(`sorting team workflow across foreground t
   await expect.poll(() => order(red)).toEqual(["a", "c", "b", "d"]);
   await expect.poll(() => order(teammate)).toEqual(["a", "c", "b", "d"]);
   await dragItem(page, blue, "a", "b", width === 390);
-  await expect(saving(blue)).toHaveText("Order saved");
+  await expect.poll(() => page.evaluate(() => (window as unknown as Harness).sortingTransport.team("blue").revision)).toBe(1);
   await dragItem(page, blue, "c", "d", width === 390);
   await expect.poll(() => order(blue)).toEqual(["b", "a", "d", "c"]);
   await red.getByRole("button", { name: "Foreground one", exact: true }).click();
@@ -332,12 +342,12 @@ for (const width of [1440, 390]) test(`sorting team workflow across foreground t
   await red.getByRole("button", { name: "History sorting", exact: true }).click();
   await expect.poll(() => order(red)).toEqual(["a", "c", "b", "d"]);
   await page.evaluate(() => (window as unknown as Harness).renderSortingViews("active", false, true, "Foreground two"));
-  await expect(saving(red)).toHaveText("Order saved");
+  await expect(red.getByRole("button", { name: "Reorder item 1", exact: true })).toHaveAttribute("aria-disabled", "false");
   await expect.poll(() => order(blue)).toEqual(["b", "a", "d", "c"]);
 
   await page.evaluate(() => (window as unknown as Harness).expandSortingItem());
   const tallCard = teammate.locator('[data-item-id="b"]');
-  await expect(tallCard.getByRole("img", { name: "Extra context", exact: true })).toBeVisible();
+  await expect(tallCard).toContainText("Extra context 6");
   expect((await tallCard.boundingBox())!.height).toBeGreaterThan((await teammate.locator('[data-item-id="d"]').boundingBox())!.height * 3 + 16);
   const keyboardHandle = tallCard.getByRole("button", { name: /^Reorder item/ });
   await pickUpWithKeyboard(page, keyboardHandle);
@@ -350,17 +360,20 @@ for (const width of [1440, 390]) test(`sorting team workflow across foreground t
   await page.keyboard.press("Space");
   await expect.poll(() => order(red)).toEqual(["a", "b", "c", "d"]);
   await expect(keyboardHandle).toBeFocused();
-  const correctPath = "rooms/demo/rounds/sorting/answers/question-1";
+  const correctPath = "rooms/demo/rounds/sorting/answers/order";
   expect(await page.evaluate(() => (window as unknown as Harness).sortingReads)).not.toContain(correctPath);
   await page.evaluate(() => (window as unknown as Harness).renderSortingViews("closed"));
-  await expect(red.getByText("Submissions closed · 4 / 4 points", { exact: true })).toBeVisible();
-  await expect(blue.getByText("Submissions closed · 0 / 4 points", { exact: true })).toBeVisible();
-  await expect(red.getByRole("button", { name: /^Reorder item/ })).toHaveCount(0);
-  await page.evaluate(() => (window as unknown as Harness).sortingTransport.setTeam("red", ["d", "c", "b", "a"]));
-  await expect.poll(() => order(red)).toEqual(["a", "b", "c", "d"]);
+  for (const region of [red, teammate, blue]) {
+    await expect(region.getByRole("button", { name: "History sorting", exact: true })).toHaveCount(0);
+    await expect(region.getByRole("list", { name: "Sorting order", exact: true })).toHaveCount(0);
+    await expect(region.getByRole("region", { name: "Foreground one", exact: true })).toBeVisible();
+  }
   expect(await page.evaluate(() => (window as unknown as Harness).sortingReads)).not.toContain(correctPath);
   await page.evaluate(() => (window as unknown as Harness).renderSortingViews("closed", true));
-  await expect(red.getByRole("region", { name: "Correct order", exact: true })).toBeVisible();
+  await expect(foreground.getByRole("region", { name: "Correct order", exact: true })).toBeVisible();
+  await expect.poll(() => order(foreground)).toEqual(["a", "b", "c", "d"]);
+  await expect(foreground.getByRole("button", { name: /^Reorder item/ })).toHaveCount(0);
+
 });
 
 test("rapid relative edits remain interactive, merge teammates, and survive a tab switch", async ({ page }) => {
@@ -370,8 +383,8 @@ test("rapid relative edits remain interactive, merge teammates, and survive a ta
   await page.evaluate(() => { (window as unknown as Harness).holdNextSortingAck = true; });
   await dragItem(page, red, "a", "c");
   await expect.poll(() => order(red)).toEqual(["b", "c", "a", "d"]);
-  await expect(saving(red)).toHaveText("Saving…");
-  await expect(red.getByRole("button", { name: "Reorder item 1", exact: true })).toBeEnabled();
+  await expect(red.getByRole("status", { name: "Order saving status" })).toHaveCount(0);
+  await expect(red.getByRole("button", { name: "Reorder item 1", exact: true })).toHaveAttribute("aria-disabled", "false");
   await dragItem(page, red, "d", "b", false, "blank");
   await expect.poll(() => order(red)).toEqual(["d", "b", "c", "a"]);
   expect(await page.evaluate(() => (window as unknown as Harness).sortingWrites.length)).toBe(1);
@@ -384,7 +397,7 @@ test("rapid relative edits remain interactive, merge teammates, and survive a ta
   await expect.poll(() => page.evaluate(() => (window as unknown as Harness).sortingTransport.team("red"))).toEqual({ order: ["c", "a", "d", "b"], revision: 3 });
   await expect.poll(() => order(teammate)).toEqual(["c", "a", "d", "b"]);
   await red.getByRole("button", { name: "History sorting", exact: true }).click();
-  await expect(saving(red)).toHaveText("Order saved");
+  await expect(red.getByRole("button", { name: "Reorder item 1", exact: true })).toHaveAttribute("aria-disabled", "false");
   await expect.poll(() => order(red)).toEqual(["c", "a", "d", "b"]);
   const writes = await page.evaluate(() => (window as unknown as Harness).sortingWrites);
   expect(writes.map((write) => write.actor)).toEqual(["red-player", "red-teammate", "red-player"]);
@@ -400,20 +413,12 @@ test("a new snapshot retires acknowledged edits without an intermediate reordere
   await dragItem(page, red, "b", "c");
   await expect.poll(() => order(red)).toEqual(["a", "c", "b", "d"]);
   await expect.poll(() => page.evaluate(() => (window as unknown as Harness).sortingAckReads.length)).toBe(2);
-  await expect(saving(red)).toHaveText("Saving…");
-  await red.evaluate((region) => {
-    const w = window as unknown as { renderedOrders: string[][]; orderObserver: MutationObserver };
-    w.renderedOrders = [];
-    w.orderObserver = new MutationObserver(() => w.renderedOrders.push([...region.querySelectorAll('ol[aria-label="Sorting order"] > li')].map((row) => row.getAttribute("data-item-id")!)));
-    w.orderObserver.observe(region, { childList: true, characterData: true, subtree: true });
-  });
+  await expect(red.getByRole("status", { name: "Order saving status" })).toHaveCount(0);
+  await page.evaluate(() => { (window as unknown as { renderedOrders: string[][] }).renderedOrders = []; });
   await page.evaluate(() => (window as unknown as Harness).sortingTransport.releaseSnapshots(true));
-  await expect(saving(red)).toHaveText("Order saved");
+  await expect.poll(() => page.evaluate(() => (window as unknown as { renderedOrders: string[][] }).renderedOrders.length)).toBeGreaterThan(0);
   await expect.poll(() => order(red)).toEqual(["a", "c", "b", "d"]);
-  const renders = await page.evaluate(() => {
-    const w = window as unknown as { renderedOrders: string[][]; orderObserver: MutationObserver };
-    w.orderObserver.disconnect(); return w.renderedOrders;
-  });
+  const renders = await page.evaluate(() => (window as unknown as { renderedOrders: string[][] }).renderedOrders);
   expect(renders.length).toBeGreaterThan(0);
   expect(renders.every((render) => JSON.stringify(render) === '["a","c","b","d"]')).toBe(true);
 });
@@ -428,7 +433,7 @@ test("lost acknowledgements retry the same edit without reapplying over newer te
   await dragItem(page, teammate, "a", "b");
   await expect.poll(() => order(teammate)).toEqual(["a", "b", "c", "d"]);
   await red.getByRole("button", { name: "Retry saving", exact: true }).click();
-  await expect(saving(red)).toHaveText("Order saved");
+  await expect(red.getByRole("button", { name: "Reorder item 1", exact: true })).toHaveAttribute("aria-disabled", "false");
   await expect.poll(() => order(red)).toEqual(["a", "b", "c", "d"]);
   const writes = await page.evaluate(() => (window as unknown as Harness).sortingWrites);
   expect(writes[0].edit.id).toBe(writes[2].edit.id);
@@ -455,7 +460,8 @@ test("a server close disables further moves before round metadata arrives", asyn
   expect(await page.evaluate(() => (window as unknown as Harness).sortingWrites)).toHaveLength(1);
   await page.evaluate(() => (window as unknown as Harness).renderSortingViews("closed"));
   await expect(red.getByRole("button", { name: /^Reorder item/ })).toHaveCount(0);
-  await expect.poll(() => order(red)).toEqual(["a", "b", "c", "d"]);
+  await expect(red.getByRole("list", { name: "Sorting order", exact: true })).toHaveCount(0);
+  await expect(red.getByRole("button", { name: "History sorting", exact: true })).toHaveCount(0);
 });
 
 test("hovering a row gap keeps the dragged item at its insertion position", async ({ page }) => {
@@ -507,4 +513,19 @@ test("sorting list keeps compact Figma geometry with lighter idle rows", async (
   expect((await panel.locator('[data-item-id="0"]').boundingBox())!.width).toBeCloseTo(372, 0);
   await expect(panel.getByRole("button", { name: "Save order", exact: true })).toHaveCount(0);
   await panel.screenshot({ path: testInfo.outputPath("sorting-figma.png") });
+});
+
+
+test("closing retires paused edits even when their round tab is unmounted", async ({page}) => {
+  await setupSortingPage(page);
+  const red=view(page,"red");
+  await page.evaluate(() => { (window as unknown as Harness).failNextSortingWrite="before"; });
+  await dragItem(page,red,"a","b");
+  await expect(red.getByRole("alert")).toContainText("Unable to save this edit.");
+  await red.getByRole("button",{name:"Foreground one",exact:true}).click();
+  await expect(red.getByRole("list",{name:"Sorting order",exact:true})).toHaveCount(0);
+  expect(await page.evaluate(() => (window as unknown as Harness).sortingTransport.listenerCount())).toBe(3);
+  await page.evaluate(() => (window as unknown as Harness).renderSortingViews("closed"));
+  await expect.poll(() => page.evaluate(() => (window as unknown as Harness).sortingTransport.listenerCount())).toBe(0);
+  expect(await page.evaluate(() => (window as unknown as Harness).sortingWrites)).toHaveLength(1);
 });

@@ -12,7 +12,7 @@ import { doc, onSnapshot } from "firebase/firestore";
 import { getDownloadURL, getStorage, ref } from "firebase/storage";
 import { useFirebaseAuth } from "@/app/providers/firebase-auth-provider";
 import { getClientFirestore, getFirebaseClientApp } from "@/lib/firebase/client";
-import type { Question, SortingItem } from "@/types/quiz";
+import type { Question, SortingQuestion } from "@/types/quiz";
 import { parseSortingOrder } from "@/types/sorting";
 import StageMedia from "./room/stage-media";
 
@@ -34,20 +34,16 @@ function SortingMedia({ media, label }: { media: NonNullable<Question["media"]>;
     videoClassName="max-h-40 w-full" />;
 }
 
-function SortingItemContent({ item, index }: { item: SortingItem; index: number }) {
-  return <>
-    <div className="min-w-0 flex-1 space-y-2">
-      {item.stages.map((stage, stageIndex) => <div key={stageIndex} className="space-y-2">
-        {stage.text ? <p className="whitespace-pre-wrap text-sm font-normal">{stage.text}</p> : null}
-        {stage.media ? <SortingMedia media={stage.media} label={stage.text ?? `Item ${index + 1}`} /> : null}
-      </div>)}
-    </div>
-  </>;
+export function SortingQuestionContent({ item, index }: { item: SortingQuestion; index: number }) {
+  return <div className="min-w-0 flex-1 space-y-2">
+    {item.text ? <p className="whitespace-pre-wrap text-sm font-normal">{item.text}</p> : null}
+    {item.media ? <SortingMedia media={item.media} label={item.text ?? `Item ${index + 1}`} /> : null}
+  </div>;
 }
 
 const itemClassName = "relative flex items-start gap-3 rounded-[5px] bg-zinc-100 p-1.5 ring-1 ring-inset ring-zinc-400/40 dark:bg-zinc-900/60";
 
-function SortableSortingItem({ item, index, disabled }: { item: SortingItem; index: number; disabled: boolean }) {
+function SortableSortingItem({ item, index, disabled }: { item: SortingQuestion; index: number; disabled: boolean }) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: item.id, disabled });
   const activate = (event: SyntheticEvent, kind: "onMouseDown" | "onTouchStart") => {
     const target = event.target;
@@ -65,12 +61,12 @@ function SortableSortingItem({ item, index, disabled }: { item: SortingItem; ind
       className="relative inline-flex size-5 shrink-0 cursor-inherit items-center justify-center rounded-sm before:absolute before:-inset-1.5 before:content-[''] focus-visible:outline-2 focus-visible:outline-emerald-500 aria-disabled:opacity-30">
       <Image src="/sorting-grip.svg" alt="" width={20} height={20} className="pointer-events-none" />
     </button>
-    <SortingItemContent item={item} index={index} />
+    <SortingQuestionContent item={item} index={index} />
   </li>;
 }
 
 function SortableSortingItems({ items, order, onMove, disabled }: {
-  items: SortingItem[]; order: readonly string[]; onMove: (from: number, to: number) => void; disabled: boolean;
+  items: SortingQuestion[]; order: readonly string[]; onMove: (from: number, to: number) => void; disabled: boolean;
 }) {
   const contextId = useId();
   const sensors = useSensors(
@@ -102,69 +98,49 @@ function SortableSortingItems({ items, order, onMove, disabled }: {
   </DndContext>;
 }
 
-export function SortingItems({ items, order, onMove, disabled = true }: {
-  items: SortingItem[]; order: readonly string[]; onMove?: (from: number, to: number) => void; disabled?: boolean;
+export function SortingQuestions({ items, order, onMove, disabled = true }: {
+  items: SortingQuestion[]; order: readonly string[]; onMove?: (from: number, to: number) => void; disabled?: boolean;
 }) {
   if (onMove) return <SortableSortingItems items={items} order={order} onMove={onMove} disabled={disabled} />;
   return <ol className="space-y-2" aria-label="Sorting order">
     {order.map((id, index) => <li key={id} data-item-id={id} className={itemClassName}>
-      <SortingItemContent item={items.find((item) => item.id === id)!} index={index} />
+      <SortingQuestionContent item={items.find((item) => item.id === id)!} index={index} />
     </li>)}
   </ol>;
 }
 
-export function SortingRound({ roomSlug, teamId, roundId, question, state, readOnly = false, reveal = false }: {
-  roomSlug?: string; teamId?: string; roundId: string; question: Question;
+export function SortingRound({ roomSlug, teamId, roundId, criterion, questions, startingOrder, state, readOnly = false, reveal = false }: {
+  roomSlug?: string; teamId?: string; roundId: string; criterion: string; questions: SortingQuestion[]; startingOrder?: string[];
   state: "active" | "closed"; readOnly?: boolean; reveal?: boolean;
 }) {
   const { getToken, user } = useFirebaseAuth();
-  const items = question.items ?? [];
-  const itemIds = items.map((item) => item.id);
-  const [saved, setSaved] = useState<{ order: string[] | null; points?: number } | null>(null);
+  const itemIds = questions.map((question) => question.id);
   const [correct, setCorrect] = useState<string[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const questionId = String(question.id ?? "question-1");
-  // Item content can refresh independently from the subscription's stable IDs.
   const idsKey = JSON.stringify(itemIds);
-  const sync = useSortingOrder({ roomSlug, teamId, roundId, questionId, itemIds, uid: user?.uid, getToken,
-    enabled: state === "active" && !readOnly && items.length >= 2, closed: state === "closed" });
+  const sync = useSortingOrder({ roomSlug, teamId, roundId, itemIds, uid: user?.uid, getToken,
+    enabled: state === "active" && !readOnly && questions.length >= 2, closed: state === "closed" });
   useEffect(() => {
-    if (state !== "closed" || !roomSlug || !teamId || items.length < 2) return;
-    return onSnapshot(doc(getClientFirestore(), "rooms", roomSlug, "rounds", roundId, "teamAnswers", teamId, "answers", questionId), (snapshot) => {
-      try {
-        const data = snapshot.data();
-        setSaved({ order: parseSortingOrder(JSON.parse(data?.answer), JSON.parse(idsKey)),
-          points: typeof data?.awardedPoints === "number" ? data.awardedPoints : undefined });
-      } catch { setError("Invalid saved sorting order."); }
-    }, () => setError("Unable to load the team order."));
-  }, [state, roomSlug, teamId, roundId, questionId, idsKey, items.length]);
-
-  useEffect(() => {
-    if (!reveal || state !== "closed" || !roomSlug || items.length < 2) return;
-    return onSnapshot(doc(getClientFirestore(), "rooms", roomSlug, "rounds", roundId, "answers", questionId), (snapshot) => {
+    if (!reveal || state !== "closed" || !roomSlug || questions.length < 2) return;
+    return onSnapshot(doc(getClientFirestore(), "rooms", roomSlug, "rounds", roundId, "answers", "order"), (snapshot) => {
       try { setCorrect(parseSortingOrder(snapshot.data()?.correctOrder, JSON.parse(idsKey))); }
       catch { setError("Invalid correct sorting order."); }
     }, () => setError("Unable to load the correct order."));
-  }, [reveal, state, roomSlug, roundId, questionId, idsKey, items.length]);
+  }, [reveal, state, roomSlug, roundId, idsKey, questions.length]);
 
-  const order = state === "closed" ? saved?.order ?? itemIds : sync.order ?? itemIds;
+  if (questions.length < 2) return <p>Loading sorting items…</p>;
+  const order = sync.order ?? (startingOrder ? parseSortingOrder(startingOrder, itemIds) : itemIds);
   const disabled = readOnly || state !== "active" || sync.closed || sync.order === null;
-  if (items.length < 2) return <p>Loading sorting items…</p>;
   return <div className="min-h-0 space-y-3 overflow-auto p-2 [scrollbar-gutter:stable]">
-    <h2 className="whitespace-pre-wrap font-semibold">{question.prompt}</h2>
+    <h2 className="whitespace-pre-wrap font-semibold">{criterion}</h2>
     {error ? <p role="alert" className="text-red-500">{error} <button type="button" className="underline" onClick={() => setError(null)}>Dismiss</button></p> : null}
     {sync.error && !readOnly ? <p role="alert" className="text-red-500">{sync.error} <button type="button" className="underline" onClick={sync.retry}>{sync.pendingCount ? "Retry saving" : "Dismiss"}</button></p> : null}
-    <SortingItems items={items} order={order} disabled={disabled} onMove={readOnly || state === "closed" ? undefined : (from, to) => {
-      const edit = sortingMoveEdit(order, from, to);
-      if (edit) sync.move(edit);
-    }} />
-    {!readOnly && state === "active" ? <p role="status" aria-label="Order saving status" className="text-xs">
-      {sync.error ? "Changes not saved" : sync.status === "loading" ? "Loading team order…" : sync.pendingCount ? "Saving…" : "Order saved"}
-    </p> : null}
-    {state === "closed" && teamId ? <p className="text-sm">{saved?.order ? "Submissions closed" : "No order submitted"}{saved?.points === undefined ? "" : ` · ${saved.points} / ${items.length} points`}</p> : null}
     {reveal && state === "closed" ? <section className="space-y-2" aria-label="Correct order">
       <h3 className="font-semibold">Correct order</h3>
-      {correct ? <SortingItems items={items} order={correct} /> : <p>Loading correct order…</p>}
-    </section> : null}
+      {correct ? <SortingQuestions items={questions} order={correct} /> : <p>Loading correct order…</p>}
+    </section> : <SortingQuestions items={questions} order={order} disabled={disabled} onMove={readOnly || state === "closed" ? undefined : (from, to) => {
+      const edit = sortingMoveEdit(order, from, to);
+      if (edit) sync.move(edit);
+    }} />}
   </div>;
 }

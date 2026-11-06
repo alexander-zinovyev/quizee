@@ -17,16 +17,16 @@ function measure(name: string, start: number, end: number, detail?: unknown) {
 }
 
 type SortingControllerOptions = {
-  key: string; roomSlug: string; teamId: string; roundId: string; questionId: string; idsKey: string;
+  key: string; roomSlug: string; teamId: string; roundId: string; idsKey: string;
   getToken: () => Promise<string>;
 };
 
-function getSortingController({ key, roomSlug, teamId, roundId, questionId, idsKey, getToken }: SortingControllerOptions) {
+function getSortingController({ key, roomSlug, teamId, roundId, idsKey, getToken }: SortingControllerOptions) {
   const existing = controllers.get(key);
   if (existing) return existing;
   const itemIds: string[] = JSON.parse(idsKey);
   const next = new SortingOrderController({
-    watch: (snapshot, error) => onSnapshot(doc(getClientFirestore(), "rooms", roomSlug, "teams", teamId, "rounds", roundId, "answers", questionId), { includeMetadataChanges: true }, (value) => {
+    watch: (snapshot, error) => onSnapshot(doc(getClientFirestore(), "rooms", roomSlug, "teams", teamId, "rounds", roundId), { includeMetadataChanges: true }, (value) => {
       if (value.metadata.fromCache && !value.exists()) return;
       try { snapshot(parseSortingSnapshot(value.data(), itemIds)); }
       catch { error(new Error("Invalid saved sorting order.")); }
@@ -34,7 +34,7 @@ function getSortingController({ key, roomSlug, teamId, roundId, questionId, idsK
     write: async (edit) => {
       const start = performance.now();
       const token = await getToken();
-      const response = await fetch(`/api/rooms/${roomSlug}/rounds/${roundId}/answers/${questionId}`, {
+      const response = await fetch(`/api/rooms/${roomSlug}/rounds/${roundId}/answer`, {
         method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ teamId, edit }),
       });
@@ -58,15 +58,26 @@ function getSortingController({ key, roomSlug, teamId, roundId, questionId, idsK
   return next;
 }
 
-export function useSortingOrder({ roomSlug, teamId, roundId, questionId, itemIds, uid, getToken, enabled, closed = false }: {
-  roomSlug?: string; teamId?: string; roundId: string; questionId: string; itemIds: readonly string[];
+/** Closing a round retires pending controllers even when its gameplay tab is absent. */
+export function closeSortingRound(roomSlug: string, roundId: string) {
+  for (const [key, controller] of controllers) {
+    const [room, , round] = JSON.parse(key) as string[];
+    if (room === roomSlug && round === roundId) {
+      controller.close();
+      controllers.delete(key);
+    }
+  }
+}
+
+export function useSortingOrder({ roomSlug, teamId, roundId, itemIds, uid, getToken, enabled, closed = false }: {
+  roomSlug?: string; teamId?: string; roundId: string; itemIds: readonly string[];
   uid?: string; getToken: () => Promise<string>; enabled: boolean; closed?: boolean;
 }) {
-  const key = roomSlug && teamId && uid ? JSON.stringify([roomSlug, teamId, roundId, questionId, uid]) : null;
+  const key = roomSlug && teamId && uid ? JSON.stringify([roomSlug, teamId, roundId, uid]) : null;
   const idsKey = JSON.stringify([...itemIds].sort());
   const controller = useMemo(() => !key || !roomSlug || !teamId ? null : closed ? controllers.get(key) ?? null : !enabled ? null
-    : getSortingController({ key, roomSlug, teamId, roundId, questionId, idsKey, getToken }),
-  [key, idsKey, enabled, closed, roomSlug, teamId, roundId, questionId, getToken]);
+    : getSortingController({ key, roomSlug, teamId, roundId, idsKey, getToken }),
+  [key, idsKey, enabled, closed, roomSlug, teamId, roundId, getToken]);
 
   useEffect(() => {
     if (closed) controller?.close();

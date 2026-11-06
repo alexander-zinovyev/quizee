@@ -1,4 +1,3 @@
-import { randomInt } from "node:crypto";
 import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
@@ -356,16 +355,11 @@ async function createRoom(request: NextRequest) {
     batch.set(roundRef, createRoundDocumentData(round));
 
     if (round.type === "sorting") {
-      // Publish a shuffled item list. The authored order exists only in answers.
-      const items = await Promise.all(round.items.map(async (item) => ({ id: item.id, stages: await resolveStages(item.stages) })));
-      for (let index = items.length - 1; index > 0; index--) {
-        const other = randomInt(index + 1);
-        [items[index], items[other]] = [items[other], items[index]];
+      for (const question of round.questions) {
+        const [stage] = await resolveStages([question]);
+        batch.set(roundRef.collection("questions").doc(question.id), stage);
       }
-      batch.set(roundRef.collection("questions").doc("question-1"), {
-        order: 0, text: round.criterion, stages: [{ text: round.criterion }], items,
-      });
-      batch.set(roundRef.collection("answers").doc("question-1"), { correctOrder: round.correctOrder });
+      batch.set(roundRef.collection("answers").doc("order"), { correctOrder: round.correctOrder });
     } else if (round.type === "color") {
       for (const question of round.questions) {
         const id = `question-${question.order + 1}`;

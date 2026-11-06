@@ -28,7 +28,7 @@ export default function QuizRound(props: QuizRoundData) {
     );
   } else if (props.type === "sorting") {
     body = <SortingRound key={`${roomSlug}:${teamId}:${roundId}:${props.state}`} roomSlug={roomSlug} teamId={teamId}
-      roundId={roundId} question={props.questions[0]} state={props.state}
+      roundId={roundId} criterion={props.criterion} startingOrder={props.startingOrder} questions={props.questions} state={props.state}
       reveal={props.presenting?.round === roundId && props.presenting.withAnswer === true} />;
   } else if (props.type === "color") {
     body = <ColorAnswerSummary key={`${roomSlug}:${teamId}:${roundId}`} roomSlug={roomSlug} roundId={roundId} teamId={teamId} questions={questions} />;

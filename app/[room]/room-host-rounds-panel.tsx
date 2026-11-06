@@ -14,6 +14,7 @@ type RoomHostRoundsPanelProps = {
     round?: string | null;
     question?: string | null;
   } | null;
+  onPresentRound?: (roundId: string) => void;
   onPresentQuestion?: (roundId: string, questionId: string) => void;
   onHideQuestion?: () => void;
   onStartRound?: (roundId: string) => void;
@@ -26,6 +27,7 @@ export default function RoomHostRoundsPanel({
   className,
   presenting,
   onPresentQuestion,
+  onPresentRound,
   onHideQuestion,
   onStartRound,
   onEndRound,
@@ -115,6 +117,10 @@ export default function RoomHostRoundsPanel({
           </div>
         </div>
         <div className="flex h-full flex-col gap-3 overflow-auto pr-2">
+          {activeRound.type === "sorting" ? <div className="space-y-3">
+            <p>{activeRound.criterion}</p>
+            {activeRound.state !== "scheduled" ? <button type="button" onClick={() => presenting?.round === activeRound.id ? onHideQuestion?.() : onPresentRound?.(activeRound.id)} className="rounded bg-emerald-600 px-3 py-2 text-sm text-white">{presenting?.round === activeRound.id ? "Hide round" : "Show round"}</button> : null}
+          </div> : null}
           {visibleQuestions.map((question) => (
               <div
                 key={question.id}
@@ -183,7 +189,7 @@ export default function RoomHostRoundsPanel({
                 </p>
               </div>
             ))}
-          {!visibleQuestions.length ? (
+          {!visibleQuestions.length && activeRound.type !== "sorting" ? (
             <p className="text-sm text-zinc-500 dark:text-zinc-400">
               No questions available.
             </p>

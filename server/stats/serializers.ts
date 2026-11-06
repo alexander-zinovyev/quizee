@@ -31,6 +31,7 @@ export function publicMetrics(raw: StatsGameMetrics): StatsGameMetrics {
   return { results: raw.results.map(({ id, name, score, outcome, rank }) => ({ id, name, score, outcome, rank })),
     percentage: publicPercentage(raw.percentage), poolPercentage: publicPercentage(raw.poolPercentage), difficulty: publicPercentage(raw.difficulty),
     rounds: raw.rounds.map((round) => ({ id: round.id, title: round.title, type: round.type, closestPool: round.closestPool,
+      ...(round.criterion === undefined ? {} : { criterion: round.criterion }),
       teams: Object.fromEntries(Object.entries(round.teams).map(([id, team]) => [id, { score: team.score, percentage: publicPercentage(team.percentage),
         reconciliation: { status: team.reconciliation.status, difference: team.reconciliation.difference },
         answers: { recorded: team.answers.recorded, unanswered: team.answers.unanswered, knownCorrectness: team.answers.knownCorrectness, incorrect: team.answers.incorrect, total: team.answers.total } }])) })),
@@ -46,11 +47,9 @@ export function publicMetrics(raw: StatsGameMetrics): StatsGameMetrics {
 export function publicQuestion(raw: StatsQuestion): StatsQuestion {
   const stages = (values: StatsQuestion["prompt"]) => values.map(({ text, assetId }) => ({ text, assetId }));
   return { id: raw.id, order: raw.order, prompt: stages(raw.prompt), acceptedAnswer: stages(raw.acceptedAnswer), answerHint: raw.answerHint,
-    ...(raw.sorting ? { sorting: { items: raw.sorting.items.map((item) => ({ id: item.id, stages: stages(item.stages) })), correctOrder: [...raw.sorting.correctOrder] } } : {}),
     color: raw.color ? { initialColor: raw.color.initialColor, targetColor: raw.color.targetColor, maskAssetId: raw.color.maskAssetId,
       regionIds: raw.color.regionIds ? [...raw.color.regionIds] : null } : null,
     answers: Object.fromEntries(Object.entries(raw.answers).map(([id, answer]) => [id, { answer: answer.answer,
       attempts: answer.attempts.map(({ answer, step }) => ({ answer, step })), correctness: answer.correctness,
-      awardedPoints: answer.awardedPoints, perceptionScore: answer.perceptionScore, assetId: answer.assetId,
-      ...(raw.sorting ? { sortingOrder: answer.sortingOrder ? [...answer.sortingOrder] : null } : {}) }])) };
+      awardedPoints: answer.awardedPoints, perceptionScore: answer.perceptionScore, assetId: answer.assetId }])) };
 }

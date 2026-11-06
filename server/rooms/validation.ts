@@ -1,5 +1,5 @@
 import { posix } from "node:path";
-import { parseSortingRound, type SortingItem } from "@/types/sorting";
+import { parseSortingRound, type SortingQuestion } from "@/types/sorting";
 import { parseColorQuestion, parseColorScoring, type ColorScoring } from "@/types/color";
 
 export type ValidatedStage = {
@@ -70,7 +70,7 @@ export type ValidatedSortingRound = {
   type: "sorting";
   title: string;
   criterion: string;
-  items: SortingItem<ValidatedStage>[];
+  questions: SortingQuestion<ValidatedStage>[];
   correctOrder: string[];
 };
 
@@ -266,10 +266,9 @@ export function validateQuizFile(content: string): ValidatedRound[] | string {
     if (type === "sorting") {
       try {
         const sorting = parseSortingRound(round);
-        validatedRounds.push({ ...sorting, order: roundIndex, items: sorting.items.map((item) => ({
-          id: item.id, stages: item.stages.map((stage) => ({
-            ...(stage.text ? { text: stage.text } : {}), ...(stage.media ? { media: { path: stage.media } } : {}),
-          })),
+        validatedRounds.push({ ...sorting, order: roundIndex, questions: sorting.questions.map((question) => ({
+          id: question.id, ...(question.text ? { text: question.text } : {}),
+          ...(question.media ? { media: { path: question.media } } : {}),
         })) });
       } catch (error) { return `Round ${roundIndex + 1}: ${(error as Error).message}`; }
       continue;

@@ -118,6 +118,11 @@ service cloud.firestore {
         
         allow delete: if isHost(roomId);
 
+        match /rounds/{roundId} {
+          allow read: if isMember(roomId) && memberTeam(roomId) == teamId;
+          allow write: if false;
+        }
+
         match /rounds/{roundId}/answers/{answerId} {
           allow read:
             if isMember(roomId)
@@ -154,8 +159,13 @@ service cloud.firestore {
         match /answers/{answerId} {
           allow read:
             if isHost(roomId)
-            || (isMember(roomId) && isPresentingAnswer(roomId, roundId, answerId)
-              && (roundDoc(roomId, roundId).data.type != "sorting" || roundDoc(roomId, roundId).data.state == "closed"));
+            || (isMember(roomId) && (
+              (roundDoc(roomId, roundId).data.type == "sorting"
+                && answerId == "order"
+                && roundDoc(roomId, roundId).data.state == "closed"
+                && roundDoc(roomId, roundId).data.gradingRequired == false)
+              || (roundDoc(roomId, roundId).data.type != "sorting"
+                && isPresentingAnswer(roomId, roundId, answerId))));
           allow write: if isHost(roomId);
         }
 

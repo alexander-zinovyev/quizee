@@ -18,6 +18,7 @@ import {
 import Member from "@/lib/components/member";
 import Team from "@/lib/components/team";
 import { RoundStage } from "@/lib/components/room/round-stage";
+import { SortingPresentationControls } from "@/lib/components/room/sorting-presentation-controls";
 import { SortingRound } from "@/lib/components/sorting-round";
 import { ColorPresenting } from "@/lib/components/color-presenting";
 import { PromptNavigation } from "@/lib/components/room/prompt-navigation";
@@ -26,6 +27,8 @@ import { recordedAnswer } from "@/lib/answers";
 import { usePresentingMedia } from "@/lib/hooks/use-presenting-media";
 import {
   type RoundQuestion,
+  getActiveRounds,
+  getSortingQuestions,
   useRoomRounds,
 } from "@/lib/hooks/use-room-rounds";
 import RoomChatPanel from "./room-chat-panel";
@@ -229,14 +232,13 @@ export default function RoomContent({
   const rounds: QuizRoundData[] = useMemo(() => {
     // Keeps this memo in sync with media cache invalidations.
     void mediaCacheVersion;
-    const mapped = roundsMeta
-      .filter((meta) => meta.state === "active" || (meta.type === "sorting" && meta.state === "closed"))
+    const mapped = getActiveRounds(roundsMeta)
       .map<QuizRoundData | null>((meta, index) => {
         const questions = roundQuestions[meta.id] ?? [];
 
         if (meta.type === "sorting") return {
           id: meta.id, type: "sorting", title: meta.title, roundNumber: meta.order + 1,
-          state: meta.state as "active" | "closed", questions: questions.map((q) => ({ ...q, prompt: q.prompt ?? q.displayPrompt })), presenting,
+          state: "active", criterion: meta.criterion!, startingOrder: meta.startingOrder, questions: getSortingQuestions(questions), presenting,
         };
 
         if (meta.type === "color") return {
@@ -364,6 +366,7 @@ export default function RoomContent({
           state: meta.state,
           type: meta.type,
           gradingRequired: meta.gradingRequired,
+          criterion: meta.criterion,
           questions: questions.map((q, qIndex) => {
             const answer =
               meta.type === "image"
@@ -562,7 +565,7 @@ export default function RoomContent({
 
   const hideQuestionFromPanel = async () => {
     await updatePresenting({
-      round: activeRoundForControls?.id ?? null,
+      round: presentingRoundMeta?.type === "sorting" ? null : activeRoundForControls?.id ?? null,
       question: null,
       withAnswer: false,
       promptPage: 0,
@@ -625,7 +628,7 @@ export default function RoomContent({
       const meta = roundsMeta.find((round) => round.id === roundId);
       if (meta?.type === "text" || meta?.type === "multi-step" || meta?.type === "color" || meta?.type === "sorting") {
         const next = presenting?.round === roundId
-          ? { round: roundId, question: (meta.type === "color" || meta.type === "sorting") ? presenting?.question ?? roundQuestions[roundId]?.[0]?.id ?? null : null, withAnswer: false }
+          ? { round: roundId, question: meta.type === "color" ? presenting?.question ?? roundQuestions[roundId]?.[0]?.id ?? null : null, withAnswer: false }
           : { round: presenting?.round ?? null, question: presenting?.question ?? null,
               withAnswer: presenting?.withAnswer ?? false, promptPage: presenting?.promptPage ?? 0,
               answerPage: presenting?.answerPage ?? 0 };
@@ -994,6 +997,10 @@ export default function RoomContent({
     const roundScores = await Promise.all(
       sortedRounds.map(async (round) => {
         const roundId = round.id;
+        if (round.type === "sorting") {
+          const frozen = await getDoc(doc(db, "rooms", roomSlug, "rounds", roundId, "teamAnswers", teamId));
+          return { roundId, roundScore: getAwardedPoints(frozen.data()?.awardedPoints ?? 0, round) };
+        }
         const answersSnap = await getDocs(
           collection(db, "rooms", roomSlug, "rounds", roundId, "teamAnswers", teamId, "answers")
         );
@@ -1232,7 +1239,7 @@ export default function RoomContent({
   }, [handMembers]);
 
   useEffect(() => {
-    if (!isHost || !presentingRoundMeta?.id || presentingRoundMeta.state !== "closed") {
+    if (!isHost || !presentingRoundMeta?.id || presentingRoundMeta.state !== "closed" || presentingRoundMeta.type === "sorting") {
       // Clean up team answer listeners when not grading.
       teamAnswerRoundUnsubRef.current?.();
       teamAnswerRoundUnsubRef.current = null;
@@ -1324,6 +1331,7 @@ export default function RoomContent({
     <RoomHostRoundsPanel
       rounds={hostRounds}
       presenting={presenting}
+      onPresentRound={(roundId) => void updatePresenting({ round: roundId, question: null, withAnswer: false, promptPage: 0, answerPage: 0 })}
       onPresentQuestion={presentQuestionFromPanel}
       onHideQuestion={hideQuestionFromPanel}
       onStartRound={handleActivateSpecificRound}
@@ -1434,10 +1442,10 @@ export default function RoomContent({
                 ) : null}
               </div>
             </header>
-            {presentingRoundMeta?.type === "sorting" && presentingQuestion ? (
+            {presentingRoundMeta?.type === "sorting" ? (
               <div className="min-h-0 flex-1 overflow-auto text-white">
-                <SortingRound key={`${presentingRoundMeta.id}:${presentingQuestion.id}:${presentingRoundMeta.state}`}
-                  roomSlug={roomSlug} roundId={presentingRoundMeta.id} question={{ ...presentingQuestion, prompt: presentingQuestion.prompt ?? presentingQuestion.displayPrompt }}
+                <SortingRound key={`${presentingRoundMeta.id}:${presentingRoundMeta.state}`}
+                  roomSlug={roomSlug} roundId={presentingRoundMeta.id} criterion={presentingRoundMeta.criterion!} startingOrder={presentingRoundMeta.startingOrder} questions={getSortingQuestions(roundQuestions[presentingRoundMeta.id] ?? [])}
                   state={presentingRoundMeta.state === "closed" ? "closed" : "active"} readOnly
                   reveal={presenting?.withAnswer ?? false} />
               </div>
@@ -1471,7 +1479,13 @@ export default function RoomContent({
               presentingRoundMeta={presentingRoundMeta}
               setGradingTeamIndex={setGradingTeamIndex}
             />}
-            {isHost && activeRoundForControls ? (
+            {isHost && activeRoundForControls?.type === "sorting" ? <SortingPresentationControls state={activeRoundForControls.state as "active" | "closed"}
+              presented={presenting?.round === activeRoundForControls.id} revealing={presenting?.round === activeRoundForControls.id && presenting.withAnswer === true}
+              pending={isPresentingUpdatePending} ending={isEndingRound} retryScoring={canRetryAutoGrade(activeRoundForControls, autoGradeFailedRoundId)}
+              onPresent={(withAnswer) => void updatePresenting({ round: activeRoundForControls.id, question: null, withAnswer, promptPage: 0, answerPage: 0 })}
+              onHide={() => void updatePresenting({ round: null, question: null, withAnswer: false, promptPage: 0, answerPage: 0 })}
+              onEnd={() => void handleEndRound()} onScore={() => void autoGradeRound(activeRoundForControls.id)} /> : null}
+            {isHost && activeRoundForControls && activeRoundForControls.type !== "sorting" ? (
               <footer className="border-t border-white/10 bg-black/40 px-5 py-3 text-white">
                 <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em]">
                   <span className="text-zinc-300">Question:</span>

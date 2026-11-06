@@ -74,11 +74,11 @@ async function main() {
     for (const user of users) batch.set(room.collection("members").doc(user.uid), { role: "player", team: "red" });
     for (const team of ["red", "blue"]) batch.set(room.collection("teams").doc(team), { name: team });
     batch.set(round, { type: "sorting", state: "scheduled", gradingRequired: false });
-    batch.set(round.collection("questions").doc("question-1"), { order: 0, text: "Sort", items: ["a", "b", "c", "d"].map((id) => ({ id, stages: [{ text: id }] })) });
-    batch.set(round.collection("answers").doc("question-1"), { correctOrder: ["a", "b", "c", "d"] });
+    for (const id of ["a", "b", "c", "d"]) batch.set(round.collection("questions").doc(id), { text: id });
+    batch.set(round.collection("answers").doc("order"), { correctOrder: ["a", "b", "c", "d"] });
     await batch.commit();
     await transitionPresentation(db, roomId, "host", current, current, { activateRound: "sorting" });
-    const live = room.collection("teams").doc("red").collection("rounds").doc("sorting").collection("answers").doc("question-1");
+    const live = room.collection("teams").doc("red").collection("rounds").doc("sorting");
     const initial = (await live.get()).data()!.order as string[];
     const observations = new Map<number, { order: string[]; at: number }>();
     const waiters = new Map<number, () => void>();
@@ -93,7 +93,7 @@ async function main() {
     });
     await observed(0);
     const port = await availablePort(); server = await startApp(port, projectId);
-    const endpoint = `http://127.0.0.1:${port}/api/rooms/${roomId}/rounds/sorting/answers/question-1`;
+    const endpoint = `http://127.0.0.1:${port}/api/rooms/${roomId}/rounds/sorting/answer`;
     const request = async (edit: SortingEdit, token = tokens[0]) => {
       const startedAt = performance.now();
       const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -125,8 +125,8 @@ async function main() {
     const refused = await request({ ...edits[0], id: randomUUID() });
     assert.equal(refused.response.status, 409); assert.equal(refused.payload.code, "round-closed");
     await gradeSortingRound(db, roomId, "sorting", "host");
-    const untouched = (await round.collection("teamAnswers").doc("blue").collection("answers").doc("question-1").get()).data()!;
-    assert.deepEqual(JSON.parse(untouched.answer), initial);
+    const untouched = (await round.collection("teamAnswers").doc("blue").get()).data()!;
+    assert.deepEqual(untouched.order, initial);
     assert.equal(untouched.awardedPoints, scoreSortingOrder(initial, ["a", "b", "c", "d"]));
     console.log(JSON.stringify({ event: "sorting.http-emulator-timing", samples: [...results, warm].map((result, index) => ({
       phase: index < 2 ? "cold-concurrent" : "warm-single",

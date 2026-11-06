@@ -22,26 +22,28 @@ async function exportPack(page: Page) {
 
 const round = {
   type: "sorting", title: "Timeline", criterion: "Earliest to latest",
-  items: [
-    { id: "A", stages: [{ text: "First event" }] },
-    { id: "B", stages: [{ media: "clip.aac" }, { text: "An audio event" }] },
-    { id: "C", stages: [{ text: "Last event", media: "photo.png" }] },
+  questions: [
+    { id: "A", text: "First event" },
+    { id: "B", media: "clip.aac", text: "An audio event" },
+    { id: "C", text: "Last event", media: "photo.png" },
   ],
   correctOrder: ["B", "A", "C"],
 };
 
-test("sorting builder preserves staged text/media and changes the authored order independently", async ({ page }) => {
+test("sorting builder preserves single-stage questions and changes the authored order independently", async ({ page }) => {
   const audio = new Uint8Array([0xff, 0xf1]);
   const image = new Uint8Array([0x89, 0x50]);
   await importPack(page, [round], [{ name: "media/clip.aac", data: audio }, { name: "media/photo.png", data: image }]);
   await expect(page.getByText("Loaded 1 round(s) and 2 media file(s).", { exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Sorting criterion" })).toHaveValue(round.criterion);
-  await expect(page.getByRole("region", { name: "Sorting item 1", exact: true }).locator("textarea").nth(1)).toHaveValue("An audio event");
+  await expect(page.getByRole("region", { name: "Sorting question 1", exact: true }).locator("textarea")).toHaveValue("An audio event");
+  await expect(page.getByRole("button", { name: "Add item stage", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Sorting question 1", exact: true }).locator("textarea")).toHaveCount(1);
   const original = await exportPack(page);
   expect(original.rounds).toEqual([round]);
   expect(original.entries.find((entry) => entry.name === "media/clip.aac")!.data).toEqual(audio);
   expect(original.entries.find((entry) => entry.name === "media/photo.png")!.data).toEqual(image);
-  await page.getByRole("button", { name: "Move sorting item 1 down", exact: true }).click();
+  await page.getByRole("button", { name: "Move sorting question 1 down", exact: true }).click();
   const reordered = await exportPack(page);
   expect(reordered.rounds).toEqual([{ ...round, correctOrder: ["A", "B", "C"] }]);
 });
@@ -51,14 +53,14 @@ test("sorting builder authors a new list with the shared stage editor", async ({
   await page.getByRole("button", { name: "Add round", exact: true }).click();
   await page.getByRole("button", { name: "Sorting", exact: true }).click();
   await page.getByRole("textbox", { name: "Sorting criterion" }).fill("Smallest to largest");
-  await page.getByRole("region", { name: "Sorting item 1", exact: true }).locator("textarea").fill("Small");
-  await page.getByRole("region", { name: "Sorting item 2", exact: true }).locator("textarea").fill("Large");
-  await page.getByRole("button", { name: "Move sorting item 1 down", exact: true }).click();
+  await page.getByRole("region", { name: "Sorting question 1", exact: true }).locator("textarea").fill("Small");
+  await page.getByRole("region", { name: "Sorting question 2", exact: true }).locator("textarea").fill("Large");
+  await page.getByRole("button", { name: "Move sorting question 1 down", exact: true }).click();
   const { rounds } = await exportPack(page);
   expect(rounds[0].type).toBe("sorting");
   expect(rounds[0].criterion).toBe("Smallest to largest");
-  expect(rounds[0].items.map((item: { stages: Array<{ text: string }> }) => item.stages)).toEqual([[{ text: "Small" }], [{ text: "Large" }]]);
-  expect(rounds[0].correctOrder).toEqual(rounds[0].items.map((item: { id: string }) => item.id).reverse());
+  expect(rounds[0].questions.map((question: { text: string }) => question.text)).toEqual(["Small", "Large"]);
+  expect(rounds[0].correctOrder).toEqual(rounds[0].questions.map((question: { id: string }) => question.id).reverse());
 });
 
 test("sorting builder refuses non-permutation orders and missing item media on import", async ({ page }) => {
@@ -66,4 +68,10 @@ test("sorting builder refuses non-permutation orders and missing item media on i
   await expect(page.getByText(/Sorting order must contain every item ID exactly once/)).toBeVisible();
   await importPack(page, [round]);
   await expect(page.getByText("Referenced media file is missing in archive: clip.aac", { exact: true })).toBeVisible();
+});
+
+test("sorting builder rejects the obsolete nested item/stages shape", async ({ page }) => {
+  const { questions, ...metadata } = round;
+  await importPack(page, [{ ...metadata, items: questions.map(({ id, ...stage }) => ({ id, stages: [stage] })) }]);
+  await expect(page.getByText(/Invalid sorting round/)).toBeVisible();
 });
