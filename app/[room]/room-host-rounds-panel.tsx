@@ -65,7 +65,9 @@ export default function RoomHostRoundsPanel({
     action = <button type="button" disabled={pending} onClick={() => onStartRound?.(round.id)} className={`${buttonClass} bg-[#00e000] hover:bg-green-400`}>Activate</button>;
   } else if (round.state === "active") {
     action = <button type="button" disabled={pending} onClick={() => onEndRound?.(round.id)} className={`${buttonClass} bg-[#ef0000] text-white hover:bg-red-600`}>End round</button>;
-  } else if (round.type === "image" || round.type === "sorting") {
+  } else if (round.gradingRequired !== false) {
+    action = <button type="button" disabled={pending} onClick={() => onGradeRound?.(round.id)} className={`${buttonClass} bg-violet-600 text-white hover:bg-violet-500`}>Grade answers</button>;
+  } else {
     action = <button type="button" disabled={pending} onClick={() => onRevealRound?.(round.id, !isRevealing)} className={`${buttonClass} bg-[#ff9d00] hover:bg-amber-400`}>{isRevealing ? "Hide answers" : "Show answers"}</button>;
   }
 
@@ -101,8 +103,5 @@ export default function RoomHostRoundsPanel({
         {!visibleQuestions.length ? <p className="text-sm text-zinc-500">No questions available.</p> : null}
       </div>}
     </div>
-    {round.state === "closed" && round.gradingRequired && (round.type === "sorting" || round.type === "image" || round.type === "color") ? <div className="shrink-0 pt-2 text-right">
-      <button type="button" disabled={pending} onClick={() => onGradeRound?.(round.id)} className={`${buttonClass} bg-emerald-500 text-white`}>Retry scoring</button>
-    </div> : null}
   </section>;
 }
