@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Locator } from "@playwright/test";
 import { build } from "esbuild";
 import sharp from "sharp";
 
@@ -19,6 +19,7 @@ type Harness = Window & {
   rejectColorRead?: string;
   setFrozenColor: (team: string, color: string | null, questionId: string) => void;
   colorTeams?: Array<{ id: string; name: string }>;
+  renderSecondColor: () => void;
 };
 
 async function bundle(format: "raster" | "svg") {
@@ -28,13 +29,20 @@ async function bundle(format: "raster" | "svg") {
       import { createRoot } from 'react-dom/client';
       import { ColorPresenting } from './lib/components/color-presenting';
       const root = createRoot(document.getElementById('color-test'));
-      window.renderColor = (host, state, reveal = false, questionId = 'q1', teamId = 'red') => {
+      const colorView = (host, state, reveal = false, questionId = 'q1', teamId = 'red') => {
         if (state === 'closed') window.freezeColorAnswers();
-        root.render(
-        <ColorPresenting key={[host ? 'host' : teamId, questionId].join(':')} roomSlug="demo"
+        return <ColorPresenting key={[host ? 'host' : teamId, questionId].join(':')} roomSlug="demo"
           round={{ id:'r1', type:'color', state, title:'Colors', order:0 }}
           question={{ id:questionId, order:0, prompt:null, displayPrompt:questionId, initialColor:questionId === 'q1' ? '#83C547' : '#112233', media:{storagePath:'image'}, ${format === "svg" ? "regionIds:['left','right']" : "mask:{storagePath:'mask'}"} }}
-          teamId={teamId} isHost={host} teams={window.colorTeams ?? [{id:'red',name:'Red team'},{id:'blue',name:'Blue team'}]} withAnswer={reveal} />);
+          teamId={teamId} isHost={host} teams={window.colorTeams ?? [{id:'red',name:'Red team'},{id:'blue',name:'Blue team'}]} withAnswer={reveal} />;
+      };
+      window.renderColor = (...args) => root.render(colorView(...args));
+      window.renderSecondColor = () => {
+        const element = document.createElement('div');
+        element.id = 'second-player';
+        element.className = 'flex h-[420px] flex-col bg-zinc-950';
+        document.body.append(element);
+        createRoot(element).render(colorView(false, 'closed'));
       };
       window.renderColor(false, 'active');`, resolveDir: process.cwd(), loader: "tsx" },
     bundle: true, write: false, jsx: "automatic", define: { "process.env.NODE_ENV": '"development"' },
@@ -143,7 +151,7 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
   }, { image: format === "svg" ? `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 64"><rect width="160" height="64" style="fill:#4285F4"/><rect id="left" x="16" width="64" height="64" fill="red" style="fill:#4285F4!important"/><rect id="right" x="80" width="80" height="64" style="fill:#4285F4"/></svg>')}` : `data:image/png;base64,${image.toString("base64")}`, mask: `data:image/png;base64,${mask.toString("base64")}` });
   await page.addScriptTag({ content: await bundle(format) });
   const assetReads = format === "svg" ? ["image"] : ["image", "mask"];
-  const pixel = (label: string, x = 120) => page.getByRole("img", { name: label, exact: true }).evaluate(async (element, x) => {
+  const pixel = (label: string, x = 120, container?: Locator) => (container ?? page).getByRole("img", { name: label, exact: true }).evaluate(async (element, x) => {
     if (element instanceof HTMLCanvasElement) return [...element.getContext("2d")!.getImageData(x, 32, 1, 1).data];
     const image = new Image();
     const copy = element.cloneNode(true) as SVGSVGElement;
@@ -160,7 +168,7 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
     } finally { URL.revokeObjectURL(url); }
   }, x);
   await expect.poll(() => pixel("Color question")).toEqual([131, 197, 71, 255]);
-  await expect(page.getByRole("region", { name: "Other teams' submissions" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Opponent submission", exact: true })).toHaveCount(0);
   expect(await page.evaluate(() => (window as unknown as Harness).colorReads.some((path) => path.includes("/teams/blue/") || path.includes("/teamAnswers/blue/")))).toBe(false);
   await expect(page.getByText("Team", { exact: true })).toBeVisible();
   if (format === "svg") await expect.poll(() => pixel("Color question", 40)).toEqual([131, 197, 71, 255]);
@@ -349,20 +357,14 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
   async function expectImagesFitPanel() {
     const panel = page.locator("#color-test");
     const bounds = (await panel.boundingBox())!;
-    expect(await panel.evaluate((element) => [...element.querySelectorAll("div")].filter((child) => !child.closest("section[aria-label=\"Other teams' submissions\"]")).every((child) => child.scrollHeight <= child.clientHeight + 1))).toBe(true);
+    expect(await panel.evaluate((element) => [...element.querySelectorAll("div")].every((child) => child.scrollHeight <= child.clientHeight + 1))).toBe(true);
     for (const image of await panel.getByRole("img").all()) {
       const imageBounds = (await image.boundingBox())!;
       expect(imageBounds.height).toBeGreaterThan(0);
-      if (await image.evaluate((element) => !!element.closest("section[aria-label=\"Other teams' submissions\"]"))) continue;
+      expect(imageBounds.x).toBeGreaterThanOrEqual(bounds.x);
+      expect(imageBounds.x + imageBounds.width).toBeLessThanOrEqual(bounds.x + bounds.width);
       expect(imageBounds.y).toBeGreaterThanOrEqual(bounds.y);
       expect(imageBounds.y + imageBounds.height).toBeLessThanOrEqual(bounds.y + bounds.height);
-    }
-    const gallery = panel.getByRole("region", { name: "Other teams' submissions" });
-    if (await gallery.count()) {
-      const galleryBounds = (await gallery.boundingBox())!;
-      expect(galleryBounds.y).toBeGreaterThanOrEqual(bounds.y);
-      expect(galleryBounds.y + galleryBounds.height).toBeLessThanOrEqual(bounds.y + bounds.height);
-      expect(await gallery.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
     }
   }
   await page.locator("#color-test").evaluate((element) => { element.style.height = "240px"; });
@@ -376,34 +378,53 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
   await expect(page.getByText("Team", { exact: true })).toHaveCount(0);
   const readsBeforePlayer = await page.evaluate(() => (window as unknown as Harness).colorReads.length);
   await page.evaluate(() => (window as unknown as Harness).renderColor(false, "closed"));
+  const ownSubmission = page.getByRole("region", { name: "Your submission", exact: true });
+  const opponentSubmission = page.getByRole("region", { name: "Opponent submission", exact: true });
+  await expect(ownSubmission).toBeVisible();
+  await expect(opponentSubmission).toBeVisible();
   await expect(page.getByRole("slider")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /^(Unl|L)ock answer$/ })).toHaveCount(0);
-  await expect(page.getByText("Team", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Question score")).toHaveCount(0);
   await expect(page.getByRole("img", { name: "Correct answer" })).toHaveCount(0);
-  await expect.poll(() => pixel("Color question")).toEqual([255, 0, 0, 255]);
-  await expect(page.getByRole("region", { name: "Other teams' submissions" })).toHaveCount(0);
-  expect(await page.evaluate((start) => (window as unknown as Harness).colorReads.slice(start).some((path) => path.includes("/teams/blue/") || path.includes("/teamAnswers/blue/")), readsBeforePlayer)).toBe(false);
-  await page.evaluate(() => (window as unknown as Harness).setTeamColor("red", "#00FF00"));
-  await expect.poll(() => pixel("Color question")).toEqual([255, 0, 0, 255]);
+  await expect(ownSubmission.getByRole("heading")).toHaveText("Red team");
+  await expect(opponentSubmission.getByRole("heading")).toHaveText("Blue team");
+  await expect.poll(() => pixel("Red team's answer")).toEqual([255, 0, 0, 255]);
+  await expect.poll(() => pixel("Blue team's answer")).toEqual([0, 255, 0, 255]);
+  await expect(opponentSubmission.getByRole("button", { name: "Next opponent" })).toBeDisabled();
+  await expect(opponentSubmission.getByRole("button", { name: "Previous opponent" })).toBeDisabled();
+  const ownBounds = (await ownSubmission.boundingBox())!;
+  const opponentBounds = (await opponentSubmission.boundingBox())!;
+  expect(ownBounds.x + ownBounds.width).toBeLessThanOrEqual(opponentBounds.x);
+  expect(ownBounds.y).toBe(opponentBounds.y);
+  expect(ownBounds.height).toBe(opponentBounds.height);
+  await expectImagesFitPanel();
+  expect(await page.evaluate((start) => (window as unknown as Harness).colorReads.slice(start).sort(), readsBeforePlayer)).toEqual([
+    "rooms/demo/rounds/r1/teamAnswers/blue/answers/q1",
+    "rooms/demo/rounds/r1/teamAnswers/red/answers/q1",
+  ]);
+  await page.evaluate(() => {
+    const w = window as unknown as Harness;
+    w.setTeamColor("red", "#00FF00");
+    w.setTeamColor("blue", "#0000FF");
+  });
+  await expect.poll(() => pixel("Red team's answer")).toEqual([255, 0, 0, 255]);
+  await expect.poll(() => pixel("Blue team's answer")).toEqual([0, 255, 0, 255]);
+  await page.screenshot({ path: testInfo.outputPath(`closed-submissions-${width}.png`), fullPage: true });
+
   await page.mouse.move(0, 0);
   await page.evaluate(() => (window as unknown as Harness).renderColor(false, "closed", true));
-  await expect.poll(() => pixel("Correct answer")).toEqual([66, 133, 244, 255]);
-  const gallery = page.getByRole("region", { name: "Other teams' submissions" });
-  await expect(gallery).toBeVisible();
-  await expect(gallery.getByText("Blue team", { exact: true })).toBeVisible();
-  await expect(gallery.getByText("Red team", { exact: true })).toHaveCount(0);
+  await expect.poll(() => pixel("Correct answer", 120, ownSubmission)).toEqual([66, 133, 244, 255]);
   await expect.poll(() => pixel("Blue team's answer")).toEqual([0, 255, 0, 255]);
-  await page.evaluate(() => (window as unknown as Harness).setTeamColor("blue", "#0000FF"));
-  await expect.poll(() => pixel("Blue team's answer")).toEqual([0, 255, 0, 255]);
+  await expect(opponentSubmission.getByRole("img", { name: "Correct answer" })).toHaveCount(0);
   await expect(page.getByLabel("Question score")).toContainText("Scoring...");
   await page.evaluate(() => (window as unknown as Harness).gradeTeamColor("red", 8.74, 0.5));
   await expect(page.getByLabel("Question score")).toContainText("8.74 / 10");
   await expect(page.getByLabel("Question score")).toContainText("Points 0.5");
   expect(await page.evaluate((start) => (window as unknown as Harness).colorReads.slice(start).filter((path) => path.includes("/teamAnswers/blue/")), readsBeforePlayer)).toEqual(["rooms/demo/rounds/r1/teamAnswers/blue/answers/q1"]);
   await expectImagesFitPanel();
-  const comparison = page.getByRole("button", { name: "Compare submitted image" });
-  const transition = page.locator(".color-answer-transition");
+  const comparison = ownSubmission.getByRole("button", { name: "Compare submitted image" });
+  const opponentComparison = opponentSubmission.getByRole("button", { name: "Compare submitted image" });
+  const transition = ownSubmission.locator(".color-answer-transition");
   await transition.evaluate((element) => {
     const animation = element.getAnimations()[0];
     animation.pause();
@@ -412,56 +433,48 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
     if (fold) { fold.pause(); fold.currentTime = 500; }
   });
   await expect(transition).toHaveCSS("clip-path", "inset(0px 50% 0px 0px)");
-  await expect(page.locator(".color-answer-fold")).toHaveCSS("opacity", "1");
-  async function halves() {
-    const screenshot = await comparison.screenshot();
-    const bounds = (await comparison.boundingBox())!;
+  await expect(ownSubmission.locator(".color-answer-fold")).toHaveCSS("opacity", "1");
+  async function halves(button: Locator) {
+    const screenshot = await button.screenshot();
+    const bounds = (await button.boundingBox())!;
     const imageWidth = Math.min(bounds.width, bounds.height * 160 / 64);
-    const pixels = await Promise.all([-1, 1].map(async (side) => [...await sharp(screenshot).extract({ left: Math.floor(bounds.width / 2 + side * imageWidth / 4), top: Math.floor(bounds.height / 2), width: 1, height: 1 }).removeAlpha().raw().toBuffer()]));
-    return pixels;
+    return Promise.all([-1, 1].map(async (side) => [...await sharp(screenshot).extract({ left: Math.floor(bounds.width / 2 + side * imageWidth / 4), top: Math.floor(bounds.height / 2), width: 1, height: 1 }).removeAlpha().raw().toBuffer()]));
   }
-  expect(await halves()).toEqual([[66, 133, 244], [255, 0, 0]]);
-  await page.screenshot({ path: testInfo.outputPath(`wipe-${width}.png`), fullPage: true });
+  expect(await halves(comparison)).toEqual([[66, 133, 244], [255, 0, 0]]);
   await transition.evaluate((element) => element.getAnimations()[0].finish());
-  await page.mouse.move(0, 0);
   await comparison.hover();
-  await expect.poll(() => pixel("Submitted answer")).toEqual([255, 0, 0, 255]);
-  await expect(page.locator(".color-answer-correct-layer")).toHaveCSS("clip-path", "inset(0px 0px 0px 50%)");
-  expect(await halves()).toEqual([[255, 0, 0], [66, 133, 244]]);
+  await expect.poll(() => pixel("Red team's answer")).toEqual([255, 0, 0, 255]);
+  await expect(ownSubmission.locator(".color-answer-correct-layer")).toHaveCSS("clip-path", "inset(0px 0px 0px 50%)");
+  expect(await halves(comparison)).toEqual([[255, 0, 0], [66, 133, 244]]);
   await expect(comparison.getByText("Team", { exact: true })).toBeVisible();
   await expect(comparison.getByText("Original", { exact: true })).toBeVisible();
-  const imageBounds = (await comparison.boundingBox())!;
-  const teamLabel = (await comparison.getByText("Team", { exact: true }).boundingBox())!;
-  const originalLabel = (await comparison.getByText("Original", { exact: true }).boundingBox())!;
-  const artworkWidth = Math.min(imageBounds.width, imageBounds.height * 160 / 64);
-  const artworkHeight = artworkWidth * 64 / 160;
-  const horizontalInset = (imageBounds.width - artworkWidth) / 2;
-  const verticalInset = (imageBounds.height - artworkHeight) / 2;
-  expect(Math.abs(teamLabel.x - imageBounds.x - horizontalInset - 8)).toBeLessThan(1);
-  expect(Math.abs(imageBounds.x + imageBounds.width - originalLabel.x - originalLabel.width - horizontalInset - 8)).toBeLessThan(1);
-  expect(Math.abs(teamLabel.y - imageBounds.y - verticalInset - 8)).toBeLessThan(1);
-  expect(Math.abs(originalLabel.y - imageBounds.y - verticalInset - 8)).toBeLessThan(1);
-  await page.screenshot({ path: testInfo.outputPath(`split-${width}.png`), fullPage: true });
-  await page.mouse.move(0, 0);
-  await expect.poll(() => pixel("Correct answer")).toEqual([66, 133, 244, 255]);
-  await expect(page.locator(".color-answer-correct-layer")).toHaveCSS("clip-path", "inset(0px)");
+  await opponentComparison.hover();
+  await expect(opponentSubmission.locator(".color-answer-correct-layer")).toHaveCSS("clip-path", "inset(0px 0px 0px 50%)");
+  expect(await halves(opponentComparison)).toEqual([[0, 255, 0], [66, 133, 244]]);
+  await expect(opponentComparison.getByText("Original", { exact: true })).toBeVisible();
   await expect(comparison.getByText("Team", { exact: true })).toBeHidden();
-  await expect(comparison.getByText("Original", { exact: true })).toBeVisible();
+  await page.mouse.move(0, 0);
+  await expect(opponentComparison.getByText("Original", { exact: true })).toBeHidden();
+  await expect(opponentComparison.getByText("Team", { exact: true })).toBeVisible();
+  await expect.poll(() => pixel("Correct answer", 120, ownSubmission)).toEqual([66, 133, 244, 255]);
   await page.keyboard.press("Tab");
-  await comparison.focus();
-  await expect(comparison).toBeFocused();
-  await expect.poll(() => pixel("Submitted answer")).toEqual([255, 0, 0, 255]);
-  await comparison.blur();
-  await expect.poll(() => pixel("Correct answer")).toEqual([66, 133, 244, 255]);
-  await comparison.dispatchEvent("pointerdown", { pointerType: "touch" });
-  await expect.poll(() => pixel("Submitted answer")).toEqual([255, 0, 0, 255]);
-  await comparison.dispatchEvent("pointerup", { pointerType: "touch" });
-  await expect.poll(() => pixel("Correct answer")).toEqual([66, 133, 244, 255]);
+  for (const button of [comparison, opponentComparison]) {
+    await button.focus();
+    await expect(button).toHaveAttribute("aria-pressed", "true");
+    await button.blur();
+    await expect(button).toHaveAttribute("aria-pressed", "false");
+    await button.dispatchEvent("pointerdown", { pointerType: "touch" });
+    await expect(button).toHaveAttribute("aria-pressed", "true");
+    await button.dispatchEvent("pointerup", { pointerType: "touch" });
+    await expect(button).toHaveAttribute("aria-pressed", "false");
+  }
+  await expect(opponentSubmission.locator(".color-answer-correct-layer")).toHaveCSS("clip-path", "inset(0px 0px 0px 100%)");
   await page.screenshot({ path: testInfo.outputPath(`reveal-${width}.png`), fullPage: true });
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.evaluate(() => (window as unknown as Harness).renderColor(false, "closed", false));
   await expect(page.getByRole("img", { name: "Correct answer" })).toHaveCount(0);
-  await expect(gallery).toHaveCount(0);
+  await expect.poll(() => pixel("Red team's answer")).toEqual([255, 0, 0, 255]);
+  await expect.poll(() => pixel("Blue team's answer")).toEqual([0, 255, 0, 255]);
   await page.evaluate(() => (window as unknown as Harness).renderColor(false, "closed", true));
   await expect(transition).toHaveCSS("animation-name", "none");
   await page.evaluate(() => (window as unknown as Harness).gradeTeamColor("red", 0, 0));
@@ -469,68 +482,105 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
   await expect(page.getByLabel("Question score")).toContainText("Points 0");
   expect(await page.evaluate(() => (window as unknown as Harness).colorAssetReads)).toEqual(assetReads);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await page.evaluate(() => (window as unknown as Harness).renderColor(false, "closed", true, "q2"));
-  await expect.poll(() => pixel("Correct answer")).toEqual([255, 0, 255, 255]);
+  await page.evaluate(() => (window as unknown as Harness).renderColor(false, "closed", false, "q2"));
+  await expect.poll(() => pixel("Red team's answer")).toEqual([255, 255, 0, 255]);
   await expect.poll(() => pixel("Blue team's answer")).toEqual([17, 34, 51, 255]);
-  await comparison.hover();
-  await expect.poll(() => pixel("Submitted answer")).toEqual([255, 255, 0, 255]);
+  await expect(page.getByRole("img", { name: "Correct answer" })).toHaveCount(0);
   await page.evaluate(() => (window as unknown as Harness).renderColor(false, "closed", true, "q1", "blue"));
-  await expect(gallery.getByText("Red team", { exact: true })).toBeVisible();
-  await expect(gallery.getByText("Blue team", { exact: true })).toHaveCount(0);
+  await expect(ownSubmission.getByRole("heading")).toHaveText("Blue team");
+  await expect(opponentSubmission.getByRole("heading")).toHaveText("Red team");
   await expect.poll(() => pixel("Red team's answer")).toEqual([255, 0, 0, 255]);
   await page.mouse.move(0, 0);
   await comparison.hover();
-  await expect.poll(() => pixel("Submitted answer")).toEqual([0, 255, 0, 255]);
+  await expect.poll(() => pixel("Blue team's answer")).toEqual([0, 255, 0, 255]);
 
   await page.evaluate(() => {
     const w = window as unknown as Harness;
     w.deferColorReads = true;
-    w.renderColor(false, "closed", true, "q2");
+    w.renderColor(false, "closed", false, "q2");
   });
-  await expect(gallery.getByRole("status")).toHaveText("Loading submission...");
-  await page.evaluate(() => (window as unknown as Harness).renderColor(false, "closed", true));
-  await expect(gallery.getByRole("status")).toHaveText("Loading submission...");
+  await expect(opponentSubmission.getByRole("status")).toHaveText("Loading submission...");
+  await page.evaluate(() => (window as unknown as Harness).renderColor(false, "closed"));
+  await expect(opponentSubmission.getByRole("status")).toHaveText("Loading submission...");
   await page.evaluate(() => (window as unknown as Harness).releaseColorReads());
   await expect.poll(() => pixel("Blue team's answer")).toEqual([0, 255, 0, 255]);
-  await expect.poll(() => pixel("Correct answer")).toEqual([66, 133, 244, 255]);
+  await expect.poll(() => pixel("Red team's answer")).toEqual([255, 0, 0, 255]);
 
   await page.evaluate(() => {
     const w = window as unknown as Harness;
     w.rejectColorRead = "rooms/demo/rounds/r1/teamAnswers/blue/answers/q2";
-    w.renderColor(false, "closed", true, "q2");
+    w.renderColor(false, "closed", false, "q2");
   });
   await expect(page.getByRole("alert")).toHaveText("Unable to load team submissions.");
   await page.evaluate(() => {
     const w = window as unknown as Harness;
     w.rejectColorRead = undefined;
-    w.renderColor(false, "closed", true);
+    w.renderColor(false, "closed");
   });
-  await expect(gallery).toBeVisible();
+  await expect(opponentSubmission).toBeVisible();
   await page.evaluate(() => {
     const w = window as unknown as Harness;
     w.setFrozenColor("blue", "red", "q2");
-    w.renderColor(false, "closed", true, "q2");
+    w.renderColor(false, "closed", false, "q2");
   });
   await expect(page.getByRole("alert")).toHaveText("Invalid final color submission for team blue.");
-  await page.evaluate(() => (window as unknown as Harness).renderColor(false, "closed", true));
-  await expect(gallery).toBeVisible();
+  await page.evaluate(() => (window as unknown as Harness).renderColor(false, "closed"));
+  await expect(opponentSubmission).toBeVisible();
   await page.evaluate(() => {
     const w = window as unknown as Harness;
     w.setFrozenColor("blue", null, "q2");
-    w.renderColor(false, "closed", true, "q2");
+    w.renderColor(false, "closed", false, "q2");
   });
-  await expect(gallery.getByText("No final submission")).toBeVisible();
+  await expect(opponentSubmission.getByText("No final submission")).toBeVisible();
 
+  const writesBeforeSelection = await writeCount();
   await page.evaluate(() => {
     const w = window as unknown as Harness;
     w.colorTeams = [{ id: "red", name: "Red team" }, ...Array.from({ length: 9 }, (_, index) => ({ id: `extra-${index}`, name: `Team ${index + 1}` }))];
     w.colorTeams.slice(1).forEach((team) => w.setFrozenColor(team.id, "#00FFFF", "q1"));
-    w.renderColor(false, "closed", true);
+    w.renderColor(false, "closed");
   });
-  const lastSubmission = gallery.getByRole("figure").last();
-  await lastSubmission.scrollIntoViewIfNeeded();
-  await expect(lastSubmission.getByText("Team 9", { exact: true })).toBeVisible();
+  await expect(opponentSubmission.getByRole("heading")).toHaveText("Team 1");
+  await expect.poll(() => pixel("Team 1's answer")).toEqual([0, 255, 255, 255]);
+  const readsBeforeSelection = await page.evaluate(() => (window as unknown as Harness).colorReads.length);
+  const previous = opponentSubmission.getByRole("button", { name: "Previous opponent" });
+  const next = opponentSubmission.getByRole("button", { name: "Next opponent" });
+  await previous.click();
+  await expect(opponentSubmission.getByRole("heading")).toHaveText("Team 9");
+  await next.click();
+  await expect(opponentSubmission.getByRole("heading")).toHaveText("Team 1");
+  for (let index = 0; index < 8; index++) await next.click();
+  await expect(opponentSubmission.getByRole("heading")).toHaveText("Team 9");
   await expect.poll(() => pixel("Team 9's answer")).toEqual([0, 255, 255, 255]);
+  expect(await page.evaluate(() => (window as unknown as Harness).colorReads.length)).toBe(readsBeforeSelection);
+  await page.evaluate(() => (window as unknown as Harness).renderColor(false, "closed", true));
+  await expect(opponentSubmission.getByRole("heading")).toHaveText("Team 9");
+  await expect.poll(() => pixel("Team 9's answer")).toEqual([0, 255, 255, 255]);
+  await page.evaluate(() => (window as unknown as Harness).renderColor(false, "closed"));
+  await expect(opponentSubmission.getByRole("heading")).toHaveText("Team 9");
+  expect(await writeCount()).toBe(writesBeforeSelection);
   await expectImagesFitPanel();
-  await page.screenshot({ path: testInfo.outputPath(`gallery-many-teams-${width}.png`), fullPage: true });
+  await page.screenshot({ path: testInfo.outputPath(`opponent-selector-${width}.png`), fullPage: true });
+  await page.evaluate(() => (window as unknown as Harness).renderSecondColor());
+  const secondOpponent = page.locator("#second-player").getByRole("region", { name: "Opponent submission", exact: true });
+  await expect(secondOpponent.getByRole("heading")).toHaveText("Team 1");
+  await expect(page.locator("#color-test").getByRole("region", { name: "Opponent submission", exact: true }).getByRole("heading")).toHaveText("Team 9");
+  expect(await writeCount()).toBe(writesBeforeSelection);
+  await page.evaluate(() => {
+    const w = window as unknown as Harness;
+    w.colorTeams = [{ id: "red", name: "A very long player team name that wraps across several lines" }, { id: "extra-0", name: "A very long opponent team name that wraps across several lines" }];
+    w.renderColor(false, "closed");
+  });
+  const primary = page.locator("#color-test");
+  await expect(primary.getByRole("region", { name: "Opponent submission", exact: true }).getByRole("heading")).toHaveText("A very long opponent team name that wraps across several lines");
+  await expect(primary.getByRole("button", { name: "Next opponent" })).toBeDisabled();
+  await expectImagesFitPanel();
+  await page.evaluate(() => {
+    const w = window as unknown as Harness;
+    w.colorTeams = [{ id: "red", name: "Red team" }];
+    w.renderColor(false, "closed");
+  });
+  await expect(primary.getByText("No other teams", { exact: true })).toBeVisible();
+  await expect(primary.getByRole("button", { name: "Next opponent" })).toHaveCount(0);
+  await expectImagesFitPanel();
 });
