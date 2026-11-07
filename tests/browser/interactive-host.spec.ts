@@ -100,8 +100,12 @@ test("host can present media-only answer questions and hide them without changin
   await setup(page);
   await render(page, "text", "active");
   await expect(page.getByText("1. Question 1", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Show question 1", exact: true }).locator("img")).toHaveAttribute("src", "/interactive-panel/eye.svg");
   await page.getByRole("button", { name: "Show question 1", exact: true }).click();
   await expect(page.getByRole("button", { name: "Hide question 1", exact: true })).toHaveAttribute("aria-pressed", "true");
+  const hideIcon = page.getByRole("button", { name: "Hide question 1", exact: true }).locator("img");
+  await expect(hideIcon).toHaveAttribute("src", "/interactive-panel/eye-slash.svg");
+  await expect.poll(() => hideIcon.evaluate((image) => (image as HTMLImageElement).naturalWidth)).toBe(32);
   await page.getByRole("button", { name: "Hide question 1", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Capital cities" })).toBeVisible();
   expect(await page.evaluate(() => (window as unknown as Fixture).actions)).toEqual([["question", "text", "1"], ["hide"]]);

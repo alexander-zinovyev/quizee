@@ -8,6 +8,7 @@ const icons = {
   check: { width: 16, height: 12, white: true },
   pencil: { width: 16, height: 16, white: true },
   eye: { width: 24, height: 16, white: true },
+  "eye-slash": { width: 32, height: 32, white: false },
   zoom: { width: 27, height: 27, white: true },
   drag: { width: 12, height: 20, white: false },
 } as const;
