@@ -5,6 +5,8 @@ import { readFile } from "node:fs/promises";
 import { createTarGz } from "../../lib/build/tar-gz";
 import { readTarEntries } from "../../lib/build/tar-reader";
 import { parseColorSvg } from "../../lib/media/color-svg";
+import { validateQuizFile } from "../../server/rooms/validation";
+import { createRoundDocumentData } from "../../server/rooms/manifest";
 
 async function pack(maskWidth = 64) {
   const image = await sharp({ create: { width: 64, height: 64, channels: 4, background: "#4285F4" } }).png().toBuffer();
@@ -14,6 +16,41 @@ async function pack(maskWidth = 64) {
     { name: "media/logo.png", data: image }, { name: "media/mask.png", data: mask },
   ]));
 }
+
+for (const width of [1440, 390]) test(`proportional scoring survives pack export, import, and room metadata at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 900 });
+  await page.goto("/build");
+  const input = page.locator('input[accept=".tar.gz,application/gzip"]');
+  await input.setInputFiles({ name: "colors.tar.gz", mimeType: "application/gzip", buffer: await pack() });
+  await expect(page.getByLabel("Scoring mode")).toHaveValue("closest");
+  await page.getByLabel("Color points").fill("3");
+  await page.getByLabel("Scoring mode").selectOption("proportional");
+  await expect(page.getByLabel("Color points")).toHaveCount(0);
+  await expect(page.getByLabel("Threshold", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Tie tolerance")).toHaveCount(0);
+  await expect(page.getByText("Similarity score / 10, up to 1 point per question.")).toBeVisible();
+  const downloading = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Generate pack" }).click();
+  const exportedPack = await readFile((await (await downloading).path())!);
+  const entries = readTarEntries(gunzipSync(exportedPack));
+  const quizJson = new TextDecoder().decode(entries.find((entry) => entry.name === "quiz.json")!.data);
+  expect(JSON.parse(quizJson)[0].scoring).toEqual({ mode: "proportional" });
+  const rounds = validateQuizFile(quizJson);
+  if (typeof rounds === "string") throw new Error(rounds);
+  expect(createRoundDocumentData(rounds[0]).scoring).toEqual({ mode: "proportional" });
+  await page.goto("/build");
+  await input.setInputFiles({ name: "exported.tar.gz", mimeType: "application/gzip", buffer: exportedPack });
+  await expect(page.getByText("Loaded 1 round(s) and 2 media file(s).")).toBeVisible();
+  await expect(page.getByLabel("Scoring mode")).toHaveValue("proportional");
+  await expect(page.getByLabel("Color points")).toHaveCount(0);
+  await page.getByLabel("Scoring mode").selectOption("threshold");
+  await expect(page.getByLabel("Color points")).toHaveValue("1");
+  await expect(page.getByLabel("Threshold", { exact: true })).toHaveValue("8.5");
+  await page.getByLabel("Scoring mode").selectOption("closest");
+  await expect(page.getByLabel("Color points")).toHaveValue("1");
+  await expect(page.getByLabel("Tie tolerance")).toHaveValue("0.05");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
 
 for (const width of [1440, 390]) test(`builder previews and exports color round at ${width}px`, async ({ page }, testInfo) => {
   await page.setViewportSize({ width, height: 900 });

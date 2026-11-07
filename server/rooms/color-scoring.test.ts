@@ -25,6 +25,11 @@ for (const [answer, target, expected] of [
 assert.deepEqual(awardColorPoints({ a: 8.5, b: 8.499 }, { mode: "threshold", points: 2, threshold: 8.5 }), { a: 2, b: 0 });
 assert.deepEqual(awardColorPoints({ a: 9, b: 8.96, c: 8 }, { mode: "closest", points: 1, tieTolerance: 0.05 }), { a: 0.5, b: 0.5, c: 0 });
 assert.deepEqual(awardColorPoints({ a: 1, b: 1, c: 1 }, { mode: "closest", points: 1, tieTolerance: 0.05 }), { a: 1 / 3, b: 1 / 3, c: 1 / 3 });
+assert.deepEqual(awardColorPoints({ zero: 0, a: 8.5, b: 8.57, tied: 8.57, perfect: 10 }, { mode: "proportional" }),
+  { zero: 0, a: 0.85, b: 0.857, tied: 0.857, perfect: 1 });
+assert.deepEqual(awardColorPoints({ solo: 8.57 }, { mode: "proportional" }), { solo: 0.857 });
+assert.deepEqual(awardColorPoints({}, { mode: "proportional" }), {});
+for (const score of [-1, 11, NaN, Infinity]) assert.throws(() => awardColorPoints({ team: score }, { mode: "proportional" }), /Invalid perception score/);
 
 async function main() {
   const { db, docs } = database();
@@ -39,5 +44,26 @@ async function main() {
   await gradeColorRound(db, "demo", "r1", "host");
   assert.equal(docs.get("rooms/demo/teams/red")?.scoreTotal, 0.5);
   await assert.rejects(gradeColorRound(db, "demo", "r1", "player"), /Forbidden/);
+
+  const proportional = database();
+  proportional.docs.set("rooms/demo/rounds/r1", { type: "color", state: "closed", gradingRequired: true, scoring: { mode: "proportional" } });
+  for (const [id, answer, target] of [["q1", "#DC94F2", "#D5AEEB"], ["q2", "#13686E", "#204744"]]) {
+    proportional.docs.set(`rooms/demo/rounds/r1/questions/${id}`, { initialColor: answer });
+    proportional.docs.set(`rooms/demo/rounds/r1/answers/${id}`, { answer: target });
+    // Red submitted; blue falls back to the initial color. Equal scores receive full awards.
+    proportional.docs.set(`rooms/demo/rounds/r1/teamAnswers/red/answers/${id}`, { answer });
+  }
+  proportional.docs.set("rooms/demo/teams/red", { scoreTotal: 4.25 });
+  await gradeColorRound(proportional.db, "demo", "r1", "host");
+  const total = 8.89 / 10 + 8.09 / 10;
+  for (const team of ["red", "blue"]) {
+    assert.equal(proportional.docs.get(`rooms/demo/rounds/r1/teamAnswers/${team}/answers/q1`)?.perceptionScore, 8.89);
+    assert.equal(proportional.docs.get(`rooms/demo/rounds/r1/teamAnswers/${team}/answers/q1`)?.awardedPoints, 0.889);
+    assert.equal(proportional.docs.get(`rooms/demo/rounds/r1/teamAnswers/${team}/answers/q2`)?.awardedPoints, 8.09 / 10);
+    assert.equal(proportional.docs.get(`rooms/demo/teams/${team}/scores/r1`)?.score, total);
+    assert.equal(proportional.docs.get(`rooms/demo/teams/${team}`)?.scoreTotal, total + (team === "red" ? 4.25 : 0));
+  }
+  await gradeColorRound(proportional.db, "demo", "r1", "host");
+  assert.equal(proportional.docs.get("rooms/demo/teams/red")?.scoreTotal, total + 4.25);
 }
 void main().catch((error) => { console.error(error); process.exitCode = 1; });

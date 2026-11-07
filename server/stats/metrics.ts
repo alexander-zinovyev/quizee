@@ -35,6 +35,7 @@ export function inferQuestionMaximum(scoring: StatsRoundScoring, override?: numb
     case "color": {
       if (scoring.scoring === null) break;
       const rule = scoring.scoring;
+      if (rule.mode === "proportional") return configured(1);
       if (finite(rule.points, "Color points") <= 0) throw new Error("Color points must be positive.");
       const parameter = rule.mode === "threshold" ? rule.threshold : rule.mode === "closest" ? rule.tieTolerance : NaN;
       if (finite(parameter, "Color scoring parameter") < 0 || parameter > 10) throw new Error("Invalid color scoring parameter.");

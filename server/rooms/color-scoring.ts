@@ -23,6 +23,7 @@ export function perceptionScore(answer: string, target: string) {
 export function awardColorPoints(scores: Record<string, number>, scoring: ColorScoring): Record<string, number> {
   const entries = Object.entries(scores);
   if (!entries.every(([, score]) => Number.isFinite(score) && score >= 0 && score <= 10)) throw new Error("Invalid perception score.");
+  if (scoring.mode === "proportional") return Object.fromEntries(entries.map(([team, score]) => [team, score / 10]));
   const best = Math.max(...entries.map(([, score]) => score));
   const winners = entries.filter(([, score]) => best - score <= (scoring.mode === "closest" ? scoring.tieTolerance : 0) + 1e-12);
   return Object.fromEntries(entries.map(([team, score]) => [team, scoring.mode === "threshold"
