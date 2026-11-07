@@ -109,7 +109,7 @@ async function main() {
       assert.equal(answer.data().user, answer.id === "q1" ? users[1].uid : users[2].uid);
     }
     await assert.rejects(save(2, { type: "lock", questionId: "q1", locked: false }), /closed/);
-    await permissionDenied(setDoc(doc(clients[2].firestore, liveAnswers("images").doc("q1").path), { answer: "i3" }, { merge: true }));
+    await permissionDenied(setDoc(doc(clients[2].firestore, liveAnswers("images", "blue").doc("q1").path), { answer: "i3" }, { merge: true }));
     assert.equal((await request("rounds/images/grade", {}, 1)).status, 403);
     const graded = await request("rounds/images/grade", {});
     assert.equal(graded.status, 200, JSON.stringify(graded.payload));

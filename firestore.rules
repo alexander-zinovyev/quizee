@@ -5,9 +5,9 @@ service cloud.firestore {
     function signedIn() {
       return request.auth != null;
     }
-    
+
     function memberDoc(roomId) {
-    	return get(/databases/$(database)/documents/rooms/$(roomId)/members/$(request.auth.uid));
+      return get(/databases/$(database)/documents/rooms/$(roomId)/members/$(request.auth.uid));
     }
 
     function isMember(roomId) {
@@ -22,18 +22,13 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/rooms/$(roomId));
     }
 
-    function memberTeam(roomId) {
-      return memberDoc(roomId).data.team;
+    function isTeamMember(roomId, teamId) {
+      return isMember(roomId) && memberDoc(roomId).data.team == teamId;
     }
 
-    function roundDoc(roomId, roundId) {
-      return get(/databases/$(database)/documents/rooms/$(roomId)/rounds/$(roundId));
-    }
-
-    function isPresentingAnswer(roomId, roundId, questionId) {
-      return roomDoc(roomId).data.presenting.withAnswer == true
-        && roomDoc(roomId).data.presenting.round == roundId
-        && roomDoc(roomId).data.presenting.question == questionId;
+    function handRaisingEnabled(roomId) {
+      let doc = roomDoc(roomId);
+      return doc.data.state == "playing" && doc.data.handRaisingEnabled == true;
     }
 
     function validRoomState(state) {
@@ -41,22 +36,8 @@ service cloud.firestore {
         && (state == "pending" || state == "playing" || state == "ended");
     }
 
-    function handRaisingEnabled(roomId) {
-      return roomDoc(roomId).data.handRaisingEnabled == true;
-    }
-
-    function roomIsPlaying(roomId) {
-      return roomDoc(roomId).data.state == "playing";
-    }
-
     function teamExists(roomId, teamId) {
       return teamId == null || exists(/databases/$(database)/documents/rooms/$(roomId)/teams/$(teamId));
-    }
-
-    function activeAnswerRound(roomId, roundId) {
-      return roundId != null
-        && roundDoc(roomId, roundId).data.type in ["text", "image", "multi-step", "color", "sorting"]
-        && roundDoc(roomId, roundId).data.state == "active";
     }
 
     match /rooms/{roomId} {
@@ -66,15 +47,7 @@ service cloud.firestore {
         if isHost(roomId)
         && request.resource != null
         && validRoomState(request.resource.data.state)
-        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(["presenting"])
-          || (!activeAnswerRound(roomId, resource.data.presenting.round)
-            && !activeAnswerRound(roomId, request.resource.data.presenting.round)))
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          "state",
-          "presenting",
-          "handRaisingEnabled",
-          "countdownEndsAt"
-        ]);
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["state", "presenting", "handRaisingEnabled", "countdownEndsAt"]);
 
       allow create, delete: if false; // server/Admin SDK only
 
@@ -89,21 +62,13 @@ service cloud.firestore {
         allow read: if signedIn() && (memberId == request.auth.uid || isMember(roomId));
 
         // Host can manage member docs (e.g., assign teams).
-        allow create, update:
-          if isHost(roomId)
-          && request.resource != null
-          && teamExists(roomId, request.resource.data.team)
-          && (!("uid" in request.resource.data) || request.resource.data.uid == memberId);
+        allow write: if isHost(roomId);
 
         allow update:
           if request.auth != null
           && request.auth.uid == memberId
-          && isMember(roomId)
-          && roomIsPlaying(roomId)
           && (handRaisingEnabled(roomId) || request.resource.data.handRaised == false)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["handRaised", "handRaisedAt"]);
-
-        allow delete: if isHost(roomId);
       }
 
       // Teams collection managed by host.
@@ -115,91 +80,58 @@ service cloud.firestore {
           && request.resource != null
           && request.resource.data.name is string
           && request.resource.data.name.size() > 0;
-        
+
         allow delete: if isHost(roomId);
 
-        match /rounds/{roundId} {
-          allow read: if isMember(roomId) && memberTeam(roomId) == teamId;
-          allow write: if false;
+        match /{docs=**} {
+          allow read, write: if isHost(roomId);
+          allow read: if isTeamMember(roomId, teamId);
         }
 
-        match /rounds/{roundId}/answers/{answerId} {
-          allow read:
-            if isMember(roomId)
-            && (memberTeam(roomId) == teamId || (isHost(roomId) && roundDoc(roomId, roundId).data.type == "color"));
-          allow write:
-            if isMember(roomId)
-            && memberTeam(roomId) == teamId
-            && roundDoc(roomId, roundId).data.type == "image"
-            && roomIsPlaying(roomId)
-            && roundDoc(roomId, roundId).data.state == "active";
+        match /messages/{messageId} {
+          allow write: if isTeamMember(roomId, teamId);
         }
 
-        match /scores/{roundId} {
-          allow read: if isMember(roomId);
-          allow write: if isHost(roomId);
+        match /rounds/{roundId}/{docs=**} {
+          allow read, write: if isTeamMember(roomId, teamId);
         }
       }
 
+      // Chat collection
+      match /messages/{messageId} {
+        allow read, write: if isMember(roomId);
+      }
+
+      // Quiz rounds collection
       match /rounds/{roundId} {
-        allow read: if isMember(roomId);
-        allow update: if isHost(roomId)
-          && (!(resource.data.type in ["text", "image", "multi-step", "color", "sorting"])
-            || !request.resource.data.diff(resource.data).affectedKeys().hasAny(["state", "activeWindow"]));
-        allow create, delete: if false;
+        allow read: if isMember(roomId); // allow everyone to list and read round documents
+        allow write: if isHost(roomId);
+
+        function roundDoc() {
+          return get(/databases/$(database)/documents/rooms/$(roomId)/rounds/$(roundId));
+        }
+
+        match /{docs=**} {
+          allow read, write: if isHost(roomId);
+        }
 
         match /questions/{questionId} {
-          allow read: if isMember(roomId);
-          allow write: if false;
+          allow read: if isMember(roomId) && roundDoc().data.state != "scheduled";
         }
 
         match /images/{imageId} {
-          allow read: if isMember(roomId);
-          allow write: if false;
+          allow read: if isMember(roomId) && roundDoc().data.state != "scheduled";
         }
 
         match /answers/{answerId} {
-          allow read:
-            if isHost(roomId)
-            || (isMember(roomId) && (
-              (roundDoc(roomId, roundId).data.type == "sorting"
-                && answerId == "order"
-                && roundDoc(roomId, roundId).data.state == "closed"
-                && roundDoc(roomId, roundId).data.gradingRequired == false)
-              || (roundDoc(roomId, roundId).data.type != "sorting"
-                && isPresentingAnswer(roomId, roundId, answerId))));
-          allow write: if isHost(roomId);
+          allow read: if isMember(roomId) && roundDoc().data.state == "closed";
         }
 
         match /teamAnswers/{teamId} {
-          allow read:
-            if isHost(roomId)
-            || (
-              isMember(roomId)
-              && (
-                roomDoc(roomId).data.state == "ended"
-                || (
-                  memberTeam(roomId) == teamId
-                  && roundDoc(roomId, roundId).data.state == "closed"
-                )
-              )
-            );
-          allow write: if isHost(roomId);
+          allow read: if isMember(roomId) && roundDoc().data.state == "closed";
 
-          match /answers/{answerId} {
-            allow read:
-              if isHost(roomId)
-              || (
-                isMember(roomId)
-                && (
-                  roomDoc(roomId).data.state == "ended"
-                  || (
-                    memberTeam(roomId) == teamId
-                    && roundDoc(roomId, roundId).data.state == "closed"
-                  )
-                )
-              );
-            allow write: if isHost(roomId);
+          match /{docs=**} {
+            allow read: if isMember(roomId) && roundDoc().data.state == "closed";
           }
         }
       }

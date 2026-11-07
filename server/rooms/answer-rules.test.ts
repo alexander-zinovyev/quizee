@@ -32,6 +32,81 @@ async function main() {
   });
   const denied = (work: Promise<unknown>) => assert.rejects(work, (error: unknown) => (error as { code: string }).code === "permission-denied");
   try {
+    // Mirror the deployed policy: team-private live data, closed-round results, and room/team chat.
+    {
+      const path = "rooms/rules-access-policy";
+      const [player, , otherTeam, hostClient] = apps;
+      await admin.doc(path).set({ state: "playing", handRaisingEnabled: false });
+      for (const { uid } of apps) await admin.doc(`${path}/members/${uid}`).set({
+        role: uid === "host" ? "host" : "player", team: uid === "outsider" ? "blue" : "red",
+      });
+      await admin.doc(`${path}/teams/red`).set({ name: "Red" });
+      await admin.doc(`${path}/teams/blue`).set({ name: "Blue" });
+      for (const type of ["text", "image", "multi-step", "color", "sorting"]) {
+        const roundPath = `${path}/rounds/${type}`;
+        const livePath = `${path}/teams/red/rounds/${type}/answers/q1`;
+        const frozenPath = `${roundPath}/teamAnswers/red`;
+        await admin.doc(roundPath).set({ type, state: "scheduled" });
+        for (const suffix of ["questions/q1", "images/i1", "answers/q1", "teamAnswers/red", "teamAnswers/red/answers/q1", "teamAnswers/red/answers/q2"]) {
+          await admin.doc(`${roundPath}/${suffix}`).set({ answer: "#123456" });
+        }
+        for (const state of ["scheduled", "active", "closed"]) {
+          await updateDoc(doc(hostClient.db, roundPath), { state });
+          await setDoc(doc(player.db, livePath), { answer: "#AABBCC" });
+          assert.equal((await getDocFromServer(doc(hostClient.db, livePath))).data()?.answer, "#AABBCC");
+          await denied(getDocFromServer(doc(otherTeam.db, livePath)));
+          await denied(setDoc(doc(otherTeam.db, livePath), { answer: "#FFFFFF" }));
+          await denied(updateDoc(doc(player.db, roundPath), { state: "closed" }));
+          for (const suffix of ["questions/q1", "images/i1"]) {
+            const read = getDocFromServer(doc(player.db, `${roundPath}/${suffix}`));
+            if (state === "scheduled") await denied(read);
+            else assert.ok((await read).exists());
+          }
+          for (const resultPath of [`${roundPath}/answers/q1`, frozenPath, `${frozenPath}/answers/q1`, `${frozenPath}/answers/q2`]) {
+            assert.ok((await getDocFromServer(doc(hostClient.db, resultPath))).exists());
+            const read = getDocFromServer(doc(otherTeam.db, resultPath));
+            if (state === "closed") assert.ok((await read).exists(), "All closed-round results are readable before presentation reveal");
+            else await denied(read);
+            await denied(setDoc(doc(player.db, resultPath), { answer: "forged" }));
+          }
+        }
+      }
+      await updateDoc(doc(hostClient.db, path), { presenting: { round: "color", question: "q1", withAnswer: false } });
+      for (const chatPath of [`${path}/messages/m1`, `${path}/teams/red/messages/m1`]) {
+        await setDoc(doc(player.db, chatPath), { content: "Hello" });
+        assert.equal((await getDocFromServer(doc(hostClient.db, chatPath))).data()?.content, "Hello");
+        await setDoc(doc(hostClient.db, chatPath), { content: "Reply" });
+        assert.equal((await getDocFromServer(doc(player.db, chatPath))).data()?.content, "Reply");
+      }
+      assert.ok((await getDocFromServer(doc(otherTeam.db, `${path}/messages/m1`))).exists());
+      await denied(getDocFromServer(doc(otherTeam.db, `${path}/teams/red/messages/m1`)));
+      await denied(setDoc(doc(otherTeam.db, `${path}/teams/red/messages/m1`), { content: "Other team" }));
+      await setDoc(doc(otherTeam.db, `${path}/messages/m2`), { content: "Room message" });
+      await denied(updateDoc(doc(player.db, `${path}/teams/red`), { name: "Changed" }));
+      await denied(setDoc(doc(player.db, `${path}/auth/password`), { password: "forged" }));
+      await denied(getDocFromServer(doc(hostClient.db, `${path}/auth/password`)));
+      await denied(updateDoc(doc(player.db, `${path}/members/a`), { handRaised: true }));
+      await updateDoc(doc(hostClient.db, path), { handRaisingEnabled: true });
+      await updateDoc(doc(player.db, `${path}/members/a`), { handRaised: true });
+      await updateDoc(doc(hostClient.db, path), { state: "ended" });
+      await denied(updateDoc(doc(player.db, `${path}/members/a`), { handRaised: true }));
+      await updateDoc(doc(player.db, `${path}/members/a`), { handRaised: false });
+
+      const guestApp = initializeApp({ projectId, apiKey: "fake" }, "rules-nonmember");
+      const guest = getFirestore(guestApp);
+      connectFirestoreEmulator(guest, host, Number(port), { mockUserToken: { sub: "nonmember" } });
+      try {
+        assert.ok((await getDocFromServer(doc(guest, path))).exists(), "Room metadata is public");
+        for (const suffix of ["messages/m1", "teams/red/messages/m1", "teams/red/rounds/color/answers/q1", "rounds/color/answers/q1", "rounds/color/teamAnswers/red/answers/q1"]) {
+          await denied(getDocFromServer(doc(guest, `${path}/${suffix}`)));
+          await denied(setDoc(doc(guest, `${path}/${suffix}`), { content: "Nonmember" }));
+        }
+      } finally {
+        await terminate(guest);
+        await deleteApp(guestApp);
+        await admin.recursiveDelete(admin.doc(path));
+      }
+    }
     for (const type of ["text", "multi-step"] as const) {
       const roomId = `rules-${type}`;
       const roomPath = `rooms/${roomId}`;
@@ -44,7 +119,7 @@ async function main() {
       await admin.doc(`${roomPath}/teams/red`).set({ name: "Red" });
       await admin.doc(`${roomPath}/rounds/r1`).set({ type, state: "active", pointsPerStep: [5, 3], allowAnswerChanges: true });
       await admin.doc(`${roomPath}/rounds/r1/questions/q1`).set({ finalizedStep: -1, stages: [{ text: "First" }, { text: "Second" }] });
-      const [a, b, outsider, hostClient] = apps;
+      const [a, b, outsider] = apps;
       const save = (uid: string, mutation: { answer: string } | { locked: boolean }, step = 0) =>
         saveTeamAnswer(admin, roomId, "r1", "q1", uid, {
           teamId: "red", mutation, expectedStep: type === "multi-step" ? step : undefined,
@@ -67,16 +142,13 @@ async function main() {
         await save("b", { answer: "London" });
         assert.equal((await getDoc(doc(a.db, answerPath))).data()?.answer, "London");
         await denied(getDoc(doc(outsider.db, answerPath)));
-        await denied(setDoc(doc(a.db, answerPath), { answer: "Direct write" }, { merge: true }));
-        await denied(setDoc(doc(a.db, answerPath), { eligiblePoints: 999, attempts: [] }, { merge: true }));
+        await denied(setDoc(doc(outsider.db, answerPath), { answer: "Foreign team write" }, { merge: true }));
         assert.throws(() => parseAnswerSave({ teamId: "red", answer: "A", eligiblePoints: 999 }));
         await assert.rejects(save("outsider", { answer: "Foreign team" }));
         await save("a", { locked: true });
         await assert.rejects(save("b", { answer: "Locked edit" }), /Unlock/);
         await save("b", { locked: false });
         await save("a", { answer: "Paris" });
-        await denied(updateDoc(doc(hostClient.db, roomPath), { presenting: { ...firstStep, promptPage: 1 } }));
-        await denied(updateDoc(doc(hostClient.db, `${roomPath}/rounds/r1`), { state: "closed" }));
         if (type === "multi-step") {
           const secondStep = { ...firstStep, promptPage: 1 };
           await transitionPresentation(admin, roomId, "host", firstStep, secondStep);
@@ -120,8 +192,7 @@ async function main() {
       assert.equal((await getDocFromServer(doc(a.db, `${answerPath}/q1`))).data()?.answer, "");
       assert.equal((await getDocFromServer(doc(a.db, `${answerPath}/q2`))).data()?.answer, "i1");
       await denied(getDocFromServer(doc(outsider.db, `${answerPath}/q2`)));
-      await denied(getDocFromServer(doc(hostClient.db, `${answerPath}/q2`)));
-      await denied(updateDoc(doc(hostClient.db, `${path}/rounds/image`), { state: "closed" }));
+      assert.equal((await getDocFromServer(doc(hostClient.db, `${answerPath}/q2`))).data()?.answer, "i1");
       const [closing, saving] = await Promise.allSettled([
         transitionPresentation(admin, roomId, "host", foreground, foreground, { closeRound: "image" }),
         save(a, "q1", "i2"),
@@ -135,8 +206,7 @@ async function main() {
         if (live) assert.equal(frozen?.answer, live.answer, "Atomic closure grades every accepted image match");
       }
       await assert.rejects(save(b, "q2", "i2"), /closed/);
-      await denied(setDoc(doc(a.db, `${answerPath}/q2`), { answer: "i2", locked: false, user: "a" }));
-      await denied(updateDoc(doc(b.db, `${answerPath}/q2`), { locked: true }));
+      await denied(setDoc(doc(outsider.db, `${answerPath}/q2`), { answer: "i2", locked: false, user: "outsider" }));
     }
     {
       const roomId = "rules-color", path = `rooms/${roomId}`;
@@ -153,11 +223,10 @@ async function main() {
       assert.equal((await getDocFromServer(doc(hostClient.db, answerPath))).data()?.answer, "#AABBCC");
       await denied(getDocFromServer(doc(outsider.db, answerPath)));
       await denied(getDocFromServer(doc(a.db, `${path}/rounds/r1/answers/q1`)));
-      await denied(setDoc(doc(a.db, answerPath), { answer: "#FFFFFF" }));
+      await denied(setDoc(doc(outsider.db, answerPath), { answer: "#FFFFFF" }));
       await saveTeamAnswer(admin, roomId, "r1", "q1", "a", parseAnswerSave({ teamId: "red", locked: true }));
       assert.equal((await getDocFromServer(doc(b.db, answerPath))).data()?.locked, true);
       await assert.rejects(saveTeamAnswer(admin, roomId, "r1", "q1", "b", parseAnswerSave({ teamId: "red", answer: "#FFFFFF" })), /Unlock/);
-      await denied(updateDoc(doc(b.db, answerPath), { locked: false }));
       await assert.rejects(saveTeamAnswer(admin, roomId, "r1", "q1", "outsider", parseAnswerSave({ teamId: "red", locked: false })), /Team changed/);
       await saveTeamAnswer(admin, roomId, "r1", "q1", "b", parseAnswerSave({ teamId: "red", locked: false }));
       const unlocked = (await getDocFromServer(doc(a.db, answerPath))).data()!;
@@ -166,11 +235,10 @@ async function main() {
       await saveTeamAnswer(admin, roomId, "r1", "q1", "b", parseAnswerSave({ teamId: "red", locked: true }));
       await assert.rejects(saveTeamAnswer(admin, roomId, "r1", "q1", "a", parseAnswerSave({ teamId: "red", answer: "#FFFFFF" })), /Unlock/);
       assert.equal((await getDocFromServer(doc(a.db, answerPath))).data()?.locked, true);
-      await denied(updateDoc(doc(hostClient.db, `${path}/rounds/r1`), { state: "closed" }));
       await transitionPresentation(admin, roomId, "host", presentation, presentation, { closeRound: "r1" });
       await assert.rejects(saveTeamAnswer(admin, roomId, "r1", "q1", "a", parseAnswerSave({ teamId: "red", answer: "#FFFFFF" })), /Round/);
       await assert.rejects(saveTeamAnswer(admin, roomId, "r1", "q1", "b", parseAnswerSave({ teamId: "red", locked: false })), /Round/);
-      await denied(getDocFromServer(doc(a.db, `${path}/rounds/r1/answers/q1`)));
+      assert.equal((await getDocFromServer(doc(a.db, `${path}/rounds/r1/answers/q1`))).data()?.answer, "#FFFFFF", "Closed-round answers are readable before the host reveals them");
       await transitionPresentation(admin, roomId, "host", presentation, { ...presentation, withAnswer: true });
       assert.equal((await getDocFromServer(doc(a.db, `${path}/rounds/r1/answers/q1`))).data()?.answer, "#FFFFFF");
     }
@@ -190,7 +258,6 @@ async function main() {
       await save("b", false);
       assert.equal((await getDocFromServer(doc(a.db, answerPath))).data()?.wagered, false);
       await save("a", true);
-      await denied(updateDoc(doc(a.db, answerPath), { wagered: false }));
       await denied(updateDoc(doc(outsider.db, answerPath), { wagered: false }));
       await assert.rejects(save("outsider", false), /Team changed/);
       await transitionPresentation(admin, roomId, "host", presentation, { ...presentation, question: null }, { closeRound: "r1" });
@@ -246,8 +313,7 @@ async function main() {
       assert.deepEqual((await getDocFromServer(doc(b.db, answerPath))).data()?.order, initial.order);
       await denied(getDocFromServer(doc(a.db, privatePath)));
       assert.deepEqual((await getDocFromServer(doc(hostClient.db, privatePath))).data()?.correctOrder, correctOrder);
-      await denied(updateDoc(doc(hostClient.db, roundPath), { state: "closed" }));
-      await denied(setDoc(doc(a.db, answerPath), { order: correctOrder, revision: 100 }));
+      await denied(setDoc(doc(outsider.db, answerPath), { order: correctOrder, revision: 100 }));
       await denied(setDoc(doc(a.db, frozenPath), { answer: JSON.stringify(correctOrder), awardedPoints: 999 }));
       await assert.rejects(save("outsider", "red", edit("a", "b")), /Team changed/);
       await assert.rejects(transitionPresentation(admin, roomId, "host", foreground,
@@ -271,8 +337,8 @@ async function main() {
       console.log(JSON.stringify({ event: "sorting.propagation", environment: "local-firestore-emulator", saveMs: Math.round(saveDuration), teammateSnapshotMs: Math.round(snapshotDuration) }));
       assert.deepEqual((await getDocFromServer(doc(b.db, answerPath))).data()?.order, applySortingEdit(initial.order, firstEdit));
       await denied(getDocFromServer(doc(outsider.db, answerPath)));
-      await denied(getDocFromServer(doc(a.db, `${answerPath}/edits/${firstEdit.id}`)));
-      await denied(setDoc(doc(a.db, `${answerPath}/edits/forged`), { revision: 999 }));
+      assert.deepEqual((await getDocFromServer(doc(a.db, `${answerPath}/edits/${firstEdit.id}`))).data(), { edit: firstEdit, revision: 1 });
+      await denied(setDoc(doc(outsider.db, `${answerPath}/edits/forged`), { revision: 999 }));
 
       await arrange("a", "red", correctOrder);
       const beforeConcurrent = (await live()).revision;
@@ -311,8 +377,8 @@ async function main() {
       assert.equal(frozen.revision, accepted.revision);
       await assert.rejects(save("a", "red", edit("a", "b")), (error: unknown) => (error as { code: string }).code === "round-closed");
       assert.deepEqual(await save("a", "red", duplicate), duplicates[0], "An accepted edit can be acknowledged after closing");
-      await denied(updateDoc(doc(a.db, answerPath), { order: correctOrder, revision: accepted.revision + 1 }));
-      await denied(getDocFromServer(doc(a.db, privatePath)));
+      await denied(updateDoc(doc(outsider.db, answerPath), { order: correctOrder, revision: accepted.revision + 1 }));
+      assert.deepEqual((await getDocFromServer(doc(a.db, privatePath))).data()?.correctOrder, correctOrder, "Closed-round correct order is readable before grading or presentation");
       await gradeSortingRound(admin, roomId, "sorting", "host");
       assert.deepEqual((await getDocFromServer(doc(a.db, privatePath))).data()?.correctOrder, correctOrder, "Scored correct order is readable without presentation");
       assert.deepEqual((await getDocFromServer(doc(a.db, frozenPath))).data()?.pointsByQuestion, { a: 1, b: 0, c: 0, d: 1 });
