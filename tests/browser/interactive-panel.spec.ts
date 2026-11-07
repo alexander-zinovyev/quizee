@@ -333,6 +333,68 @@ test("room integration preserves host channels, privately previews scheduled rou
   await expect(host.getByRole("button", { name: "Team Red", exact: true })).toHaveAttribute("aria-pressed", "true");
 });
 
+for (const hidden of [false, true]) test(`ending a color round clears the player's stage when its question is ${hidden ? "hidden" : "visible"}`, async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await setup(page);
+  await page.evaluate(() => {
+    const transport = (window as unknown as Fixture).roomTransport;
+    for (const [index, id] of ["q1", "q2"].entries()) {
+      transport.set(`rooms/demo/rounds/color/questions/${id}`, {
+        order: index, initialColor: "#112233",
+        media: { storagePath: "colors/image.svg" }, mask: { storagePath: "colors/mask.svg" },
+      });
+      transport.set(`rooms/demo/rounds/color/answers/${id}`, { answer: "#445566" });
+      for (const team of ["red", "blue"]) transport.set(`rooms/demo/rounds/color/teamAnswers/${team}/answers/${id}`, {
+        answer: "#112233", perceptionScore: 8, awardedPoints: 1,
+      });
+    }
+    transport.holdGrading = true;
+  });
+  const host = panel(page, "host");
+  const playerStage = room(page, "first").locator("main > section > article").first();
+  const stageContent = playerStage.locator(":scope > div").first();
+  await view(page, "host", "Round 6: Colors").click();
+  await host.getByRole("button", { name: "Show question 2", exact: true }).click();
+  await expect(playerStage.getByRole("img", { name: "Color question", exact: true })).toBeVisible();
+  await expect(playerStage.getByRole("button", { name: "Lock answer", exact: true })).toBeEnabled();
+  if (hidden) {
+    await host.getByRole("button", { name: "Hide question 2", exact: true }).click();
+    await expect(stageContent.getByText("Colors", { exact: true })).toBeVisible();
+  }
+  await host.getByRole("button", { name: "End round", exact: true }).click();
+  const cleared = { round: "color", question: null, withAnswer: false, promptPage: 0, answerPage: 0 };
+  await expect.poll(() => page.evaluate(() => (window as unknown as Fixture).roomTransport.presentation())).toEqual(cleared);
+  await expect(stageContent.getByText("Colors", { exact: true })).toBeVisible();
+  await expect(playerStage.getByRole("img")).toHaveCount(0);
+  await expect(playerStage.getByRole("button", { name: "Lock answer", exact: true })).toHaveCount(0);
+  await expect(host.getByRole("button", { name: "Show answers", exact: true })).toHaveCount(0);
+  await page.evaluate(() => (window as unknown as Fixture).roomTransport.releaseGrading());
+  await expect(host.getByRole("button", { name: "Show answers", exact: true })).toBeEnabled();
+  await expect(stageContent.getByText("Colors", { exact: true })).toBeVisible();
+  await expect(playerStage.getByRole("img")).toHaveCount(0);
+  expect(await page.evaluate(() => (window as unknown as Fixture).roomTransport.writes.filter((write) => write.body.closeRound === "color"))).toEqual([
+    { url: "/api/rooms/demo/presenting", actor: "host", body: {
+      expected: { ...cleared, question: hidden ? null : "q2" }, next: cleared, closeRound: "color",
+    } },
+  ]);
+  expect(await page.evaluate(() => (window as unknown as Fixture).roomTransport.writes.filter((write) => write.url.endsWith("/color/grade")).length)).toBe(1);
+  await host.getByRole("button", { name: "Show answers", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as Fixture).roomTransport.presentation())).toEqual({ ...cleared, question: "q1", withAnswer: true });
+  await expect(playerStage.getByRole("region", { name: "Your submission", exact: true }).getByRole("img", { name: "Correct answer", exact: true })).toBeVisible();
+  await expect(playerStage.getByLabel("Question score", { exact: true })).toContainText("Similarity 8.00 / 10");
+  await expect(playerStage.getByRole("button", { name: "Lock answer", exact: true })).toHaveCount(0);
+});
+
+test("ending a color round preserves another round's presentation", async ({ page }) => {
+  await setup(page);
+  const before = await page.evaluate(() => (window as unknown as Fixture).roomTransport.presentation());
+  await view(page, "host", "Round 6: Colors").click();
+  await panel(page, "host").getByRole("button", { name: "End round", exact: true }).click();
+  await expect(panel(page, "host").getByRole("button", { name: "Show answers", exact: true })).toBeEnabled();
+  expect(await page.evaluate(() => (window as unknown as Fixture).roomTransport.presentation())).toEqual(before);
+  await expect(room(page, "first").locator("main > section > article").first().getByText("Capital of France?", { exact: true })).toBeVisible();
+});
+
 for (const type of ["text", "multi"] as const) test(`host opens grading for a selected ${type} round and reveals answers after finishing`, async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await setup(page);
