@@ -93,7 +93,7 @@ export function RoundStage({
   );
 
   return (
-    <div className="relative flex-1 overflow-hidden bg-black">
+    <div className="presentation-scrollbars relative flex-1 overflow-hidden bg-black">
       {!presenting?.round ? (
         displayRoundMeta ? (
           <div className="flex h-full w-full items-center justify-center px-8 text-center text-2xl font-semibold text-white">
@@ -251,7 +251,7 @@ export function RoundStage({
       ) : presentingQuestion ? (
         <div className="relative h-full w-full text-white">
           <div
-            className="presenting-scroll h-full w-full overflow-auto"
+            className="h-full w-full overflow-auto"
           >
             <div
               className={
