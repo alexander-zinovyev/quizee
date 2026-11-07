@@ -1266,7 +1266,7 @@ export default function RoomContent({
     <div className="flex h-screen w-full flex-col overflow-hidden bg-gradient-to-b from-white via-zinc-50 to-zinc-100 dark:from-black dark:via-zinc-950 dark:to-zinc-900">
       <main className="grid h-full grid-rows-2 gap-3 p-1 sm:gap-4 sm:p-2 lg:p-3">
         <section className="grid min-h-0 h-full w-full grid-cols-1 grid-rows-2 items-stretch gap-3 md:grid-cols-2 md:grid-rows-1">
-          <article className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-3xl border border-zinc-200 bg-zinc-950 shadow-2xl dark:border-zinc-800">
+          <article className="presentation-scrollbars flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-3xl border border-zinc-200 bg-zinc-950 shadow-2xl dark:border-zinc-800">
             <header className="border-b border-white/10 px-5 py-4 text-white">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div className="flex min-w-0 flex-wrap items-center gap-3">

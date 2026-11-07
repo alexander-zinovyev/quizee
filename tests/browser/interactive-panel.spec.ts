@@ -1,7 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 import { build } from "esbuild";
 
-test.use({ colorScheme: "light" });
+// Keep native scrollbars visible for the presentation appearance regressions.
+test.use({ colorScheme: "light", launchOptions: { ignoreDefaultArgs: ["--hide-scrollbars"] } });
 
 async function bundle() {
   const result = await build({
@@ -10,6 +11,7 @@ async function bundle() {
       import {createRoot} from 'react-dom/client';
       import {flushSync} from 'react-dom';
       import RoomContent from './app/[room]/room-content';
+      import {RoundStage} from './lib/components/room/round-stage';
       import {HarnessAuthProvider} from '@/app/providers/firebase-auth-provider';
       import {applySortingEdit} from './types/sorting';
       window.applySortingEdit=applySortingEdit;
@@ -25,6 +27,18 @@ async function bundle() {
               isHost={uid==='host'} viewerTeamId={uid==='host'?null:'red'} viewerName={names[uid]}
               memberNames={names} presenting={window.roomTransport.presentation()}/>
           </HarnessAuthProvider>)));
+      };
+      window.renderStandaloneStage=()=>{
+        const round={id:'preview',type:'text',title:'Builder preview',order:0,state:'active'};
+        const kind={isImage:false,isAudio:false,isVideo:false};
+        const question={id:'q1',order:0,displayPrompt:'Preview question',prompt:Array.from({length:35},(_,index)=>'Preview line '+index).join('\\n')};
+        roots[2].render(<section aria-label="Standalone presentation" style={{height:240,width:600,display:'flex',flexDirection:'column',backgroundColor:'black'}}>
+          <RoundStage displayRoundMeta={round} presentingRoundMeta={round} presenting={{round:'preview',question:'q1'}} presentingQuestion={question}
+            gradingMatrix={[]} gradingTeamIndex={0} setGradingTeamIndex={()=>{}} gradeAnswer={()=>{}} finalizeScores={()=>{}}
+            answerMediaError={null} mediaError={null} isAnswerMediaLoading={false} isMediaLoading={false} isPresentingImageRound={false}
+            mediaKind={kind} answerMediaKind={kind} mediaVolume={0.2} presentingMedia={null} presentingMediaUrl={null}
+            presentingAnswer={null} presentingAnswerMedia={null} presentingAnswerMediaUrl={null}/>
+        </section>);
       };
       window.renderRoom();
     `, resolveDir: process.cwd(), loader: "tsx" },
@@ -64,6 +78,7 @@ async function bundle() {
 
 type Fixture = {
   renderRoom: (reconnect?: boolean) => void;
+  renderStandaloneStage: () => void;
   applySortingEdit: (order: string[], edit: { itemId: string; anchorId: string; placement: string }) => string[];
   roomTransport: {
     subscribe: (key: string, callback: (snapshot: unknown) => void) => () => void;
@@ -71,7 +86,7 @@ type Fixture = {
     add: (key: string, data: Record<string, unknown>) => void;
     set: (key: string, data: Record<string, unknown>) => void;
     presentation: () => Record<string, unknown>;
-    setPresentation: (round: string, question: string) => void;
+    setPresentation: (round: string, question: string | null, withAnswer?: boolean) => void;
     holdAnswers: boolean;
     releaseAnswers: () => void;
     writes: Array<{ url: string; body: Record<string, unknown>; actor: string }>;
@@ -150,8 +165,8 @@ async function setup(page: Page) {
         return () => watchers.get(key)!.delete(callback);
       },
       presentation: () => structuredClone(presenting),
-      setPresentation: (id, question) => {
-        presenting = { round: id, question, withAnswer: false, promptPage: 0, answerPage: 0 };
+      setPresentation: (id, question, withAnswer = false) => {
+        presenting = { round: id, question, withAnswer, promptPage: 0, answerPage: 0 };
         if (id === "next") { set(round("text"), { state: "closed" }); set(round("next"), { state: "active" }); }
         docs[room].presenting = presenting;
         w.renderRoom();
@@ -324,4 +339,124 @@ for (const width of [1440, 390]) test(`host next-round activation lives in the S
   await expect(message).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => (window as unknown as Fixture).roomTransport.writes.filter((write) => write.body.activateRound === "next").length)).toBe(1);
   await expect(view(page, "host", "Round 2: Timeline").getByRole("img", { name: "active", exact: true })).toHaveCount(1);
+});
+
+test.describe("presentation scrollbar appearance", () => {
+  for (const colorScheme of ["light", "dark"] as const) test(`presentation scrollbars stay consistent across question, grading, and sorting views in ${colorScheme} mode`, async ({ page }, testInfo) => {
+    await page.emulateMedia({ colorScheme });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await setup(page);
+    const stage = room(page, "host").locator("main > section > article").first();
+    const longText = Array.from({ length: 35 }, (_, index) => `Presentation line ${index + 1}: a long question or answer.`).join("\n") + "\n" + "WideContent".repeat(60);
+    await page.evaluate((text) => {
+      const transport = (window as unknown as Fixture).roomTransport;
+      transport.set("rooms/demo/rounds/text/questions/q1", { text, stages: [{ text }] });
+    }, longText);
+
+    const scrollbars = () => stage.evaluate((root) => Array.from(root.querySelectorAll<HTMLElement>("*")).flatMap((element) => {
+      const style = getComputedStyle(element);
+      if (![style.overflowX, style.overflowY].some((overflow) => overflow === "auto" || overflow === "scroll")) return [];
+      return [{
+        width: style.scrollbarWidth,
+        color: style.scrollbarColor,
+        track: getComputedStyle(element, "::-webkit-scrollbar-track").backgroundColor,
+        thumb: getComputedStyle(element, "::-webkit-scrollbar-thumb").backgroundColor,
+        button: getComputedStyle(element, "::-webkit-scrollbar-button").display,
+        barWidth: getComputedStyle(element, "::-webkit-scrollbar").width,
+        barHeight: getComputedStyle(element, "::-webkit-scrollbar").height,
+        corner: getComputedStyle(element, "::-webkit-scrollbar-corner").backgroundColor,
+      }];
+    }));
+    await expect(stage.getByRole("heading", { name: /^Presentation line 1:/ })).toBeVisible();
+    const normalScrollbars = await scrollbars();
+    expect(normalScrollbars).toHaveLength(1);
+    expect(normalScrollbars[0].width).toBe("thin");
+    const expectedColor = normalScrollbars[0].color;
+    async function verifyView(name: string) {
+      const bars = await scrollbars();
+      expect(bars.length).toBeGreaterThan(0);
+      for (const bar of bars) {
+        expect(bar.width, `${name}: scrollbar width`).toBe("thin");
+        expect(bar.color, `${name}: scrollbar color`).toBe(expectedColor);
+        expect(bar.track).toBe("rgba(0, 0, 0, 0)");
+        expect(bar.thumb).toBe("rgba(255, 255, 255, 0.6)");
+        expect(bar.button).toBe("none");
+        expect(bar.barWidth).toBe("8px");
+        expect(bar.barHeight).toBe("8px");
+        expect(bar.corner).toBe("rgba(0, 0, 0, 0)");
+      }
+      expect(await stage.evaluate((root) => {
+        const scrollport = Array.from(root.querySelectorAll<HTMLElement>("*")).find((element) => {
+          const style = getComputedStyle(element);
+          return ["auto", "scroll"].includes(style.overflowY) && element.clientHeight > 0 && element.scrollHeight > element.clientHeight;
+        });
+        if (!scrollport) return false;
+        scrollport.scrollTop = 100;
+        return scrollport.scrollTop > 0;
+      }), `${name}: overflowing presentation remains scrollable`).toBe(true);
+      if (name === "question") expect(await stage.evaluate((root) => {
+        const horizontal = Array.from(root.querySelectorAll<HTMLElement>("*")).find((element) => {
+          const style = getComputedStyle(element);
+          return ["auto", "scroll"].includes(style.overflowX) && element.scrollWidth > element.clientWidth;
+        });
+        if (!horizontal) return false;
+        horizontal.scrollLeft = 100;
+        return horizontal.scrollLeft > 0;
+      }), "wide question content remains horizontally scrollable").toBe(true);
+      await stage.screenshot({ path: testInfo.outputPath(`presentation-${name}-${colorScheme}.png`), animations: "disabled" });
+    }
+
+    await page.evaluate(() => {
+      const transport = (window as unknown as Fixture).roomTransport;
+      for (let index = 0; index < 18; index++) {
+        const id = `q${index + 1}`;
+        transport.set(`rooms/demo/rounds/text/questions/${id}`, { order: index, text: `Question ${index + 1}`, stages: [{ text: `Question ${index + 1}` }] });
+        transport.set(`rooms/demo/rounds/text/teamAnswers/red/answers/${id}`, { answer: `Answer ${index + 1}`, user: "first" });
+      }
+      transport.set("rooms/demo/rounds/text/teamAnswers/red", { graded: false });
+      transport.set("rooms/demo/rounds/text", { state: "closed", gradingRequired: true });
+      transport.setPresentation("text", null);
+    });
+    await expect(stage.getByRole("button", { name: "Finish grading", exact: true })).toBeVisible();
+    await verifyView("grading");
+
+    await page.evaluate((text) => {
+      const transport = (window as unknown as Fixture).roomTransport;
+      transport.set("rooms/demo/rounds/text/questions/q1", { text, stages: [{ text }] });
+      transport.setPresentation("text", "q1");
+    }, longText);
+    await expect(stage.getByRole("heading", { name: /^Presentation line 1:/ })).toBeVisible();
+    await verifyView("question");
+
+    await page.evaluate(() => {
+      const transport = (window as unknown as Fixture).roomTransport;
+      const ids = ["a", "b", "c", "d", ...Array.from({ length: 20 }, (_, index) => `item-${index}`)];
+      ids.forEach((id, index) => transport.set(`rooms/demo/rounds/sorting/questions/${id}`, { text: `Sorting item ${index + 1}${index === 0 ? " " + "WideSortingItem".repeat(40) : ""}` }));
+      transport.set("rooms/demo/rounds/sorting/answers/order", { correctOrder: ids });
+      transport.set("rooms/demo/teams/red/rounds/sorting", { order: ids, revision: 1 });
+      transport.setPresentation("sorting", null);
+    });
+    await expect(stage.getByRole("heading", { name: "Earliest to latest", exact: true })).toBeVisible();
+    await verifyView("sorting");
+    await page.evaluate(() => {
+      const transport = (window as unknown as Fixture).roomTransport;
+      transport.set("rooms/demo/rounds/sorting", { state: "closed", gradingRequired: false });
+      transport.setPresentation("sorting", null, true);
+    });
+    await expect(stage.getByRole("heading", { name: "Correct order", exact: true })).toBeVisible();
+    await verifyView("sorting-reveal");
+    await expect(panel(page, "host").getByRole("navigation", { name: "Interactive panel views", exact: true })).toHaveCSS("scrollbar-width", "none");
+  });
+
+
+  test("standalone presentation previews retain their scrollbar styling", async ({ page }) => {
+    await setup(page);
+    await page.evaluate(() => (window as unknown as Fixture).renderStandaloneStage());
+    const preview = page.getByRole("region", { name: "Standalone presentation", exact: true });
+    await expect(preview.getByRole("heading", { name: /^Preview line 0/ })).toBeVisible();
+    const scrollport = preview.locator('div[class*="overflow-auto"]').first();
+    await expect(scrollport).toHaveCSS("scrollbar-width", "thin");
+    await expect(scrollport).toHaveCSS("scrollbar-color", "rgba(255, 255, 255, 0.6) rgba(0, 0, 0, 0)");
+    expect(await scrollport.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+  });
 });
