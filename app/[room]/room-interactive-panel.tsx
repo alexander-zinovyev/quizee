@@ -44,7 +44,7 @@ export default function RoomInteractivePanel({ rounds, chat, renderRound, isHost
   const buttonClass = "relative flex h-10 w-[42px] shrink-0 items-center justify-center rounded-lg transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500";
 
   return <section aria-label="Interactive panel" className={`flex h-full min-h-0 min-w-0 overflow-hidden rounded-3xl border border-zinc-200 bg-white/95 shadow-2xl backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/95 ${className}`}>
-    <nav aria-label="Interactive panel views" className="flex w-[67px] shrink-0 flex-col items-center gap-2 overflow-y-auto border-r border-zinc-200 px-3 py-4 dark:border-zinc-800">
+    <nav aria-label="Interactive panel views" className="flex w-[67px] shrink-0 flex-col items-center gap-2 overflow-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden border-r border-zinc-200 px-3 py-4 dark:border-zinc-800">
       <button type="button" aria-label="Chat" aria-pressed={selected === "chat"} aria-controls={`${id}-chat`}
         onClick={() => setSelectedView("chat")}
         className={`${buttonClass} ${selected === "chat" ? "bg-black" : "hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}>

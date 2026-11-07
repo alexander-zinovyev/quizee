@@ -57,3 +57,39 @@ test("hiding a panel view pauses its media while keeping its mounted response", 
   await expect(round.getByRole("textbox", { name: "Round response", exact: true })).toHaveValue("Keep this order");
   await expect.poll(() => paused("Round")).toEqual([true, true]);
 });
+
+
+test("host navigation scrolls in both directions without visible scrollbars", async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 600 });
+  await page.goto("/build");
+  await expect(page.getByRole("button", { name: "Add round", exact: true })).toBeVisible();
+  const styles = await page.locator('link[rel="stylesheet"]').evaluateAll((links) => links.map((link) => (link as HTMLLinkElement).href));
+  await page.route("**/__interactive-scroll", (route) => route.fulfill({ contentType: "text/html", body: `<html><head>${styles.map((href) => `<link rel="stylesheet" href="${href}">`).join("")}</head><body><main style="height:180px;width:760px"></main></body></html>` }));
+  await page.goto("/__interactive-scroll");
+  const bundle = await build({
+    stdin: { resolveDir: process.cwd(), loader: "tsx", contents: `
+      import React from 'react';
+      import {createRoot} from 'react-dom/client';
+      import RoomInteractivePanel from './app/[room]/room-interactive-panel';
+      const rounds=Array.from({length:40},(_,index)=>({id:String(index),title:'Round '+(index+1),roundNumber:index+1,type:'text',state:'scheduled'}));
+      createRoot(document.querySelector('main')).render(<RoomInteractivePanel isHost keepRoundsMounted={false} rounds={rounds}
+        chat={<p>Chat</p>} renderRound={id=><p>Selected round {id}</p>}/>);
+    ` },
+    bundle: true, write: false, jsx: "automatic", define: { "process.env": "{}", "process.env.NODE_ENV": '\"development\"' },
+  });
+  await page.addScriptTag({ content: bundle.outputFiles[0].text });
+  const navigation = page.getByRole("navigation", { name: "Interactive panel views", exact: true });
+  await expect(navigation).toHaveCSS("scrollbar-width", "none");
+  expect(await navigation.evaluate((element) => getComputedStyle(element, "::-webkit-scrollbar").display)).toBe("none");
+  await navigation.hover();
+  await page.mouse.wheel(0, 200);
+  await expect.poll(() => navigation.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await navigation.evaluate((element) => { const button = element.querySelector("button")!; button.style.width = "180px"; });
+  await page.mouse.wheel(100, 0);
+  await expect.poll(() => navigation.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+  const lastRound = navigation.getByRole("button", { name: "Round 40: Round 40", exact: true });
+  await lastRound.focus();
+  await expect(lastRound).toBeInViewport();
+  await lastRound.press("Enter");
+  await expect(lastRound).toHaveAttribute("aria-pressed", "true");
+});

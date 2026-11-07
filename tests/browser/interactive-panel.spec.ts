@@ -299,3 +299,29 @@ test("room integration preserves host channels, privately previews scheduled rou
   await view(page, "host", "Chat").click();
   await expect(host.getByRole("button", { name: "Team Red", exact: true })).toHaveAttribute("aria-pressed", "true");
 });
+
+for (const width of [1440, 390]) test(`host next-round activation lives in the Stage header at ${width}px`, async ({ page }, testInfo) => {
+  await page.setViewportSize({ width, height: 900 });
+  await setup(page);
+  await page.evaluate(() => {
+    const transport = (window as unknown as Fixture).roomTransport;
+    for (const id of ["text", "multi", "color"]) transport.set(`rooms/demo/rounds/${id}`, { state: "closed", gradingRequired: false });
+  });
+  const hostRoom = room(page, "host");
+  const header = hostRoom.locator("main > section > article > header").first();
+  const message = header.getByText("Next up: Foreground two", { exact: true });
+  await expect(message).toBeVisible();
+  await expect(panel(page, "host").getByText("Next up: Foreground two", { exact: true })).toHaveCount(0);
+  await expect(room(page, "first").getByText("Next up: Foreground two", { exact: true })).toHaveCount(0);
+  await expect(message).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(message.locator("..")).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  const activate = header.getByRole("button", { name: "Next round", exact: true });
+  await expect(activate).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  const headerBounds = (await header.boundingBox())!, buttonBounds = (await activate.boundingBox())!;
+  expect(headerBounds.x + headerBounds.width - buttonBounds.x - buttonBounds.width).toBeCloseTo(20, 0);
+  await header.screenshot({ path: testInfo.outputPath(`next-round-header-${width}.png`), animations: "disabled" });
+  await activate.click();
+  await expect(message).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => (window as unknown as Fixture).roomTransport.writes.filter((write) => write.body.activateRound === "next").length)).toBe(1);
+  await expect(view(page, "host", "Round 2: Timeline").getByRole("img", { name: "active", exact: true })).toHaveCount(1);
+});

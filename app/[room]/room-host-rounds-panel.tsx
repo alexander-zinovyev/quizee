@@ -92,7 +92,7 @@ export default function RoomHostRoundsPanel({
                 aria-pressed={isPresented}
                 onClick={() => isPresented ? onHideQuestion?.() : onPresentQuestion?.(round.id, question.id)}
                 className={`flex size-[42px] shrink-0 items-center justify-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500 disabled:opacity-60 ${isPresented ? "bg-red-500 hover:bg-red-600" : "bg-[#2cc852] hover:bg-green-600"}`}>
-                <PanelIcon name="eye" tone="white" />
+                <PanelIcon name={isPresented ? "eye-slash" : "eye"} tone="white" />
               </button> : null}
             </div>
             <p className="rounded-lg bg-emerald-50 px-4 py-1.5 text-sm font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200">{question.answer || "No text answer"}</p>

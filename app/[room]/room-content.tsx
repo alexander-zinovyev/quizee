@@ -1268,8 +1268,8 @@ export default function RoomContent({
         <section className="grid min-h-0 h-full w-full grid-cols-1 grid-rows-2 items-stretch gap-3 md:grid-cols-2 md:grid-rows-1">
           <article className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-3xl border border-zinc-200 bg-zinc-950 shadow-2xl dark:border-zinc-800">
             <header className="border-b border-white/10 px-5 py-4 text-white">
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex min-w-0 flex-wrap items-center gap-3">
                   <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-300">
                     {displayRoundMeta?.title ?? "Current question"}
                   </p>
@@ -1283,11 +1283,26 @@ export default function RoomContent({
                     </span>
                   ) : null}
                 </div>
-                {presentingQuestion ? (
-                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-100">
-                    Question {presentingQuestion.order + 1}
-                  </p>
-                ) : null}
+                <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-3 text-right">
+                  {presentingQuestion ? (
+                    <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-100">
+                      Question {presentingQuestion.order + 1}
+                    </p>
+                  ) : null}
+                  {isHost && !allRoundsClosed && !hasActiveForegroundRound(roundsMeta) && nextScheduledRound ? (
+                    <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 text-sm text-zinc-300">
+                      <span className="min-w-0 break-words">Next up: {nextScheduledRound.title}</span>
+                      <button
+                        type="button"
+                        onClick={handleActivateNextRound}
+                        disabled={isActivatingNext}
+                        className="shrink-0 rounded-lg border border-white/30 bg-transparent px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/60 disabled:cursor-not-allowed disabled:opacity-70"
+                      >
+                        {isActivatingNext ? "Starting..." : "Next round"}
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </header>
             {presentingRoundMeta?.type === "sorting" ? (
@@ -1471,21 +1486,6 @@ export default function RoomContent({
                   </button>
                 </div>
               ) : null}
-
-              {isHost && !allRoundsClosed && !hasActiveForegroundRound(roundsMeta) && nextScheduledRound ? (
-                <div className="rounded-2xl border border-dashed border-emerald-300 bg-emerald-50/60 px-4 py-3 text-sm text-emerald-700 shadow-sm dark:border-emerald-900 dark:bg-emerald-900/20 dark:text-emerald-200">
-                  Next up: {nextScheduledRound.title}
-                  <button
-                    type="button"
-                    onClick={handleActivateNextRound}
-                    disabled={isActivatingNext}
-                    className="ml-3 inline-flex items-center justify-center rounded-lg bg-emerald-500 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70 dark:bg-emerald-400 dark:text-emerald-950 dark:hover:bg-emerald-300 dark:focus:ring-emerald-300 dark:focus:ring-offset-zinc-900"
-                  >
-                    {isActivatingNext ? "Starting..." : "Next round"}
-                  </button>
-                </div>
-              ) : null}
-
             </>}
             chat={(active) => <RoomChatPanel active={active} roomSlug={roomSlug} teams={teams} viewerTeamId={viewerTeamId}
               isHost={isHost} viewerName={resolvedChatName} memberNames={memberNames} />}
