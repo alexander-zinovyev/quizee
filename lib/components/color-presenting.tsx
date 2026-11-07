@@ -11,7 +11,7 @@ import { ColorImage } from "./color-image";
 import { useRoomColorArtwork } from "@/lib/hooks/use-room-color-artwork";
 import { useColorSubmissions } from "@/lib/hooks/use-color-submissions";
 import { ColorControls } from "./color-controls";
-import { ColorAnswerReveal } from "./color-answer-reveal";
+import { ColorSubmissions } from "./color-submissions";
 import { ColorImageIndicator } from "./color-image-indicator";
 
 export function ColorPresenting({ roomSlug, round, question, teamId, isHost, teams, withAnswer }: {
@@ -40,9 +40,10 @@ export function ColorPresenting({ roomSlug, round, question, teamId, isHost, tea
   const isLocked = pending?.locked ?? locked;
   const controlsDisabled = !answerReady || isLocked || pending?.locked !== undefined;
   const reveal = round.state === "closed" && (isHost || withAnswer);
+  const showSubmissions = round.state === "closed" && !isHost;
   const teamKey = teams.map((team) => team.id).join("|");
   const otherTeams = teams.filter((team) => team.id !== teamId);
-  const submissions = useColorSubmissions(roomSlug, round.id, question.id, otherTeams.map((team) => team.id), reveal && !isHost);
+  const submissions = useColorSubmissions(roomSlug, round.id, question.id, otherTeams.map((team) => team.id), showSubmissions);
 
   useEffect(() => {
     if (!isHost || round.state !== "active") return;
@@ -143,8 +144,9 @@ export function ColorPresenting({ roomSlug, round, question, teamId, isHost, tea
   </div></div>;
   const color = draft ?? pending?.answer ?? saved ?? initial;
   return <div className="@container min-h-0 flex-1"><div className={`grid h-full min-w-0 gap-4 p-4 ${canEdit || (reveal && teamId) ? "grid-rows-[minmax(0,1fr)_auto]" : "grid-rows-[minmax(0,1fr)]"}`}>
-    {reveal && target ? <ColorAnswerReveal artwork={artwork.artwork} submittedColor={saved ?? initial} targetColor={target}
-      submissions={otherTeams.map((team) => ({ ...team, color: submissions?.colors?.[team.id] }))} /> : canEdit ? (
+    {showSubmissions ? <ColorSubmissions artwork={artwork.artwork}
+      ownSubmission={{ id: teamId ?? "", name: teams.find((team) => team.id === teamId)?.name ?? "Your team", color: saved ?? initial }}
+      opponents={otherTeams.map((team) => ({ ...team, color: submissions?.colors?.[team.id] }))} targetColor={reveal ? target : null} /> : canEdit ? (
       <div className="relative flex min-h-0 items-center justify-center"><ColorImage artwork={artwork.artwork} color={color} className="block h-full w-full object-contain" />{teamId ? <ColorImageIndicator version="team" /> : null}</div>
     ) : <div className="relative min-h-0"><ColorImage artwork={artwork.artwork} color={color} className="block h-full w-full object-contain" />{teamId ? <ColorImageIndicator version="team" /> : null}</div>}
     {canEdit ? <div className="w-full max-w-[472px] justify-self-center">

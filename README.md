@@ -24,7 +24,7 @@ The host builds a quiz or loads a prepared quiz pack. Each round has a theme of 
 | **Text** | Teams write an answer. The host can present the question and reveal the answer in stages, using text, images, audio, or video. |
 | **Image matching** | Teams match pictures to prompts, such as pairing film stills with movie titles. |
 | **Multi-step** | Teams get one clue at a time. An early guess can be worth more points, so teams have to weigh answering now against waiting for another clue. |
-| **Color matching** | Teams adjust part of an image to match a color from memory, such as the red in a familiar logo. The closer the match, the better the score. During answer reveal, teams can compare the original, their own submission, and a gallery of other teams' submissions. |
+| **Color matching** | Teams adjust part of an image to match a color from memory, such as the red in a familiar logo. The closer the match, the better the score. After closure, players see their submission beside a locally selected opponent's submission for each presented question. Show answer enables comparison with the original. |
 | **Sorting** | Teams arrange text or media items according to a criterion, with one point for each correct position. The list can stay open alongside other rounds. |
 
 Sorting packs use the existing stage format for item text and media. See [sorting pack authoring](docs/sorting-rounds.md) for the JSON format.
