@@ -17,7 +17,7 @@ export const current: Presentation = { round: "r1", question: "q1", promptPage: 
 export const redAnswer = "rooms/demo/teams/red/rounds/r1/answers/q1";
 export const blueAnswer = "rooms/demo/teams/blue/rounds/r1/answers/q1";
 
-export function database(type: "text" | "multi-step" = "multi-step", allowAnswerChanges = true) {
+export function database(type: "text" | "multi-step" | "image" = "multi-step", allowAnswerChanges = true) {
   const docs = new Map<string, Data>([
     ["rooms/demo", { state: "playing", presenting: current }],
     ["rooms/demo/members/host", { role: "host", team: null }],

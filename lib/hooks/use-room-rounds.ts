@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   collection,
   onSnapshot,
@@ -7,6 +7,7 @@ import {
   type Unsubscribe,
 } from "firebase/firestore";
 
+import { parseHostRoundAnswers } from "@/lib/room-round-answers";
 import { closeSortingRound } from "./use-sorting-order";
 import { getClientFirestore } from "@/lib/firebase/client";
 import type { SortingQuestion } from "@/types/quiz";
@@ -178,9 +179,11 @@ export function useRoomRounds(roomSlug: string, isHost?: boolean) {
   const [roundsMeta, setRoundsMeta] = useState<RoundMeta[]>([]);
   const [roundQuestions, setRoundQuestions] = useState<RoundQuestions>({});
   const [roundAnswers, setRoundAnswers] = useState<RoundAnswers>({});
+  const [roundCorrectOrders, setRoundCorrectOrders] = useState<Record<string, string[]>>({});
   const [roundAnswerHints, setRoundAnswerHints] = useState<RoundAnswerHints>({});
   const [roundImages, setRoundImages] = useState<RoundImages>({});
   const [gradingRequiredRounds, setGradingRequiredRounds] = useState<Record<string, boolean>>({});
+  const [answerLoadErrors, setAnswerLoadErrors] = useState<Record<string, string>>({});
   const [roundsError, setRoundsError] = useState<string | null>(null);
   const [roundLoadState, setRoundLoadState] = useState({
     hasLoaded: false,
@@ -281,8 +284,9 @@ export function useRoomRounds(roomSlug: string, isHost?: boolean) {
 
             const unsubscribeQuestions = onSnapshot(
               questionsQuery,
+              { includeMetadataChanges: true },
               (questionsSnapshot) => {
-                if (cancelled) return;
+                if (cancelled || (meta.type === "sorting" && questionsSnapshot.metadata.fromCache)) return;
                 const questions = questionsSnapshot.docs
                   .map((questionSnap, qIndex) => {
                     const data = questionSnap.data();
@@ -400,7 +404,7 @@ export function useRoomRounds(roomSlug: string, isHost?: boolean) {
             }
           }
 
-          const canReadAnswers = meta.type !== "image" && meta.type !== "sorting" && isHost;
+          const canReadAnswers = Boolean(isHost);
 
           if (!canReadAnswers) {
             const existing = answerUnsubs.get(meta.id);
@@ -430,47 +434,28 @@ export function useRoomRounds(roomSlug: string, isHost?: boolean) {
 
             const unsubscribeAnswers = onSnapshot(
               answersQuery,
+              { includeMetadataChanges: true },
               (answersSnapshot) => {
-                if (cancelled) return;
+                if (cancelled || (meta.type === "sorting" && answersSnapshot.metadata.fromCache)) return;
 
-                const answersForRound: Record<string, string> = {};
-                const hintsForRound: Record<string, string> = {};
-                answersSnapshot.docs.forEach((answerSnap) => {
-                  const data = answerSnap.data();
-                  const hint =
-                    typeof data.hint === "string" && data.hint.trim().length
-                      ? data.hint.trim()
-                      : "";
-                  hintsForRound[answerSnap.id] = hint;
-                  const stageText = Array.isArray(data.stages)
-                    ? (data.stages as Array<Record<string, unknown>>)
-                        .map((stage) =>
-                          typeof stage?.text === "string" ? stage.text.trim() : ""
-                        )
-                        .find((value) => value.length > 0) ?? ""
-                    : "";
-                  const raw =
-                    hint ||
-                    stageText ||
-                    (typeof data.answer === "string" && data.answer) ||
-                    (typeof data.value === "string" && data.value) ||
-                    (typeof data.correctAnswer === "string" && data.correctAnswer) ||
-                    "";
-                  const trimmed = raw.trim();
-                  answersForRound[answerSnap.id] = trimmed;
-                });
-
-                setRoundAnswers((prev) => ({
-                  ...prev,
-                  [meta.id]: answersForRound,
-                }));
-                setRoundAnswerHints((prev) => ({
-                  ...prev,
-                  [meta.id]: hintsForRound,
-                }));
+                try {
+                  const parsed = parseHostRoundAnswers(meta.type, answersSnapshot.docs.map((answer) => ({ id: answer.id, data: answer.data() })));
+                  setRoundAnswers((prev) => ({ ...prev, [meta.id]: parsed.answers }));
+                  setRoundAnswerHints((prev) => ({ ...prev, [meta.id]: parsed.hints }));
+                  const correctOrder = parsed.correctOrder;
+                  if (correctOrder) setRoundCorrectOrders((prev) => ({ ...prev, [meta.id]: correctOrder }));
+                  setAnswerLoadErrors((prev) => {
+                    if (!(meta.id in prev)) return prev;
+                    const next = { ...prev }; delete next[meta.id]; return next;
+                  });
+                } catch (error) {
+                  setAnswerLoadErrors((prev) => ({ ...prev, [meta.id]: error instanceof Error ? error.message : "Unable to load round answers." }));
+                  setRoundCorrectOrders((prev) => { const next = { ...prev }; delete next[meta.id]; return next; });
+                }
               },
               (answersError) => {
                 console.error("[room-content] answers snapshot error", answersError);
+                if (!cancelled) setAnswerLoadErrors((prev) => ({ ...prev, [meta.id]: "Unable to load round answers." }));
               }
             );
 
@@ -509,18 +494,23 @@ export function useRoomRounds(roomSlug: string, isHost?: boolean) {
     };
   }, [isHost, roomSlug]);
 
+  const updateRoundsError = useCallback((error: string | null) => {
+    setRoundsError(error);
+    if (error === null) setAnswerLoadErrors({});
+  }, []);
   const isCurrentRoom = roundLoadState.roomSlug === roomSlug;
   const isLoadingRounds = !isCurrentRoom || !roundLoadState.hasLoaded;
 
   return {
     gradingRequiredRounds,
     isLoadingRounds,
-    roundAnswers: isCurrentRoom ? roundAnswers : {},
-    roundAnswerHints: isCurrentRoom ? roundAnswerHints : {},
+    roundAnswers: isCurrentRoom && isHost ? roundAnswers : {},
+    roundCorrectOrders: isCurrentRoom && isHost ? roundCorrectOrders : {},
+    roundAnswerHints: isCurrentRoom && isHost ? roundAnswerHints : {},
     roundImages: isCurrentRoom ? roundImages : {},
     roundQuestions: isCurrentRoom ? roundQuestions : {},
-    roundsError: isCurrentRoom ? roundsError : null,
+    roundsError: isCurrentRoom ? roundsError ?? (isHost ? roundsMeta.map((round) => answerLoadErrors[round.id]).find(Boolean) ?? null : null) : null,
     roundsMeta: isCurrentRoom ? roundsMeta : [],
-    setRoundsError,
+    setRoundsError: updateRoundsError,
   };
 }

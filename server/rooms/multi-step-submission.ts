@@ -23,7 +23,7 @@ export function captureMultiStepAnswer(
 }
 
 export function snapshotTeamAnswer(input: TeamAnswer, roundType: string, allowWager = false): Record<string, unknown> {
-  if (roundType !== "text" && roundType !== "multi-step") throw new Error("Unsupported answer type.");
+  if (roundType !== "text" && roundType !== "multi-step" && roundType !== "image") throw new Error("Unsupported answer type.");
   if (input.wagered && (roundType !== "text" || !allowWager)) throw new Error("Wagers are not enabled for this round.");
   return roundType === "multi-step"
     ? { attempts: input.attempts }

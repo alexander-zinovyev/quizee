@@ -7,9 +7,10 @@ import ImageQuizRound from "./image-round";
 import AnswerRound from "./answer-round";
 import { ColorAnswerSummary } from "./color-answer-summary";
 
-export default function QuizRound(props: QuizRoundData) {
+export default function QuizRound(props: QuizRoundData & { embedded?: boolean }) {
   const {
     title,
+    embedded = false,
     roundNumber,
     questions,
     className,
@@ -29,6 +30,7 @@ export default function QuizRound(props: QuizRoundData) {
   } else if (props.type === "sorting") {
     body = <SortingRound key={`${roomSlug}:${teamId}:${roundId}:${props.state}`} roomSlug={roomSlug} teamId={teamId}
       roundId={roundId} criterion={props.criterion} startingOrder={props.startingOrder} questions={props.questions} state={props.state}
+      layout={embedded ? "columns" : "list"} hideCriterion={embedded}
       reveal={props.presenting?.round === roundId && props.presenting.withAnswer === true} />;
   } else if (props.type === "color") {
     body = <ColorAnswerSummary key={`${roomSlug}:${teamId}:${roundId}`} roomSlug={roomSlug} roundId={roundId} teamId={teamId} questions={questions} />;
@@ -43,6 +45,7 @@ export default function QuizRound(props: QuizRoundData) {
     body = (
       <AnswerRound
         key={`${roomSlug}:${teamId}:${roundId}:${hydrationKey}`}
+        embedded={embedded}
         type={props.type}
         questions={props.questions}
         roomSlug={roomSlug}
@@ -64,7 +67,7 @@ export default function QuizRound(props: QuizRoundData) {
 
     body = (
       <ImageQuizRound
-        key={hydrationKey}
+        key={`${roomSlug}:${teamId}:${roundId}:${hydrationKey}`}
         questions={props.questions}
         images={props.images}
         roomSlug={roomSlug}
@@ -77,14 +80,16 @@ export default function QuizRound(props: QuizRoundData) {
 
   return (
     <section
-      className={`flex h-full w-full flex-col rounded-3xl border border-zinc-200 bg-white/90 p-4 shadow-lg backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/90 ${
+      className={`flex h-full min-h-0 w-full min-w-0 flex-col ${embedded ? "p-3" : "rounded-3xl border border-zinc-200 bg-white/90 p-4 shadow-lg backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/90"} ${
         className ?? ""
       }`}
       aria-label={title}
     >
-      <p className="mb-3 text-xs font-semibold uppercase tracking-[0.3em] text-emerald-500">
+      {embedded ? <header className="mb-2 flex min-h-8 shrink-0 items-center justify-center border-b border-zinc-100 pb-2 dark:border-zinc-800">
+        <h2 className="text-center text-sm font-semibold text-black dark:text-zinc-100">{props.type === "sorting" ? props.criterion : title}</h2>
+      </header> : <p className="mb-3 text-xs font-semibold uppercase tracking-[0.3em] text-emerald-500">
         ROUND #{roundNumber}
-      </p>
+      </p>}
       {body}
     </section>
   );

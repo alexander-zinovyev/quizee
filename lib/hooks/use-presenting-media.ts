@@ -78,6 +78,7 @@ export function usePresentingMedia({
   roundImages,
   roundQuestions,
   roundsMeta,
+  preloadAllImages = false,
 }: {
   presenting: PresentingState;
   presentingQuestion: RoundQuestion | null;
@@ -86,6 +87,7 @@ export function usePresentingMedia({
   roundImages: RoundImages;
   roundQuestions: RoundQuestions;
   roundsMeta: RoundMeta[];
+  preloadAllImages?: boolean;
 }) {
   const [isMediaLoading, setIsMediaLoading] = useState(false);
   const [mediaError, setMediaError] = useState<string | null>(null);
@@ -391,11 +393,11 @@ export function usePresentingMedia({
   }, [presentingMedia?.storagePath, shouldShowMedia]);
 
   useEffect(() => {
-    const activeRoundIds = roundsMeta.filter((r) => r.state === "active").map((r) => r.id);
-    if (!activeRoundIds.length) return;
+    const preloadRoundIds = roundsMeta.filter((r) => r.state === "active" || (preloadAllImages && r.type === "image")).map((r) => r.id);
+    if (!preloadRoundIds.length) return;
     const storage = getStorage(getFirebaseClientApp());
 
-    activeRoundIds.forEach((roundId) => {
+    preloadRoundIds.forEach((roundId) => {
       const meta = roundsMeta.find((r) => r.id === roundId);
       if (meta?.type === "color") {
         getColorPreloadQuestions(roundQuestions[roundId] ?? [], presenting?.round === roundId ? presenting.question : null).forEach((question) => {
@@ -461,7 +463,7 @@ export function usePresentingMedia({
           });
       });
     });
-  }, [roundImages, roundQuestions, roundsMeta, roomSlug, presenting?.round, presenting?.question]);
+  }, [preloadAllImages, roundImages, roundQuestions, roundsMeta, roomSlug, presenting?.round, presenting?.question]);
 
   const getCachedMediaUrl = (storagePath: string) => {
     return mediaUrlCacheRef.current.get(storagePath)?.url;

@@ -22,26 +22,31 @@ type RoomChatPanelProps = {
   viewerName?: string | null;
   memberNames?: Record<string, string>;
   className?: string;
+  active?: boolean;
 };
+
+const EMPTY_TEAMS: RoomRosterTeam[] = [];
+const EMPTY_MEMBER_NAMES: Record<string, string> = {};
 
 export default function RoomChatPanel({
   roomSlug,
-  teams = [],
+  teams = EMPTY_TEAMS,
   viewerTeamId,
   isHost,
   viewerName,
-  memberNames = {},
+  memberNames = EMPTY_MEMBER_NAMES,
   className,
+  active = true,
 }: RoomChatPanelProps) {
   const { user } = useFirebaseAuth();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [history, setHistory] = useState<{ channelId: string; messages: ChatMessage[]; error?: string } | null>(null);
   const [activeChannelId, setActiveChannelId] = useState<string>("room");
 
   const channels: Channel[] = useMemo(() => {
     const base: Channel[] = [
       {
         id: "room",
-        label: "Room",
+        label: "All",
         path: ["rooms", roomSlug, "messages"],
         canSend: true,
       },
@@ -61,7 +66,7 @@ export default function RoomChatPanel({
       if (team) {
         base.push({
           id: `team-${team.id}`,
-          label: team.name,
+          label: "Team",
           path: ["rooms", roomSlug, "teams", team.id, "messages"],
           canSend: true,
         });
@@ -103,8 +108,8 @@ export default function RoomChatPanel({
           isSelf: uid && user?.uid ? uid === user.uid : false,
         };
       });
-      setMessages(nextMessages);
-    });
+      setHistory({ channelId: activeChannel.id, messages: nextMessages });
+    }, () => setHistory({ channelId: activeChannel.id, messages: [], error: "Unable to load chat messages." }));
 
     return () => unsubscribe();
   }, [activeChannel, memberNames, user?.uid]);
@@ -113,8 +118,7 @@ export default function RoomChatPanel({
     if (!activeChannel?.canSend) return;
     const author = viewerName?.trim();
     if (!author) {
-      console.warn("[room-chat] Missing viewer name; cannot send message.");
-      return;
+      throw new Error("A player name is required to send a message.");
     }
     const db = getClientFirestore();
     const messagesRef = collection(
@@ -131,17 +135,18 @@ export default function RoomChatPanel({
 
   return (
     <div className={["flex h-full min-h-0 flex-col", className ?? ""].filter(Boolean).join(" ")}>
-      <div className="mb-3 flex items-center gap-2 overflow-x-auto rounded-full border border-emerald-200 bg-emerald-50/70 px-3 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-emerald-600 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-emerald-200 dark:border-emerald-900/60 dark:bg-emerald-900/20 dark:text-emerald-300">
+      <nav aria-label="Chat channels" className="flex shrink-0 items-center gap-1 overflow-x-auto bg-zinc-200/70 px-4 text-xs font-semibold uppercase tracking-[0.3em] text-emerald-500 dark:bg-zinc-800/70">
         {channels.map((channel) => {
           const isActive = channel.id === activeChannel?.id;
           return (
             <button
               key={channel.id}
               onClick={() => setActiveChannelId(channel.id)}
-              className={`shrink-0 rounded-full px-3 py-1 transition ${
+              aria-pressed={isActive}
+              className={`shrink-0 rounded-t-lg px-4 py-2 transition ${
                 isActive
-                  ? "bg-emerald-500 text-white shadow-sm"
-                  : "text-emerald-600 hover:bg-emerald-100 dark:text-emerald-200 dark:hover:bg-emerald-900/40"
+                  ? "bg-white dark:bg-zinc-900"
+                  : "hover:bg-white/50 dark:hover:bg-zinc-700"
               }`}
               type="button"
             >
@@ -149,15 +154,20 @@ export default function RoomChatPanel({
             </button>
           );
         })}
-      </div>
+      </nav>
+
+      {history?.channelId === activeChannel.id && history.error ? <p role="alert" className="px-3 pt-3 text-sm text-red-600">{history.error}</p> : null}
 
       <Chat
         title={activeChannel?.label ?? "Chat"}
-        messages={messages}
+        messages={history?.channelId === activeChannel.id ? history.messages : []}
         onSend={handleSend}
         placeholder="Send a message…"
         className="flex-1 min-h-0"
         autoSize={false}
+        embedded
+        active={active}
+        disabled={!viewerName?.trim()}
       />
     </div>
   );

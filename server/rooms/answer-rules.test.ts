@@ -7,6 +7,7 @@ import { getFirestore as getAdminFirestore } from "firebase-admin/firestore";
 import { parseSortingEditSave, saveSortingEdit } from "./sorting-edits";
 import { transitionPresentation } from "./presentation";
 import { parseAnswerSave, saveTeamAnswer } from "./answer-input";
+import { saveImageMatch } from "@/lib/image-match-store";
 import { recordedAnswer } from "@/lib/answers";
 import { applySortingEdit, parseSortingSnapshot, type SortingEdit } from "@/types/sorting";
 import { gradeSortingRound } from "./sorting";
@@ -98,6 +99,44 @@ async function main() {
       } finally {
         unsubscribe();
       }
+    }
+    {
+      const roomId = "rules-image", path = `rooms/${roomId}`;
+      const [a, b, outsider, hostClient] = apps;
+      const foreground = { round: "foreground", question: "q1", promptPage: 0, answerPage: 0, withAnswer: false };
+      await admin.doc(path).set({ state: "playing", presenting: foreground });
+      for (const { uid } of apps) await admin.doc(`${path}/members/${uid}`).set({ role: uid === "host" ? "host" : "player", team: uid === "host" ? null : uid === "outsider" ? "blue" : "red" });
+      await admin.doc(`${path}/teams/red`).set({ name: "Red" });
+      await admin.doc(`${path}/rounds/foreground`).set({ type: "text", state: "active" });
+      await admin.doc(`${path}/rounds/foreground/questions/q1`).set({ text: "Foreground question" });
+      await admin.doc(`${path}/rounds/image`).set({ type: "image", state: "active" });
+      for (const id of ["q1", "q2"]) await admin.doc(`${path}/rounds/image/questions/${id}`).set({ text: id });
+      const answerPath = `${path}/teams/red/rounds/image/answers`;
+      const save = (client: typeof a, questionId: string, imageId: string) => saveImageMatch({ db: client.db, roomSlug: roomId, teamId: "red", roundId: "image", questionIds: ["q1", "q2"], imageIds: ["i1", "i2"], uid: client.uid },
+        { type: "assign", questionId, imageId });
+      await save(a, "q1", "i1");
+      assert.equal((await getDocFromServer(doc(b.db, `${answerPath}/q1`))).data()?.answer, "i1");
+      await save(b, "q2", "i1");
+      assert.equal((await getDocFromServer(doc(a.db, `${answerPath}/q1`))).data()?.answer, "");
+      assert.equal((await getDocFromServer(doc(a.db, `${answerPath}/q2`))).data()?.answer, "i1");
+      await denied(getDocFromServer(doc(outsider.db, `${answerPath}/q2`)));
+      await denied(getDocFromServer(doc(hostClient.db, `${answerPath}/q2`)));
+      await denied(updateDoc(doc(hostClient.db, `${path}/rounds/image`), { state: "closed" }));
+      const [closing, saving] = await Promise.allSettled([
+        transitionPresentation(admin, roomId, "host", foreground, foreground, { closeRound: "image" }),
+        save(a, "q1", "i2"),
+      ]);
+      assert.equal(closing.status, "fulfilled");
+      if (saving.status === "rejected") assert.match(String(saving.reason), /closed|permission|transaction/i);
+      assert.deepEqual((await admin.doc(path).get()).data()?.presenting, foreground);
+      for (const id of ["q1", "q2"]) {
+        const live = (await admin.doc(`${answerPath}/${id}`).get()).data();
+        const frozen = (await admin.doc(`${path}/rounds/image/teamAnswers/red/answers/${id}`).get()).data();
+        if (live) assert.equal(frozen?.answer, live.answer, "Atomic closure grades every accepted image match");
+      }
+      await assert.rejects(save(b, "q2", "i2"), /closed/);
+      await denied(setDoc(doc(a.db, `${answerPath}/q2`), { answer: "i2", locked: false, user: "a" }));
+      await denied(updateDoc(doc(b.db, `${answerPath}/q2`), { locked: true }));
     }
     {
       const roomId = "rules-color", path = `rooms/${roomId}`;

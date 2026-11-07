@@ -10,7 +10,7 @@ async function bundle() {
       import React from 'react';
       import { createRoot } from 'react-dom/client';
       import { flushSync } from 'react-dom';
-      import RoomRoundsPanel from './app/[room]/room-rounds-panel';
+      import RoomInteractivePanel from './app/[room]/room-interactive-panel';
       import { SortingRound } from './lib/components/sorting-round';
       import QuizRound from './lib/components/quiz-round';
       import { HarnessAuthProvider } from '@/app/providers/firebase-auth-provider';
@@ -18,6 +18,11 @@ async function bundle() {
       import { closeSortingRound } from './lib/hooks/use-sorting-order';
       import { getActiveRounds } from './lib/hooks/use-room-rounds';
       window.applySortingEdit = applySortingEdit;
+      function RoomRoundsPanel({rounds,roomSlug,teamId}) {
+        return <RoomInteractivePanel rounds={rounds} chat={<p>Chat</p>} renderRound={id =>
+          <QuizRound {...rounds.find(round => round.id === id)} roomSlug={roomSlug} teamId={teamId} />
+        } />;
+      }
       const criterion = 'Order events from earliest to latest';
       const questions = [
         {id:'a',text:'A'},
@@ -63,6 +68,7 @@ async function bundle() {
           export const doc = (_, ...parts) => parts.join('/');
           export const collection = doc; export const query=path=>path; export const orderBy=()=>null;
           export const setDoc = () => { throw new Error('Direct answer writes are forbidden'); };
+          export const runTransaction = () => { throw new Error('Image transactions are not part of sorting'); };
           export const onSnapshot = (path, optionsOrCallback, callback) => window.sortingTransport.subscribe(path, typeof optionsOrCallback === 'function' ? optionsOrCallback : callback);
           export const getDocFromServer = () => { throw new Error('Sorting must not force a server read after saving'); };` };
         if (args.path === "firebase/storage") return { contents: `
@@ -224,7 +230,14 @@ async function setupSortingPage(page: Page) {
     };
   });
   await page.addScriptTag({ content: await bundle() });
+  await selectSortingViews(page);
   await expect(view(page, "red").getByRole("button", { name: "Reorder item 1", exact: true })).toHaveAttribute("aria-disabled", "false");
+}
+
+async function selectSortingViews(page: Page) {
+  for (const name of ["red", "teammate", "blue"]) {
+    await view(page, name).getByRole("button", { name: "Round 1: History sorting", exact: true }).click();
+  }
 }
 
 async function startMouseDrag(page: Page, region: Locator, id: string, area: "text" | "image" | "blank" = "text") {
@@ -336,12 +349,13 @@ for (const width of [1440, 390]) test(`sorting team workflow across foreground t
   await expect.poll(() => page.evaluate(() => (window as unknown as Harness).sortingTransport.team("blue").revision)).toBe(1);
   await dragItem(page, blue, "c", "d", width === 390);
   await expect.poll(() => order(blue)).toEqual(["b", "a", "d", "c"]);
-  await red.getByRole("button", { name: "Foreground one", exact: true }).click();
-  await expect(red.getByText("Foreground one", { exact: true })).toHaveCount(2);
+  await red.getByRole("button", { name: "Round 2: Foreground one", exact: true }).click();
+  await expect(red.getByText("Foreground one", { exact: true })).toHaveCount(1);
   await page.evaluate(() => (window as unknown as Harness).renderSortingViews("active", false, false, "Foreground two"));
-  await red.getByRole("button", { name: "History sorting", exact: true }).click();
+  await red.getByRole("button", { name: "Round 1: History sorting", exact: true }).click();
   await expect.poll(() => order(red)).toEqual(["a", "c", "b", "d"]);
   await page.evaluate(() => (window as unknown as Harness).renderSortingViews("active", false, true, "Foreground two"));
+  await selectSortingViews(page);
   await expect(red.getByRole("button", { name: "Reorder item 1", exact: true })).toHaveAttribute("aria-disabled", "false");
   await expect.poll(() => order(blue)).toEqual(["b", "a", "d", "c"]);
 
@@ -364,7 +378,7 @@ for (const width of [1440, 390]) test(`sorting team workflow across foreground t
   expect(await page.evaluate(() => (window as unknown as Harness).sortingReads)).not.toContain(correctPath);
   await page.evaluate(() => (window as unknown as Harness).renderSortingViews("closed"));
   for (const region of [red, teammate, blue]) {
-    await expect(region.getByRole("button", { name: "History sorting", exact: true })).toHaveCount(0);
+    await expect(region.getByRole("button", { name: "Round 1: History sorting", exact: true })).toHaveCount(0);
     await expect(region.getByRole("list", { name: "Sorting order", exact: true })).toHaveCount(0);
     await expect(region.getByRole("region", { name: "Foreground one", exact: true })).toBeVisible();
   }
@@ -391,12 +405,12 @@ test("rapid relative edits remain interactive, merge teammates, and survive a ta
   await dragItem(page, teammate, "b", "a");
   await expect.poll(() => order(teammate)).toEqual(["c", "a", "b", "d"]);
   await expect.poll(() => order(red)).toEqual(["c", "a", "d", "b"]);
-  await red.getByRole("button", { name: "Foreground one", exact: true }).click();
+  await red.getByRole("button", { name: "Round 2: Foreground one", exact: true }).click();
   await expect(red.getByRole("list", { name: "Sorting order", exact: true })).toHaveCount(0);
   await page.evaluate(() => (window as unknown as Harness).sortingTransport.releaseAcks());
   await expect.poll(() => page.evaluate(() => (window as unknown as Harness).sortingTransport.team("red"))).toEqual({ order: ["c", "a", "d", "b"], revision: 3 });
   await expect.poll(() => order(teammate)).toEqual(["c", "a", "d", "b"]);
-  await red.getByRole("button", { name: "History sorting", exact: true }).click();
+  await red.getByRole("button", { name: "Round 1: History sorting", exact: true }).click();
   await expect(red.getByRole("button", { name: "Reorder item 1", exact: true })).toHaveAttribute("aria-disabled", "false");
   await expect.poll(() => order(red)).toEqual(["c", "a", "d", "b"]);
   const writes = await page.evaluate(() => (window as unknown as Harness).sortingWrites);
@@ -461,7 +475,7 @@ test("a server close disables further moves before round metadata arrives", asyn
   await page.evaluate(() => (window as unknown as Harness).renderSortingViews("closed"));
   await expect(red.getByRole("button", { name: /^Reorder item/ })).toHaveCount(0);
   await expect(red.getByRole("list", { name: "Sorting order", exact: true })).toHaveCount(0);
-  await expect(red.getByRole("button", { name: "History sorting", exact: true })).toHaveCount(0);
+  await expect(red.getByRole("button", { name: "Round 1: History sorting", exact: true })).toHaveCount(0);
 });
 
 test("hovering a row gap keeps the dragged item at its insertion position", async ({ page }) => {
@@ -516,13 +530,13 @@ test("sorting list keeps compact Figma geometry with lighter idle rows", async (
 });
 
 
-test("closing retires paused edits even when their round tab is unmounted", async ({page}) => {
+test("closing retires paused edits while another panel view is selected", async ({page}) => {
   await setupSortingPage(page);
   const red=view(page,"red");
   await page.evaluate(() => { (window as unknown as Harness).failNextSortingWrite="before"; });
   await dragItem(page,red,"a","b");
   await expect(red.getByRole("alert")).toContainText("Unable to save this edit.");
-  await red.getByRole("button",{name:"Foreground one",exact:true}).click();
+  await red.getByRole("button",{name:"Round 2: Foreground one",exact:true}).click();
   await expect(red.getByRole("list",{name:"Sorting order",exact:true})).toHaveCount(0);
   expect(await page.evaluate(() => (window as unknown as Harness).sortingTransport.listenerCount())).toBe(3);
   await page.evaluate(() => (window as unknown as Harness).renderSortingViews("closed"));

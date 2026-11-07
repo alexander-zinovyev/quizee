@@ -2,6 +2,7 @@
 
 import { createPortal } from "react-dom";
 import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 
 type ZoomableImageProps = {
   src: string;
@@ -11,6 +12,8 @@ type ZoomableImageProps = {
   imageClassName?: string;
   zoomButtonClassName?: string;
   zoomLabel?: string;
+  zoomIcon?: ReactNode;
+  zoomOverlay?: boolean;
   fitToParent?: boolean;
   onError?: () => void;
 };
@@ -23,6 +26,8 @@ export default function ZoomableImage({
   imageClassName,
   zoomButtonClassName,
   zoomLabel = "Zoom image",
+  zoomIcon,
+  zoomOverlay = false,
   fitToParent = false,
   onError,
 }: ZoomableImageProps) {
@@ -159,7 +164,9 @@ export default function ZoomableImage({
         />
         <button
           type="button"
-          className={`absolute right-2 top-2 z-10 rounded-full bg-black/70 p-1.5 text-white transition hover:bg-black/90 focus:outline-none focus:ring-2 focus:ring-white/90 ${
+          className={`${zoomOverlay
+            ? "absolute inset-0 z-10 flex items-center justify-center bg-black/40 text-white opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white/90"
+            : "absolute right-2 top-2 z-10 rounded-full bg-black/70 p-1.5 text-white transition hover:bg-black/90 focus:outline-none focus:ring-2 focus:ring-white/90"} ${
             zoomButtonClassName ?? ""
           }`}
           aria-label={zoomLabel}
@@ -169,7 +176,7 @@ export default function ZoomableImage({
             setIsZoomOpen(true);
           }}
         >
-          <svg
+          {zoomIcon ?? <svg
             xmlns="http://www.w3.org/2000/svg"
             viewBox="0 0 24 24"
             fill="none"
@@ -183,7 +190,7 @@ export default function ZoomableImage({
             <line x1="21" y1="21" x2="16.65" y2="16.65" />
             <line x1="11" y1="8" x2="11" y2="14" />
             <line x1="8" y1="11" x2="14" y2="11" />
-          </svg>
+          </svg>}
         </button>
       </div>
       {typeof document !== "undefined" && overlay
