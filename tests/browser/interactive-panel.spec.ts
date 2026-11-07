@@ -4,13 +4,14 @@ import { build } from "esbuild";
 // Keep native scrollbars visible for the presentation appearance regressions.
 test.use({ colorScheme: "light", launchOptions: { ignoreDefaultArgs: ["--hide-scrollbars"] } });
 
-async function bundle() {
+async function bundle(withGate = false) {
   const result = await build({
     stdin: { contents: `
       import React from 'react';
       import {createRoot} from 'react-dom/client';
       import {flushSync} from 'react-dom';
       import RoomContent from './app/[room]/room-content';
+      ${withGate ? "import RoomGate from './app/[room]/room-gate';" : ""}
       import {RoundStage} from './lib/components/room/round-stage';
       import {HarnessAuthProvider} from '@/app/providers/firebase-auth-provider';
       import {applySortingEdit} from './types/sorting';
@@ -23,9 +24,9 @@ async function bundle() {
         if(reconnect) generation++;
         flushSync(()=>['first','teammate','host'].forEach((uid,index)=>roots[index].render(
           <HarnessAuthProvider key={generation} uid={uid}>
-            <RoomContent roomSlug="demo" teams={teams} hostMember={{id:'host',name:'Host'}}
+            ${withGate ? '<RoomGate roomSlug="demo"/>' : `<RoomContent roomSlug="demo" teams={teams} hostMember={{id:'host',name:'Host'}}
               isHost={uid==='host'} viewerTeamId={uid==='host'?null:'red'} viewerName={names[uid]}
-              memberNames={names} presenting={window.roomTransport.presentation()}/>
+              memberNames={names} presenting={window.roomTransport.presentation()}/>`}
           </HarnessAuthProvider>)));
       };
       window.renderStandaloneStage=()=>{
@@ -42,14 +43,18 @@ async function bundle() {
       };
       window.renderRoom();
     `, resolveDir: process.cwd(), loader: "tsx" },
-    bundle: true, write: false, jsx: "automatic",
+    bundle: true, write: false, jsx: "automatic", loader: { ".css": "empty" },
     define: { "process.env": "{}", "process.env.NODE_ENV": '"development"' },
     plugins: [{ name: "room-fixture", setup(builder) {
+      builder.onResolve({ filter: /^@\/lib\/media$/ }, (args) => ({ path: args.path, namespace: "room-mock" }));
       builder.onResolve({ filter: /^(firebase\/(firestore|storage)|@\/lib\/firebase\/client|@\/app\/providers\/firebase-auth-provider|@\/lib\/components\/(member|team))$/ }, (args) => ({ path: args.path, namespace: "room-mock" }));
       builder.onLoad({ filter: /.*/, namespace: "room-mock" }, (args) => {
+        if (args.path === "@/lib/media") return { contents: `export const createMediaTransport=()=>({
+          onParticipantUpdate:()=>()=>{},onError:()=>()=>{},join:async()=>{},leave:async()=>{},setSubscriptionPolicy:async()=>{},
+        });` };
         if (args.path === "firebase/firestore") return { contents: `
           const path=(base,...parts)=>[...(typeof base==='string'?[base]:[]),...parts].join('/');
-          export const doc=path;export const collection=path;export const query=value=>value;export const orderBy=()=>null;
+          export const doc=path;export const collection=path;export const query=value=>value;export const orderBy=()=>null;export const where=()=>null;
           export const onSnapshot=(key,options,callback)=>window.roomTransport.subscribe(key,typeof options==='function'?options:callback);
           export const getDoc=async key=>window.roomTransport.snapshot(key);
           export const getDocFromServer=getDoc;export const getDocs=getDoc;
@@ -67,7 +72,7 @@ async function bundle() {
         if (args.path.includes("firebase-auth-provider")) return { resolveDir: process.cwd(), contents: `
           import React from 'react';const Auth=React.createContext('unknown');
           export const HarnessAuthProvider=({uid,children})=>React.createElement(Auth.Provider,{value:uid},children);
-          export const useFirebaseAuth=()=>{const uid=React.useContext(Auth);const getToken=React.useCallback(async()=>uid,[uid]);return {user:{uid},getToken};};` };
+          export const useFirebaseAuth=()=>{const uid=React.useContext(Auth);const user=React.useMemo(()=>({uid}),[uid]);const getToken=React.useCallback(async()=>uid,[uid]);return {user,loading:false,getToken};};` };
         if (/components\/(member|team)$/.test(args.path)) return { contents: `export default function Roster(){return null;}` };
         return { contents: `export const getClientFirestore=()=>({});export const getFirebaseClientApp=()=>({});` };
       });
@@ -99,7 +104,7 @@ type Fixture = {
   };
 };
 
-async function setup(page: Page) {
+async function setup(page: Page, withGate = false) {
   await page.goto("/build");
   await expect(page.getByRole("button", { name: "Add round", exact: true })).toBeVisible();
   const css = await page.locator('link[rel="stylesheet"]').evaluateAll((links) => links.map((link) => (link as HTMLLinkElement).href));
@@ -133,6 +138,11 @@ async function setup(page: Page) {
     docs[`${round("image")}/images/flag1`] = { media: { storagePath: "flags/one.svg", filename: "one.svg", contentType: "image/svg+xml" } };
     let presenting: Data = { round: "text", question: "q1", withAnswer: false, promptPage: 0, answerPage: 0 };
     docs[room] = { state: "playing", presenting };
+    docs[`${room}/teams/red`] = { name: "Team Red", scoreTotal: 10 };
+    docs[`${room}/teams/blue`] = { name: "Team Blue", scoreTotal: 5 };
+    for (const uid of ["first", "teammate", "host"]) docs[`${room}/members/${uid}`] = {
+      name: uid, role: uid === "host" ? "host" : "player", team: uid === "host" ? null : "red",
+    };
     const watchers = new Map<string, Set<(value: unknown) => void>>();
     const snapshot = (key: string): unknown => {
       const data = docs[key];
@@ -218,7 +228,7 @@ async function setup(page: Page) {
       return new Response(JSON.stringify(docs[key]), { status: 200 });
     };
   });
-  await page.addScriptTag({ content: await bundle() });
+  await page.addScriptTag({ content: await bundle(withGate) });
   await expect(page.locator("#first").getByRole("button", { name: "Round 1: Capital cities", exact: true })).toBeVisible();
 }
 
@@ -390,12 +400,14 @@ for (const type of ["image", "sorting", "color"] as const) test(`${type} grading
 for (const width of [1440, 390]) test(`host next-round activation lives in the Stage header at ${width}px`, async ({ page }, testInfo) => {
   await page.setViewportSize({ width, height: 900 });
   await setup(page);
+  const hostRoom = room(page, "host");
+  const header = hostRoom.locator("main > section > article > header").first();
+  await expect(header.getByRole("button", { name: "Next round", exact: true })).toHaveCount(0);
+  await expect(header.getByText(/^Next up:/)).toHaveCount(0);
   await page.evaluate(() => {
     const transport = (window as unknown as Fixture).roomTransport;
     for (const id of ["text", "multi", "color"]) transport.set(`rooms/demo/rounds/${id}`, { state: "closed", gradingRequired: false });
   });
-  const hostRoom = room(page, "host");
-  const header = hostRoom.locator("main > section > article > header").first();
   const message = header.getByText("Next up: Foreground two", { exact: true });
   await expect(message).toBeVisible();
   await expect(panel(page, "host").getByText("Next up: Foreground two", { exact: true })).toHaveCount(0);
@@ -411,6 +423,64 @@ for (const width of [1440, 390]) test(`host next-round activation lives in the S
   await expect(message).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => (window as unknown as Fixture).roomTransport.writes.filter((write) => write.body.activateRound === "next").length)).toBe(1);
   await expect(view(page, "host", "Round 2: Timeline").getByRole("img", { name: "active", exact: true })).toHaveCount(1);
+});
+
+for (const width of [1440, 390]) test(`host end-game action lives in the Stage header at ${width}px`, async ({ page }, testInfo) => {
+  await page.setViewportSize({ width, height: 900 });
+  await setup(page, true);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const hostRoom = room(page, "host");
+  const header = hostRoom.locator("main > section > article > header").first();
+  const endGame = header.getByRole("button", { name: "End game", exact: true });
+  await page.evaluate(() => {
+    const transport = (window as unknown as Fixture).roomTransport;
+    for (const id of ["text", "next", "image", "multi", "color"]) transport.set(`rooms/demo/rounds/${id}`, { state: "closed", gradingRequired: false });
+  });
+  // Sorting stays open in the background after every foreground round has closed.
+  await expect(view(page, "host", "Round 2: Timeline").getByRole("img", { name: "active", exact: true })).toHaveCount(1);
+  await expect(hostRoom.getByRole("button", { name: "End game", exact: true })).toHaveCount(0);
+  await expect(hostRoom.getByText("All rounds closed.", { exact: true })).toHaveCount(0);
+  await expect(header.getByRole("button", { name: "Next round", exact: true })).toHaveCount(0);
+  await view(page, "host", "Round 2: Timeline").click();
+  await panel(page, "host").getByRole("button", { name: "End round", exact: true }).click();
+
+  const notice = header.getByText("All rounds closed.", { exact: true });
+  for (const selected of ["Round 2: Timeline", "Chat", "Round 1: Capital cities"]) {
+    await view(page, "host", selected).click();
+    await expect(notice).toBeVisible();
+    await expect(endGame).toBeVisible();
+    await expect(hostRoom.getByRole("button", { name: "End game", exact: true })).toHaveCount(1);
+    await expect(hostRoom.getByText("All rounds closed.", { exact: true })).toHaveCount(1);
+    await expect(panel(page, "host").getByRole("button", { name: "End game", exact: true })).toHaveCount(0);
+    await expect(panel(page, "host").getByText("All rounds closed.", { exact: true })).toHaveCount(0);
+  }
+  await expect(header.getByText(/^Next up:/)).toHaveCount(0);
+  await expect(header.getByRole("button", { name: "Next round", exact: true })).toHaveCount(0);
+  for (const id of ["first", "teammate"]) {
+    await expect(room(page, id).getByRole("button", { name: "End game", exact: true })).toHaveCount(0);
+    await expect(room(page, id).getByText("All rounds closed.", { exact: true })).toHaveCount(0);
+  }
+  const headerBounds = (await header.boundingBox())!, buttonBounds = (await endGame.boundingBox())!;
+  expect(headerBounds.x + headerBounds.width - buttonBounds.x - buttonBounds.width).toBeCloseTo(20, 0);
+  const noticeBounds = (await notice.boundingBox())!;
+  expect(Math.abs(noticeBounds.y + noticeBounds.height / 2 - buttonBounds.y - buttonBounds.height / 2)).toBeLessThan(1);
+  expect(await hostRoom.evaluate((element) => element.scrollWidth <= innerWidth)).toBe(true);
+  await header.screenshot({ path: testInfo.outputPath(`end-game-header-${width}.png`), animations: "disabled" });
+  await view(page, "host", width === 1440 ? "Chat" : "Round 1: Capital cities").click();
+  await endGame.click();
+  expect(await page.evaluate(() => {
+    const snapshot = (window as unknown as Fixture).roomTransport.snapshot("rooms/demo") as { data: () => Record<string, unknown> };
+    return snapshot.data();
+  })).toMatchObject({
+    state: "ended", presenting: { round: null, question: null, withAnswer: false, promptPage: 0, answerPage: 0 },
+  });
+  for (const id of ["host", "first", "teammate"]) {
+    await expect(room(page, id).getByText("Quiz ended", { exact: true })).toBeVisible();
+    await expect(room(page, id).getByText("Final standings and recaps appear here. Teams and players remain visible for debrief.", { exact: true })).toBeVisible();
+    await expect(panel(page, id)).toHaveCount(0);
+  }
+  expect(errors).toEqual([]);
 });
 
 test.describe("presentation scrollbar appearance", () => {
