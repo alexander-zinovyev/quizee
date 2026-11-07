@@ -28,3 +28,9 @@ The host builds a quiz or loads a prepared quiz pack. Each round has a theme of 
 | **Sorting** | Teams arrange text or media items according to a criterion, with one point for each correct position. The list can stay open alongside other rounds. |
 
 Sorting packs use the existing stage format for item text and media. See [sorting pack authoring](docs/sorting-rounds.md) for the JSON format.
+
+## Firestore access policy
+
+[`firestore.rules`](firestore.rules) tracks the deployed room access policy. Room members can use room chat; teams and the host can use team chat. Teams can read and write their own live round data, and the host can manage round data. Questions and images become readable when a round is no longer scheduled. Correct answers and all teams' frozen submissions become readable to room members when the round closes, independently of the host's presentation reveal. The player UI controls when those results appear.
+
+Server answer endpoints enforce their own input, lock, and round-lifecycle validation. These checks do not restrict the direct Firestore writes permitted by the rules. `npm run test:rules` exercises both the access policy and server validation in the Firestore emulator; CI runs it on pushes and pull requests. CI does not deploy rules to production.
