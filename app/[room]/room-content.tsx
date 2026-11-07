@@ -653,7 +653,7 @@ export default function RoomContent({
       const meta = roundsMeta.find((round) => round.id === roundId);
       if (!meta) throw new Error("Round not found.");
       const next = presenting?.round === roundId
-        ? { round: roundId, question: meta.type === "color" ? presenting?.question ?? roundQuestions[roundId]?.[0]?.id ?? null : null, withAnswer: false }
+        ? { round: roundId, question: null, withAnswer: false }
         : currentPresentation();
       await persistPresentation(next, { closeRound: roundId });
       if (meta.type === "image" || meta.type === "color" || meta.type === "sorting") await autoGradeRound(roundId);

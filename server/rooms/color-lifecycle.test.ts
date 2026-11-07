@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import { database, current, redAnswer, blueAnswer } from "./test-database";
 import { saveTeamAnswer, parseAnswerSave } from "./answer-input";
 import { transitionPresentation } from "./presentation";
+import { gradeColorRound } from "./color-scoring";
 
 async function main() {
   const { db, docs } = database();
-  docs.set("rooms/demo/rounds/r1", { type: "color", state: "active" });
+  docs.set("rooms/demo/rounds/r1", { type: "color", state: "active", scoring: { mode: "proportional" } });
   docs.set("rooms/demo/rounds/r1/questions/q1", { initialColor: "#123456" });
   docs.set("rooms/demo/rounds/r1/questions/q2", { initialColor: "#ABCDEF" });
   docs.delete(redAnswer); docs.delete(blueAnswer);
@@ -25,12 +26,22 @@ async function main() {
   await saveTeamAnswer(db, "demo", "r1", "q1", "teammate", parseAnswerSave({ teamId: "red", locked: true }));
   assert.equal(docs.get(redAnswer)?.answer, "#AABBCC");
   assert.equal(docs.get(redAnswer)?.locked, true);
-  await transitionPresentation(db, "demo", "host", current, current, { closeRound: "r1" });
+  const closedStage = { ...current, question: null };
+  await transitionPresentation(db, "demo", "host", current, closedStage, { closeRound: "r1" });
+  assert.deepEqual(docs.get("rooms/demo")?.presenting, closedStage);
+  assert.equal(docs.get("rooms/demo/rounds/r1")?.state, "closed");
   assert.equal(docs.get("rooms/demo/rounds/r1/teamAnswers/red/answers/q1")?.answer, "#AABBCC");
   assert.equal(docs.get("rooms/demo/rounds/r1/teamAnswers/blue/answers/q1")?.answer, "#123456");
   assert.equal(docs.get("rooms/demo/rounds/r1/teamAnswers/red/answers/q2")?.answer, "#ABCDEF");
   await assert.rejects(saveTeamAnswer(db, "demo", "r1", "q1", "player", parseAnswerSave({ teamId: "red", answer: "#FFFFFF" })), /Round/);
   await assert.rejects(saveTeamAnswer(db, "demo", "r1", "q1", "teammate", parseAnswerSave({ teamId: "red", locked: false })), /Round/);
-  await transitionPresentation(db, "demo", "host", current, { ...current, withAnswer: true });
+  docs.set("rooms/demo/rounds/r1/answers/q1", { answer: "#AABBCC" });
+  docs.set("rooms/demo/rounds/r1/answers/q2", { answer: "#ABCDEF" });
+  await gradeColorRound(db, "demo", "r1", "host");
+  assert.equal(docs.get("rooms/demo/rounds/r1")?.gradingRequired, false);
+  assert.equal(docs.get("rooms/demo/teams/red")?.scoreTotal, 2);
+  assert.deepEqual(docs.get("rooms/demo")?.presenting, closedStage);
+  await transitionPresentation(db, "demo", "host", closedStage, { ...current, withAnswer: true });
+  assert.deepEqual(docs.get("rooms/demo")?.presenting, { ...current, withAnswer: true });
 }
 void main().catch((error) => { console.error(error); process.exitCode = 1; });
