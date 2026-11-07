@@ -58,7 +58,7 @@ async function bundle() {
           export const addDoc=async(key,data)=>window.roomTransport.add(key,data);
           export const setDoc=async(key,data)=>window.roomTransport.set(key,data);
           export const updateDoc=setDoc;
-          export const writeBatch=()=>({set:()=>{throw new Error('Unexpected host batch');},commit:()=>{throw new Error('Unexpected host batch');}});
+          export const writeBatch=()=>{const writes=[];return {set:(key,data)=>writes.push([key,data]),commit:async()=>{writes.forEach(([key,data])=>window.roomTransport.set(key,data));}};};
           export const runTransaction=()=>{throw new Error('Image matching is covered in image-matching.spec.ts');};
         ` };
         if (args.path === "firebase/storage") return { contents: `
@@ -89,6 +89,9 @@ type Fixture = {
     setPresentation: (round: string, question: string | null, withAnswer?: boolean) => void;
     holdAnswers: boolean;
     releaseAnswers: () => void;
+    holdGrading: boolean;
+    releaseGrading: () => void;
+    gradingError?: string;
     writes: Array<{ url: string; body: Record<string, unknown>; actor: string }>;
     reads: string[];
     mediaReads: string[];
@@ -147,9 +150,10 @@ async function setup(page: Page) {
     const set = (key: string, data: Data) => { docs[key] = { ...docs[key], ...data }; emit(key); };
     let messageId = 0;
     const held: Array<() => void> = [];
+    const heldGrades: Array<() => void> = [];
     const image = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="150" height="75"><rect width="150" height="75" fill="teal"/></svg>');
     w.roomTransport = {
-      image, holdAnswers: false, writes: [], reads: [], mediaReads: [], snapshot, set,
+      image, holdAnswers: false, holdGrading: false, writes: [], reads: [], mediaReads: [], snapshot, set,
       add: (key, data) => set(`${key}/message-${++messageId}`, data),
       subscribe: (key, callback) => {
         w.roomTransport.reads.push(key);
@@ -172,6 +176,7 @@ async function setup(page: Page) {
         w.renderRoom();
       },
       releaseAnswers: () => { w.roomTransport.holdAnswers = false; held.splice(0).forEach((release) => release()); },
+      releaseGrading: () => { w.roomTransport.holdGrading = false; heldGrades.splice(0).forEach((release) => release()); },
     };
     const originalFetch = window.fetch.bind(window);
     window.fetch = async (input, options) => {
@@ -181,7 +186,10 @@ async function setup(page: Page) {
       const actor = new Headers(options?.headers).get("authorization")?.replace("Bearer ", "") ?? "unknown";
       w.roomTransport.writes.push({ url, body, actor });
       if (url.endsWith("/grade")) {
-        set(round("image"), { gradingRequired: false });
+        if (w.roomTransport.holdGrading) await new Promise<void>((resolve) => heldGrades.push(resolve));
+        if (w.roomTransport.gradingError) return new Response(JSON.stringify({ message: w.roomTransport.gradingError }), { status: 500 });
+        const id = url.split("/").at(-2)!;
+        set(round(id), { gradingRequired: false });
         return new Response("{}", { status: 200 });
       }
       if (url.endsWith("/presenting")) {
@@ -313,6 +321,70 @@ test("room integration preserves host channels, privately previews scheduled rou
   await expect(host.getByRole("list", { name: "Sorting order", exact: true }).locator(":scope > li").first()).toHaveAttribute("data-item-id", "d");
   await view(page, "host", "Chat").click();
   await expect(host.getByRole("button", { name: "Team Red", exact: true })).toHaveAttribute("aria-pressed", "true");
+});
+
+for (const type of ["text", "multi"] as const) test(`host opens grading for a selected ${type} round and reveals answers after finishing`, async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await setup(page);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.evaluate((type) => {
+    const transport = (window as unknown as Fixture).roomTransport;
+    transport.set(`rooms/demo/rounds/${type}`, { state: "closed", gradingRequired: true });
+    transport.set(`rooms/demo/rounds/${type}/teamAnswers/red`, { graded: false });
+    transport.set(`rooms/demo/rounds/${type}/teamAnswers/red/answers/q1`, type === "multi"
+      ? { attempts: [{ answer: "Submitted answer", step: 0, submittedBy: "first", submittedAt: null }] }
+      : { answer: "Submitted answer" });
+    if (type === "multi") transport.set("rooms/demo/rounds/multi/answers/q1", { hint: "Paris", stages: [{ text: "Paris" }] });
+    transport.setPresentation("sorting", null);
+  }, type);
+  const roundName = type === "text" ? "Round 1: Capital cities" : "Round 5: Clues";
+  await view(page, "host", roundName).click();
+  const host = panel(page, "host");
+  const stage = room(page, "host").locator("main > section > article").first();
+  await host.locator("header").getByRole("button", { name: "Grade answers", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as Fixture).roomTransport.presentation())).toMatchObject({ round: type, question: null, withAnswer: false });
+  await expect(stage.getByText("Submitted answer", { exact: true })).toBeVisible();
+  await expect(host.getByRole("button", { name: "Show answers", exact: true })).toHaveCount(0);
+  await stage.getByRole("spinbutton").fill("1");
+  await stage.getByRole("button", { name: "Finish grading", exact: true }).click();
+  await expect(host.getByRole("button", { name: "Grade answers", exact: true })).toHaveCount(0);
+  await host.getByRole("button", { name: "Show answers", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as Fixture).roomTransport.presentation())).toMatchObject({ round: type, question: "q1", withAnswer: true });
+  await expect(stage.getByText("Paris", { exact: true })).toBeVisible();
+  await host.getByRole("button", { name: "Hide answers", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as Fixture).roomTransport.presentation())).toMatchObject({ round: type, question: "q1", withAnswer: false });
+  await expect(stage.getByRole("button", { name: "Finish grading", exact: true })).toHaveCount(0);
+  await expect(panel(page, "first").getByRole("button", { name: "Grade answers", exact: true })).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+for (const type of ["image", "sorting", "color"] as const) test(`${type} grading keeps its header action on failure and switches to reveal after a successful retry`, async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await setup(page);
+  await page.evaluate((type) => {
+    const transport = (window as unknown as Fixture).roomTransport;
+    transport.set(`rooms/demo/rounds/${type}`, { state: "closed", gradingRequired: true });
+    transport.gradingError = "Scoring unavailable";
+  }, type);
+  await view(page, "host", { image: "Round 4: Flags", sorting: "Round 2: Timeline", color: "Round 6: Colors" }[type]).click();
+  const host = panel(page, "host"), grade = host.locator("header").getByRole("button", { name: "Grade answers", exact: true });
+  await grade.click();
+  await expect(host.getByRole("alert")).toContainText("Scoring unavailable");
+  await expect(grade).toBeEnabled();
+  await expect(host.getByRole("button", { name: "Show answers", exact: true })).toHaveCount(0);
+  await page.evaluate(() => {
+    const transport = (window as unknown as Fixture).roomTransport;
+    transport.gradingError = undefined;
+    transport.holdGrading = true;
+  });
+  await grade.click();
+  await expect(grade).toBeDisabled();
+  await page.evaluate(() => (window as unknown as Fixture).roomTransport.releaseGrading());
+  await expect(grade).toHaveCount(0);
+  await host.getByRole("button", { name: "Show answers", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as Fixture).roomTransport.presentation())).toMatchObject({ round: type, question: type === "sorting" ? null : "q1", withAnswer: true });
+  await expect(host.getByRole("alert")).toHaveCount(0);
 });
 
 for (const width of [1440, 390]) test(`host next-round activation lives in the Stage header at ${width}px`, async ({ page }, testInfo) => {

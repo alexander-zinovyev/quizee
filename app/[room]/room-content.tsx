@@ -138,6 +138,7 @@ export default function RoomContent({
   const [isActivatingNext, setIsActivatingNext] = useState(false);
   const [isPresentingUpdatePending, setIsPresentingUpdatePending] = useState(false);
   const [isEndingRound, setIsEndingRound] = useState(false);
+  const [isAutoGrading, setIsAutoGrading] = useState(false);
   const [autoGradeFailedRoundId, setAutoGradeFailedRoundId] = useState<string | null>(null);
   const teamAnswerRoundUnsubRef = useRef<Unsubscribe | null>(null);
   const teamAnswerUnsubsRef = useRef<Map<string, Unsubscribe>>(new Map());
@@ -564,16 +565,30 @@ export default function RoomContent({
     });
   };
 
+  async function gradeRoundFromPanel(roundId: string) {
+    if (!isHost) return;
+    const round = roundsMeta.find((entry) => entry.id === roundId);
+    if (!round || round.state !== "closed" || round.gradingRequired === false) {
+      setRoundsError("Only closed rounds awaiting grading can be graded.");
+      return;
+    }
+    if (round.type === "text" || round.type === "multi-step") {
+      await updatePresenting({ round: roundId, question: null, withAnswer: false, promptPage: 0, answerPage: 0 });
+    } else {
+      await autoGradeRound(roundId);
+    }
+  }
+
   async function revealRoundFromPanel(roundId: string, withAnswer: boolean) {
     const round = roundsMeta.find((entry) => entry.id === roundId);
-    if (!round || round.state !== "closed" || (round.type !== "image" && round.type !== "sorting")) {
-      setRoundsError("End the image or sorting round before revealing answers.");
+    if (!round || round.state !== "closed" || round.gradingRequired !== false) {
+      setRoundsError("Finish grading the round before revealing answers.");
       return;
     }
     const question = round.type === "sorting" ? null
       : presenting?.round === roundId && presenting.question ? presenting.question : roundQuestions[roundId]?.[0]?.id ?? null;
-    if (round.type === "image" && !question) {
-      setRoundsError("Image round questions are not available.");
+    if (round.type !== "sorting" && !question) {
+      setRoundsError("Round questions are not available.");
       return;
     }
     await updatePresenting({ round: roundId, question, withAnswer, promptPage: 0, answerPage: 0 });
@@ -812,6 +827,8 @@ export default function RoomContent({
   }
 
   async function autoGradeRound(roundId: string) {
+    if (!isHost) return;
+    setIsAutoGrading(true);
     setAutoGradeFailedRoundId(null);
     setRoundsError(null);
     try {
@@ -833,6 +850,8 @@ export default function RoomContent({
       console.error("[room-content] auto-grade failed", error);
       setRoundsError("Unable to auto-grade this round right now.");
       setAutoGradeFailedRoundId(roundId);
+    } finally {
+      setIsAutoGrading(false);
     }
   }
 
@@ -1490,10 +1509,10 @@ export default function RoomContent({
             chat={(active) => <RoomChatPanel active={active} roomSlug={roomSlug} teams={teams} viewerTeamId={viewerTeamId}
               isHost={isHost} viewerName={resolvedChatName} memberNames={memberNames} />}
             renderRound={(roundId) => isHost ? <RoomHostRoundsPanel rounds={hostRounds} selectedRoundId={roundId}
-              presenting={presenting} pending={isPresentingUpdatePending || isEndingRound || isActivatingNext}
+              presenting={presenting} pending={isPresentingUpdatePending || isEndingRound || isActivatingNext || isAutoGrading}
               onPresentQuestion={presentQuestionFromPanel} onHideQuestion={hideQuestionFromPanel}
               onStartRound={handleActivateSpecificRound} onEndRound={handleEndSpecificRound}
-              onGradeRound={autoGradeRound} onRevealRound={revealRoundFromPanel} /> : (() => {
+              onGradeRound={gradeRoundFromPanel} onRevealRound={revealRoundFromPanel} /> : (() => {
                 const round = rounds.find((entry) => entry.id === roundId);
                 return round ? <QuizRound {...round} embedded roomSlug={roomSlug} teamId={viewerTeamId ?? undefined} /> : null;
               })()}

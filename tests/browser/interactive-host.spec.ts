@@ -13,7 +13,7 @@ async function fixtureBundle() {
       const image='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="150" height="75"><rect width="150" height="75" fill="teal"/></svg>');
       const ids=Array.from({length:8},(_,index)=>String(index+1));
       let presentation={round:null,question:null,withAnswer:false};
-      let current={type:'text',state:'scheduled',pending:false,questionsLoaded:true};
+      let current={type:'text',state:'scheduled',pending:false,questionsLoaded:true,gradingRequired:false};
       const record=(action,...args)=>{window.actions.push([action,...args]);};
       const callbacks={
         onStartRound:id=>record('start',id),onEndRound:id=>record('end',id),onGradeRound:id=>record('grade',id),
@@ -22,16 +22,16 @@ async function fixtureBundle() {
         onRevealRound:(id,withAnswer)=>{record('reveal',id,withAnswer);presentation={round:id,question:null,withAnswer};render();},
       };
       function render(){
-        const {type,state,pending,questionsLoaded}=current;
+        const {type,state,pending,questionsLoaded,gradingRequired}=current;
         const round={id:type,title:type==='image'?'World flags':type==='sorting'?'Timeline':'Capital cities',type,state,order:0,roundNumber:1,
-          criterion:'Earliest to latest',correctOrder:[...ids].reverse(),questionsLoaded,
+          criterion:'Earliest to latest',correctOrder:[...ids].reverse(),questionsLoaded,gradingRequired,
           sortingQuestions:questionsLoaded?ids.map(id=>({id,text:'Item '+id})):[],
           images:ids.map(id=>({id,src:image,alt:'Flag '+id})),
           questions:ids.map((id,index)=>({id,prompt:type==='image'?'Country '+id:'Question '+id,answer:type==='image'?id:index===0?'':'Answer '+id,order:index})),
         };
         root.render(<HostPanel rounds={[round,{...round,id:'other',title:'Other round'}]} selectedRoundId={type} presenting={presentation} pending={pending} {...callbacks}/>);
       }
-      window.renderHost=(type='text',state='scheduled',pending=false,questionsLoaded=true)=>{current={type,state,pending,questionsLoaded};presentation={round:null,question:null,withAnswer:false};render();};
+      window.renderHost=(type='text',state='scheduled',pending=false,questionsLoaded=true,gradingRequired=false)=>{current={type,state,pending,questionsLoaded,gradingRequired};presentation={round:null,question:null,withAnswer:false};render();};
       window.renderHost();
     `, resolveDir: process.cwd(), loader: "tsx" },
     bundle: true, write: false, jsx: "automatic",
@@ -50,7 +50,7 @@ async function fixtureBundle() {
 }
 
 type Fixture = {
-  renderHost: (type: string, state: string, pending?: boolean, questionsLoaded?: boolean) => void;
+  renderHost: (type: string, state: string, pending?: boolean, questionsLoaded?: boolean, gradingRequired?: boolean) => void;
   actions: Array<Array<string | boolean>>;
 };
 async function setup(page: Page) {
@@ -148,4 +148,26 @@ test("host waits for sorting question documents when the private order arrives f
   await page.evaluate(() => (window as unknown as Fixture).renderHost("sorting", "scheduled", false, true));
   await expect(page.getByRole("status")).toHaveCount(0);
   await expect(page.getByRole("list", { name: "Sorting order", exact: true }).locator(":scope > li")).toHaveCount(8);
+});
+
+test("closed rounds switch their header action from grading to answer reveal", async ({ page }) => {
+  await setup(page);
+  for (const type of ["text", "multi-step", "image", "sorting", "color"]) {
+    await page.evaluate((type) => (window as unknown as Fixture).renderHost(type, "closed", false, true, true), type);
+    const header = page.getByRole("region", { name: /^Host round:/ }).locator("header");
+    const grade = header.getByRole("button", { name: "Grade answers", exact: true });
+    await expect(grade).toBeVisible();
+    await expect(page.getByRole("button", { name: "Show answers", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Retry scoring", exact: true })).toHaveCount(0);
+    await grade.click();
+    await page.evaluate((type) => (window as unknown as Fixture).renderHost(type, "closed", true, true, true), type);
+    await expect(grade).toBeDisabled();
+    await page.evaluate((type) => (window as unknown as Fixture).renderHost(type, "closed", false, true, false), type);
+    await expect(grade).toHaveCount(0);
+    await header.getByRole("button", { name: "Show answers", exact: true }).click();
+    await header.getByRole("button", { name: "Hide answers", exact: true }).click();
+  }
+  expect(await page.evaluate(() => (window as unknown as Fixture).actions)).toEqual(
+    ["text", "multi-step", "image", "sorting", "color"].flatMap((type) => [["grade", type], ["reveal", type, true], ["reveal", type, false]])
+  );
 });
