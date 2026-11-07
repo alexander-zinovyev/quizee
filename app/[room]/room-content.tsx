@@ -1308,7 +1308,18 @@ export default function RoomContent({
                       Question {presentingQuestion.order + 1}
                     </p>
                   ) : null}
-                  {isHost && !allRoundsClosed && !hasActiveForegroundRound(roundsMeta) && nextScheduledRound ? (
+                  {isHost && allRoundsClosed ? (
+                    <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 text-sm text-zinc-300">
+                      <span className="min-w-0 break-words">All rounds closed.</span>
+                      <button
+                        type="button"
+                        onClick={handleEndGame}
+                        className="shrink-0 rounded-lg bg-red-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-400 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-1"
+                      >
+                        End game
+                      </button>
+                    </div>
+                  ) : isHost && !hasActiveForegroundRound(roundsMeta) && nextScheduledRound ? (
                     <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 text-sm text-zinc-300">
                       <span className="min-w-0 break-words">Next up: {nextScheduledRound.title}</span>
                       <button
@@ -1492,20 +1503,6 @@ export default function RoomContent({
             rounds={isHost ? hostRounds : rounds}
             isHost={Boolean(isHost)} keepRoundsMounted={!isHost}
             loading={isLoadingRounds} error={roundsError} onDismissError={() => setRoundsError(null)}
-            notice={<>
-              {isHost && allRoundsClosed ? (
-                <div className="rounded-2xl border border-dashed border-red-300 bg-red-50/70 px-4 py-3 text-sm text-red-700 shadow-sm dark:border-red-900 dark:bg-red-950/30 dark:text-red-200">
-                  All rounds closed.
-                  <button
-                    type="button"
-                    onClick={handleEndGame}
-                    className="ml-3 inline-flex items-center justify-center rounded-lg bg-red-500 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-red-400 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-1"
-                  >
-                    End game
-                  </button>
-                </div>
-              ) : null}
-            </>}
             chat={(active) => <RoomChatPanel active={active} roomSlug={roomSlug} teams={teams} viewerTeamId={viewerTeamId}
               isHost={isHost} viewerName={resolvedChatName} memberNames={memberNames} />}
             renderRound={(roundId) => isHost ? <RoomHostRoundsPanel rounds={hostRounds} selectedRoundId={roundId}

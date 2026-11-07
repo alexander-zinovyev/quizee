@@ -25,7 +25,7 @@ function MountedPanelView({ id, active, children }: { id: string; active: boolea
 }
 
 export default function RoomInteractivePanel({ rounds, chat, renderRound, isHost = false,
-  keepRoundsMounted = true, loading = false, error, onDismissError, notice, className = "" }: {
+  keepRoundsMounted = true, loading = false, error, onDismissError, className = "" }: {
   rounds: InteractiveRound[];
   chat: ReactNode | ((active: boolean) => ReactNode);
   renderRound: (roundId: string) => ReactNode;
@@ -34,7 +34,6 @@ export default function RoomInteractivePanel({ rounds, chat, renderRound, isHost
   loading?: boolean;
   error?: string | null;
   onDismissError?: () => void;
-  notice?: ReactNode;
   className?: string;
 }) {
   const id = useId();
@@ -65,7 +64,6 @@ export default function RoomInteractivePanel({ rounds, chat, renderRound, isHost
       {error ? <div role="alert" className="flex shrink-0 items-center justify-between gap-2 bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-200">
         <p>{error}</p><button type="button" onClick={onDismissError} className="underline">Dismiss</button>
       </div> : null}
-      {notice ? <div className="shrink-0">{notice}</div> : null}
       <div className="min-h-0 flex-1">
         <MountedPanelView id={`${id}-chat`} active={selected === "chat"}>{typeof chat === "function" ? chat(selected === "chat") : chat}</MountedPanelView>
         {loading && selected !== "chat" ? <p role="status" className="p-4 text-sm text-zinc-500">Loading rounds…</p> : null}
