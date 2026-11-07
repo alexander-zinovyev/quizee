@@ -442,6 +442,15 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
   }
   expect(await halves(comparison)).toEqual([[66, 133, 244], [255, 0, 0]]);
   await transition.evaluate((element) => element.getAnimations()[0].finish());
+  async function expectComparisonEdgeAt(button: Locator, fraction: number) {
+    await expect.poll(() => button.evaluate((element, fraction) => {
+      const frame = element.getBoundingClientRect();
+      const edge = element.querySelector(".color-answer-comparison-edge")!.getBoundingClientRect();
+      return Math.abs(edge.x + edge.width / 2 - (frame.x + frame.width * fraction));
+    }, fraction)).toBeLessThan(1);
+  }
+  await expectComparisonEdgeAt(comparison, 0);
+  await expectComparisonEdgeAt(opponentComparison, 1);
   await comparison.hover();
   await expect.poll(() => pixel("Red team's answer")).toEqual([255, 0, 0, 255]);
   await expect(ownSubmission.locator(".color-answer-correct-layer")).toHaveCSS("clip-path", "inset(0px 0px 0px 50%)");
@@ -450,12 +459,14 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
   await expect(comparison.getByText("Original", { exact: true })).toBeVisible();
   await opponentComparison.hover();
   await expect(opponentSubmission.locator(".color-answer-correct-layer")).toHaveCSS("clip-path", "inset(0px 0px 0px 50%)");
+  await expectComparisonEdgeAt(opponentComparison, 0.5);
   expect(await halves(opponentComparison)).toEqual([[0, 255, 0], [66, 133, 244]]);
   await expect(opponentComparison.getByText("Original", { exact: true })).toBeVisible();
   await expect(comparison.getByText("Team", { exact: true })).toBeHidden();
   await page.mouse.move(0, 0);
   await expect(opponentComparison.getByText("Original", { exact: true })).toBeHidden();
   await expect(opponentComparison.getByText("Team", { exact: true })).toBeVisible();
+  await expectComparisonEdgeAt(opponentComparison, 1);
   await expect.poll(() => pixel("Correct answer", 120, ownSubmission)).toEqual([66, 133, 244, 255]);
   await page.keyboard.press("Tab");
   for (const button of [comparison, opponentComparison]) {
