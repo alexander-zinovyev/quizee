@@ -16,6 +16,9 @@
     "colorScoring": {
       "oneOf": [
         { "type": "object", "additionalProperties": false, "required": ["mode"], "properties": {
+          "mode": { "const": "proportional" }
+        } },
+        { "type": "object", "additionalProperties": false, "required": ["mode"], "properties": {
           "mode": { "const": "threshold" }, "points": { "type": "number", "exclusiveMinimum": 0 }, "threshold": { "type": "number", "minimum": 0, "maximum": 10 }
         } },
         { "type": "object", "additionalProperties": false, "required": ["mode"], "properties": {

@@ -83,9 +83,14 @@ export function ColorRoundEditor({ questions, scoring, mediaFiles, onQuestionsCh
 }) {
   return <div className="space-y-4">
     <div className="flex flex-wrap items-end gap-4">
-      <label className="text-sm">Scoring mode<select aria-label="Scoring mode" className="ml-2 rounded border border-zinc-400 bg-transparent p-2" value={scoring.mode} onChange={(event) => onScoringChange(event.target.value === "threshold" ? { mode: "threshold", points: scoring.points, threshold: 8.5 } : { mode: "closest", points: scoring.points, tieTolerance: 0.05 })}><option value="threshold">Threshold</option><option value="closest">Closest team</option></select></label>
-      <label className="text-sm">Points<input aria-label="Color points" type="number" min={0.01} step="any" className="ml-2 w-20 rounded border border-zinc-400 bg-transparent p-2" value={scoring.points} onChange={(event) => onScoringChange({ ...scoring, points: event.target.valueAsNumber })} /></label>
-      <label className="text-sm">{scoring.mode === "threshold" ? "Threshold" : "Tie tolerance"}<input aria-label={scoring.mode === "threshold" ? "Threshold" : "Tie tolerance"} type="number" min={0} max={10} step={0.01} className="ml-2 w-20 rounded border border-zinc-400 bg-transparent p-2" value={scoring.mode === "threshold" ? scoring.threshold : scoring.tieTolerance} onChange={(event) => onScoringChange(scoring.mode === "threshold" ? { ...scoring, threshold: event.target.valueAsNumber } : { ...scoring, tieTolerance: event.target.valueAsNumber })} /></label>
+      <label className="text-sm">Scoring mode<select aria-label="Scoring mode" className="ml-2 rounded border border-zinc-400 bg-transparent p-2" value={scoring.mode} onChange={(event) => {
+        const points = scoring.mode === "proportional" ? 1 : scoring.points;
+        onScoringChange(event.target.value === "proportional" ? { mode: "proportional" } : event.target.value === "threshold" ? { mode: "threshold", points, threshold: 8.5 } : { mode: "closest", points, tieTolerance: 0.05 });
+      }}><option value="threshold">Threshold</option><option value="closest">Closest team</option><option value="proportional">Proportional</option></select></label>
+      {scoring.mode === "proportional" ? <p className="text-sm">Similarity score / 10, up to 1 point per question.</p> : <>
+        <label className="text-sm">Points<input aria-label="Color points" type="number" min={0.01} step="any" className="ml-2 w-20 rounded border border-zinc-400 bg-transparent p-2" value={scoring.points} onChange={(event) => onScoringChange({ ...scoring, points: event.target.valueAsNumber })} /></label>
+        <label className="text-sm">{scoring.mode === "threshold" ? "Threshold" : "Tie tolerance"}<input aria-label={scoring.mode === "threshold" ? "Threshold" : "Tie tolerance"} type="number" min={0} max={10} step={0.01} className="ml-2 w-20 rounded border border-zinc-400 bg-transparent p-2" value={scoring.mode === "threshold" ? scoring.threshold : scoring.tieTolerance} onChange={(event) => onScoringChange(scoring.mode === "threshold" ? { ...scoring, threshold: event.target.valueAsNumber } : { ...scoring, tieTolerance: event.target.valueAsNumber })} /></label>
+      </>}
     </div>
     {questions.map((question, index) => <section key={question.id} className="space-y-3 border-t border-zinc-300 py-4 dark:border-zinc-700">
       <div className="flex items-center justify-between"><h3 className="text-sm font-semibold">Question {index + 1}</h3><div className="flex gap-2">

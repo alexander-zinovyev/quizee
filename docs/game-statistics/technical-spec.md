@@ -189,6 +189,7 @@ Priority is admin override, then supported scoring configuration, then fallback 
 | Wager-enabled text | 2, the common theoretical positive maximum, regardless of whether a particular team wagered. |
 | Multi-step | `max(0, ...pointsPerStep)`. |
 | Color threshold or closest | Configured positive `scoring.points`. In closest mode this is also the shared question pool. |
+| Color proportional | Fixed maximum of 1 point per team per question. Each team's recorded perception score divided by 10 is its award, independent of other teams. |
 | Insufficient historical scoring configuration | Fallback 1, explicitly marked unverified until an admin confirms or overrides it. |
 
 Overrides must be finite and nonnegative; zero-point questions do not provide a positive denominator. Store provenance (`configured`, `admin`, `default-unverified`) rather than presenting an unverified historical assumption as known coverage. Overrides change statistical denominators, never awarded scores.

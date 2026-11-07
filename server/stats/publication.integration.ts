@@ -18,6 +18,17 @@ async function main() {
   if (!process.env.FIRESTORE_EMULATOR_HOST) throw new Error("Publication tests require the Firestore emulator.");
   const app = initializeApp({ projectId: "demo-quizee-drafts" }, "stats-publication"), db = getFirestore(app);
   const actor = "publication-admin", gameId = "publication", source = roomSourceFixture(9, 10, gameId);
+  const colorRound = source.rounds[3];
+  colorRound.data.scoring = { mode: "proportional" };
+  for (const team of source.teams) {
+    const previous = team.scores.find((score) => score.id === colorRound.id)!;
+    colorRound.teamAnswers[team.id].answers.forEach((answer) => {
+      answer.data = { ...answer.data, perceptionScore: 8.57, awardedPoints: 0.857 };
+    });
+    const total = colorRound.teamAnswers[team.id].answers.reduce((sum, answer) => sum + Number(answer.data.awardedPoints), 0);
+    team.data.scoreTotal = Number(team.data.scoreTotal) + total - Number(previous.data.score);
+    previous.data.score = total;
+  }
   const gameRef = db.doc(statsPaths.game(gameId)), roleRef = db.doc(`roles/${actor}`), people = new Set<string>();
   const eligibilityId = "publication-eligibility";
   const rejectsCode = (promise: Promise<unknown>, code: string) => assert.rejects(promise, (error: unknown) => error instanceof StatsError && error.code === code);
@@ -108,6 +119,18 @@ async function main() {
     assert.equal((await listPublicGames(db)).items.length, 1);
     assert.equal((await listPublicPlayers(db)).items.length, 6);
     const publicGame = await getPublicGame(db, gameId), publicPlayer = await getPublicPlayer(db, redId), publicHost = await getPublicHost(db, hostId);
+    const publicColors = await getPublicRound(db, gameId, colorRound.id, 5);
+    assert.ok(publicColors.items.length > 0);
+    for (const question of publicColors.items) {
+      assert.deepEqual(question.maximum, { points: 1, provenance: "configured" });
+      assert.equal(question.answers.red.perceptionScore, 8.57);
+      assert.equal(question.answers.red.awardedPoints, 0.857);
+      assert.equal(question.answers.blue.awardedPoints, 0.857);
+    }
+    const colorMetrics = publicGame.metrics.rounds.find((round) => round.id === colorRound.id)!;
+    assert.equal(colorMetrics.teams.red.score, source.teams[0].scores.find((score) => score.id === colorRound.id)!.data.score);
+    assert.equal(colorMetrics.teams.red.percentage.denominator, 10);
+    assert.equal(colorMetrics.teams.blue.percentage.denominator, 10);
     assert.equal(publicPlayer.summary.gamesPlayed, 1);
     assert.equal(publicHost.summary.gamesHosted, 1);
     assert.equal(publicPlayer.summary.teamPoints, 300);

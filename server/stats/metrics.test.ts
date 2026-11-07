@@ -18,6 +18,7 @@ test("maxima preserve every supported scoring model and explicit historical unce
     [{ type: "multi-step", pointsPerStep: [-3, -1] }, 0],
     [{ type: "color", scoring: { mode: "threshold", points: 2, threshold: 8.5 } }, 2],
     [{ type: "color", scoring: { mode: "closest", points: 1.5, tieTolerance: 0.05 } }, 1.5],
+    [{ type: "color", scoring: { mode: "proportional" } }, 1],
   ];
   for (const [scoring, expected] of cases) {
     assert.deepEqual(inferQuestionMaximum(scoring), { points: expected, provenance: "configured" });
