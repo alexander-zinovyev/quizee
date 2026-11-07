@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent, ReactNode } from "react";
 
 export type ChatMessage = {
@@ -59,6 +59,10 @@ export type ChatProps = {
    * Enables responsive 16:9 sizing relative to the viewport.
    */
   autoSize?: boolean;
+  /** The surrounding Interactive panel provides the card and navigation. */
+  embedded?: boolean;
+  /** Whether the mounted chat is currently visible in its panel. */
+  active?: boolean;
 };
 
 type FormattingToken = {
@@ -108,7 +112,10 @@ export default function Chat({
   disabled = false,
   className,
   autoSize = true,
+  embedded = false,
+  active = true,
 }: ChatProps) {
+  const composerId = useId();
   const [value, setValue] = useState("");
   const [showEmojis, setShowEmojis] = useState(false);
   const [chatSize, setChatSize] = useState<{ width: number; height: number } | null>(null);
@@ -171,6 +178,7 @@ export default function Chat({
   }, []);
 
   useLayoutEffect(() => {
+    if (!active) return;
     const frame = requestAnimationFrame(() => {
       const behavior = hasAutoScrolledRef.current ? "smooth" : "auto";
       scrollToBottom(behavior);
@@ -178,7 +186,7 @@ export default function Chat({
     });
 
     return () => cancelAnimationFrame(frame);
-  }, [orderedMessages, scrollToBottom]);
+  }, [active, orderedMessages, scrollToBottom]);
 
   function renderContent(content: string | ReactNode) {
     if (typeof content !== "string") {
@@ -254,7 +262,9 @@ export default function Chat({
   }
 
   const containerClasses = [
-    "flex h-full w-full min-h-0 flex-col rounded-3xl border border-zinc-200 bg-white/90 p-3 shadow-lg backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/90",
+    embedded
+      ? "flex h-full w-full min-h-0 flex-col p-3"
+      : "flex h-full w-full min-h-0 flex-col rounded-3xl border border-zinc-200 bg-white/90 p-3 shadow-lg backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/90",
     "lg:flex-shrink-0",
     className ?? "",
   ]
@@ -266,11 +276,11 @@ export default function Chat({
 
   return (
     <section className={containerClasses} aria-label={title} style={sectionStyle}>
-      <header className="mb-4">
+      {!embedded ? <header className="mb-4">
         <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-500">
           Chat
         </p>
-      </header>
+      </header> : null}
 
       <div className="flex flex-1 flex-col gap-3 overflow-hidden">
         <div
@@ -364,11 +374,11 @@ export default function Chat({
             </div>
           ) : null}
 
-          <label className="sr-only" htmlFor="chat-message">
+          <label className="sr-only" htmlFor={composerId}>
             Message input
           </label>
           <textarea
-            id="chat-message"
+            id={composerId}
             ref={textareaRef}
             value={value}
             disabled={disabled}

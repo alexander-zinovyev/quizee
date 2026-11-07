@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { spawn, type ChildProcess } from "node:child_process";
-import { createServer } from "node:net";
+import type { ChildProcess } from "node:child_process";
 import { initializeApp, deleteApp } from "firebase-admin/app";
 import { getAuth as getAdminAuth } from "firebase-admin/auth";
 import { getFirestore as getAdminFirestore } from "firebase-admin/firestore";
@@ -11,35 +10,7 @@ import { connectFirestoreEmulator, doc, getFirestore, onSnapshot, terminate } fr
 import { applySortingEdit, type SortingEdit } from "@/types/sorting";
 import { transitionPresentation, type Presentation } from "./presentation";
 import { gradeSortingRound, scoreSortingOrder } from "./sorting";
-
-async function availablePort(): Promise<number> {
-  const server = createServer();
-  await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
-  const port = (server.address() as { port: number }).port;
-  await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
-  return port;
-}
-
-async function startApp(port: number, projectId: string): Promise<ChildProcess> {
-  const child = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", String(port)], {
-    env: { ...process.env, QUIZEE_NEXT_DIST_DIR: ".next", FIREBASE_PROJECT_ID: projectId,
-      NEXT_PUBLIC_FIREBASE_PROJECT_ID: projectId, NEXT_PUBLIC_FIREBASE_API_KEY: "fake",
-      NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: `${projectId}.firebaseapp.com`, NEXT_PUBLIC_FIREBASE_APP_ID: "sorting-http-test" },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  await new Promise<void>((resolve, reject) => {
-    let output = "";
-    const timeout = setTimeout(() => { child.kill("SIGTERM"); reject(new Error(`Next server did not become ready: ${output}`)); }, 30000);
-    child.once("error", (error) => { clearTimeout(timeout); reject(error); });
-    child.once("exit", (code) => { clearTimeout(timeout); reject(new Error(`Next exited before readiness (${code}): ${output}`)); });
-    const receive = (chunk: Buffer) => {
-      output = `${output}${chunk}`.slice(-6000);
-      if (output.includes("Ready in")) { clearTimeout(timeout); resolve(); }
-    };
-    child.stdout!.on("data", receive); child.stderr!.on("data", receive);
-  });
-  return child;
-}
+import { availablePort, startApp } from "./test-http-app";
 
 async function main() {
   const firestoreAddress = process.env.FIRESTORE_EMULATOR_HOST;

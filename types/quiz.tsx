@@ -111,7 +111,7 @@ export type ImageRoundData = RoundData & {
    */
   questions: Question[];
   /**
-   * Pool of images the participant can drag onto the descriptions.
+   * Images whose dropzones receive draggable descriptions.
    */
   images: ImageItem[];
 

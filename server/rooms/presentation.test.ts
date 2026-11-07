@@ -5,6 +5,19 @@ import { current, database, redAnswer, blueAnswer } from "./test-database";
 
 const next = { ...current, promptPage: 1 };
 async function main() {
+  {
+    const { db, docs } = database("image");
+    const foreground = { ...current, round: "r2", question: null };
+    docs.set("rooms/demo", { state: "playing", presenting: foreground });
+    docs.set("rooms/demo/rounds/r2", { type: "text", state: "active" });
+    docs.set(redAnswer, { answer: "image-2", user: "player" });
+    await transitionPresentation(db, "demo", "host", foreground, foreground, { closeRound: "r1" });
+    assert.equal(docs.get("rooms/demo/rounds/r1")?.state, "closed");
+    assert.deepEqual(docs.get("rooms/demo")?.presenting, foreground, "Closing background image matching preserves Stage");
+    assert.deepEqual(docs.get("rooms/demo/rounds/r1/teamAnswers/red/answers/q1"), { answer: "image-2", user: "player" });
+    assert.equal((docs.get("rooms/demo/rounds/r1")?.activeWindow as { startedAt: string }).startedAt, "start");
+    await assert.rejects(transitionPresentation(db, "demo", "host", foreground, foreground, { closeRound: "r1" }), /cannot be closed/);
+  }
   for (const input of [null, { ...current, promptPage: -1 }, { ...current, round: "r1/path" }]) assert.throws(() => parsePresentation(input));
   assert.equal(leavesStep(current, current), false);
   assert.equal(leavesStep(current, { ...current, answerPage: 1 }), false);

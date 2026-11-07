@@ -32,10 +32,12 @@ import {
   useRoomRounds,
 } from "@/lib/hooks/use-room-rounds";
 import RoomChatPanel from "./room-chat-panel";
-import RoomRoundsPanel from "./room-rounds-panel";
+import RoomInteractivePanel from "./room-interactive-panel";
+import QuizRound from "@/lib/components/quiz-round";
 import RoomHostRoundsPanel from "./room-host-rounds-panel";
 import TeamScoreBreakdownDialog from "./team-score-breakdown-dialog";
 import { hasActiveForegroundRound, type HostRound } from "./host-rounds";
+import { getRoundImageItems, MEDIA_PLACEHOLDER } from "@/lib/media/round-images";
 import { getAudioIsolatedRound } from "./round-audio";
 import type { RoomRosterTeam } from "./room-layout-types";
 import type { TeamMember } from "@/lib/components/team";
@@ -66,8 +68,6 @@ type RoomContentProps = {
 };
 
 const DEFAULT_MEDIA_VOLUME = 0.2;
-const MEDIA_PLACEHOLDER =
-  "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
 
 function EyeIcon({ className = "h-4 w-4" }: { className?: string }) {
   return (
@@ -158,6 +158,7 @@ export default function RoomContent({
     isLoadingRounds,
     roundAnswers,
     roundAnswerHints,
+    roundCorrectOrders,
     roundImages,
     roundQuestions,
     roundsError,
@@ -227,6 +228,7 @@ export default function RoomContent({
     roundImages,
     roundQuestions,
     roundsMeta,
+    preloadAllImages: Boolean(isHost),
   });
 
   const rounds: QuizRoundData[] = useMemo(() => {
@@ -285,18 +287,7 @@ export default function RoomContent({
         }
 
         if (meta.type === "image") {
-          const imagesForRound = roundImages[meta.id] ?? [];
-          const images = imagesForRound
-            .filter((img) => img.media?.storagePath)
-            .map((img, imgIdx) => {
-              const storagePath = img.media?.storagePath as string;
-              const src = getCachedMediaUrl(storagePath) ?? MEDIA_PLACEHOLDER;
-              return {
-                id: img.id ?? `image-${imgIdx}`,
-                src,
-                alt: img.media?.filename ?? img.media?.originalPath ?? "Quiz image",
-              };
-            });
+          const images = getRoundImageItems(roundImages[meta.id] ?? [], getCachedMediaUrl);
 
           const descriptionQuestions = questions
             .filter((q) => {
@@ -351,6 +342,7 @@ export default function RoomContent({
   }, [activeRoundForControls, roundQuestions]);
 
   const hostRounds = useMemo<HostRound[]>(() => {
+    void mediaCacheVersion;
     return roundsMeta
       .slice()
       .sort((a, b) => a.order - b.order)
@@ -367,13 +359,12 @@ export default function RoomContent({
           type: meta.type,
           gradingRequired: meta.gradingRequired,
           criterion: meta.criterion,
+          correctOrder: roundCorrectOrders[meta.id],
+          questionsLoaded: Object.hasOwn(roundQuestions, meta.id),
+          sortingQuestions: meta.type === "sorting" ? getSortingQuestions(questions) : undefined,
+          images: meta.type === "image" ? getRoundImageItems(roundImages[meta.id] ?? [], getCachedMediaUrl) : undefined,
           questions: questions.map((q, qIndex) => {
-            const answer =
-              meta.type === "image"
-                ? ""
-                : answersForRound[q.id] ??
-                  q.correctAnswer ??
-                  "";
+            const answer = answersForRound[q.id] ?? q.correctAnswer ?? "";
             return {
               id: q.id,
               prompt: q.prompt ?? q.displayPrompt,
@@ -383,7 +374,7 @@ export default function RoomContent({
           }),
         };
       });
-  }, [roundAnswers, roundQuestions, roundsMeta]);
+  }, [getCachedMediaUrl, mediaCacheVersion, roundAnswers, roundCorrectOrders, roundImages, roundQuestions, roundsMeta]);
 
   const presentingAnswer = useMemo(() => {
     if (!presenting?.round || !presenting?.question || !presenting?.withAnswer) return null;
@@ -573,6 +564,21 @@ export default function RoomContent({
     });
   };
 
+  async function revealRoundFromPanel(roundId: string, withAnswer: boolean) {
+    const round = roundsMeta.find((entry) => entry.id === roundId);
+    if (!round || round.state !== "closed" || (round.type !== "image" && round.type !== "sorting")) {
+      setRoundsError("End the image or sorting round before revealing answers.");
+      return;
+    }
+    const question = round.type === "sorting" ? null
+      : presenting?.round === roundId && presenting.question ? presenting.question : roundQuestions[roundId]?.[0]?.id ?? null;
+    if (round.type === "image" && !question) {
+      setRoundsError("Image round questions are not available.");
+      return;
+    }
+    await updatePresenting({ round: roundId, question, withAnswer, promptPage: 0, answerPage: 0 });
+  }
+
   async function handleShowFirstQuestion() {
     if (!isHost || !activeRoundForControls) return;
     const firstQuestion = controlQuestions[0];
@@ -611,45 +617,36 @@ export default function RoomContent({
   }
 
   async function handleActivateSpecificRound(roundId: string) {
-    if (!isHost) return;
+    if (!isHost || isActivatingNext) return;
+    setIsActivatingNext(true);
     setRoundsError(null);
     try {
       await activateRound(roundId);
     } catch (error) {
       console.error("[room-content] activate round failed", error);
       setRoundsError("Unable to activate that round right now.");
+    } finally {
+      setIsActivatingNext(false);
     }
   }
 
   async function handleEndSpecificRound(roundId: string) {
-    if (!isHost) return;
+    if (!isHost || isEndingRound) return;
+    setIsEndingRound(true);
     setRoundsError(null);
     try {
       const meta = roundsMeta.find((round) => round.id === roundId);
-      if (meta?.type === "text" || meta?.type === "multi-step" || meta?.type === "color" || meta?.type === "sorting") {
-        const next = presenting?.round === roundId
-          ? { round: roundId, question: meta.type === "color" ? presenting?.question ?? roundQuestions[roundId]?.[0]?.id ?? null : null, withAnswer: false }
-          : { round: presenting?.round ?? null, question: presenting?.question ?? null,
-              withAnswer: presenting?.withAnswer ?? false, promptPage: presenting?.promptPage ?? 0,
-              answerPage: presenting?.answerPage ?? 0 };
-        await persistPresentation(next, { closeRound: roundId });
-        if (meta.type === "color" || meta.type === "sorting") await autoGradeRound(roundId);
-        return;
-      }
-      const db = getClientFirestore();
-      const roundRef = doc(db, "rooms", roomSlug, "rounds", roundId);
-      await copyTeamAnswersToRound(roundId);
-      await updateDoc(roundRef, {
-        state: "closed",
-        activeWindow: { endedAt: serverTimestamp() },
-        gradingRequired: true,
-      });
-      if (meta?.type === "image") {
-        await autoGradeRound(roundId);
-      }
+      if (!meta) throw new Error("Round not found.");
+      const next = presenting?.round === roundId
+        ? { round: roundId, question: meta.type === "color" ? presenting?.question ?? roundQuestions[roundId]?.[0]?.id ?? null : null, withAnswer: false }
+        : currentPresentation();
+      await persistPresentation(next, { closeRound: roundId });
+      if (meta.type === "image" || meta.type === "color" || meta.type === "sorting") await autoGradeRound(roundId);
     } catch (error) {
       console.error("[room-content] end round failed", error);
       setRoundsError("Unable to end that round right now.");
+    } finally {
+      setIsEndingRound(false);
     }
   }
 
@@ -814,49 +811,6 @@ export default function RoomContent({
     });
   }
 
-  async function copyTeamAnswersToRound(roundId: string) {
-    if (!teams || !teams.length) return;
-    const db = getClientFirestore();
-    const teamIds = teams.map((team) => team.id).filter(Boolean);
-
-    for (const teamId of teamIds) {
-      const src = collection(
-        db,
-        "rooms",
-        roomSlug,
-        "teams",
-        teamId,
-        "rounds",
-        roundId,
-        "answers"
-      );
-      const snapshot = await getDocs(src);
-      const batch = writeBatch(db);
-      const teamAnswerDoc = doc(
-        db,
-        "rooms",
-        roomSlug,
-        "rounds",
-        roundId,
-        "teamAnswers",
-        teamId
-      );
-
-      batch.set(
-        teamAnswerDoc,
-        { graded: false, copiedAt: serverTimestamp() },
-        { merge: true }
-      );
-
-      snapshot.forEach((answerSnap) => {
-        const targetRef = doc(teamAnswerDoc, "answers", answerSnap.id);
-        batch.set(targetRef, answerSnap.data());
-      });
-
-      await batch.commit();
-    }
-  }
-
   async function autoGradeRound(roundId: string) {
     setAutoGradeFailedRoundId(null);
     setRoundsError(null);
@@ -883,48 +837,9 @@ export default function RoomContent({
   }
 
   async function handleEndRound() {
-    if (!isHost || !activeRoundForControls || activeRoundForControls.state !== "active") return;
-    if (activeRoundForControls.type === "sorting") {
-      await handleEndSpecificRound(activeRoundForControls.id);
-      return;
-    }
-    setIsEndingRound(true);
-    try {
-      if (activeRoundForControls.type === "text" || activeRoundForControls.type === "multi-step" || activeRoundForControls.type === "color") {
-        await persistPresentation({ round: activeRoundForControls.id, question: activeRoundForControls.type === "color" ? presenting?.question ?? controlQuestions[0]?.id ?? null : null, withAnswer: false },
-          { closeRound: activeRoundForControls.id });
-        if (activeRoundForControls.type === "color") await autoGradeRound(activeRoundForControls.id);
-        return;
-      }
-      const db = getClientFirestore();
-      const roundRef = doc(db, "rooms", roomSlug, "rounds", activeRoundForControls.id);
-      await copyTeamAnswersToRound(activeRoundForControls.id);
-      await Promise.all([
-        updateDoc(roundRef, {
-          state: "closed",
-          activeWindow: { endedAt: serverTimestamp() },
-          gradingRequired: true,
-        }),
-        updateDoc(doc(db, "rooms", roomSlug), {
-          presenting: {
-            round: activeRoundForControls.id,
-            question: null,
-            withAnswer: false,
-            promptPage: 0,
-            answerPage: 0,
-          },
-        }),
-      ]);
-      if (activeRoundForControls.type === "image") {
-        await autoGradeRound(activeRoundForControls.id);
-      }
-    } catch (error) {
-      console.error("[room-content] end round failed", error);
-      setRoundsError("Unable to end the round right now.");
-      } finally {
-        setIsEndingRound(false);
-      }
-    }
+    if (!activeRoundForControls || activeRoundForControls.state !== "active") return;
+    await handleEndSpecificRound(activeRoundForControls.id);
+  }
 
   async function handleEndGame() {
     if (!isHost || !allRoundsClosed) return;
@@ -1327,27 +1242,6 @@ export default function RoomContent({
     };
   }, [isHost, presentingRoundMeta?.id, presentingRoundMeta?.state, presentingRoundMeta?.type, roomSlug]);
 
-  const roundsPanel = isHost ? (
-    <RoomHostRoundsPanel
-      rounds={hostRounds}
-      presenting={presenting}
-      onPresentRound={(roundId) => void updatePresenting({ round: roundId, question: null, withAnswer: false, promptPage: 0, answerPage: 0 })}
-      onPresentQuestion={presentQuestionFromPanel}
-      onHideQuestion={hideQuestionFromPanel}
-      onStartRound={handleActivateSpecificRound}
-      onEndRound={handleEndSpecificRound}
-      onGradeRound={autoGradeRound}
-      className="col-span-2 flex-1 min-h-0 rounded-3xl border border-zinc-200 bg-white/90 p-4 shadow-xl backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/80"
-    />
-  ) : (
-    <RoomRoundsPanel
-      rounds={rounds}
-      roomSlug={roomSlug}
-      teamId={viewerTeamId ?? undefined}
-      className="col-span-2 h-full min-h-0 rounded-3xl border border-zinc-200 bg-white/90 p-4 shadow-xl backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/80"
-    />
-  );
-
   const resolvedChatName =
     (viewerName && viewerName.trim()) ||
     (isHost ? hostMember?.name?.trim() : undefined) ||
@@ -1371,54 +1265,8 @@ export default function RoomContent({
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-gradient-to-b from-white via-zinc-50 to-zinc-100 dark:from-black dark:via-zinc-950 dark:to-zinc-900">
       <main className="grid h-full grid-rows-2 gap-3 p-1 sm:gap-4 sm:p-2 lg:p-3">
-        <section className="grid min-h-0 h-full w-full grid-cols-7 items-stretch gap-3">
-          {roundsError ? (
-            <div className="col-span-2 flex h-full min-h-0 flex-col items-center justify-center gap-3 rounded-3xl border border-red-200 bg-red-50/80 p-4 text-sm text-red-700 shadow-xl dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">
-              <p>{roundsError}</p>
-              <button type="button" onClick={() => setRoundsError(null)} className="rounded-lg border border-current px-3 py-2">Dismiss</button>
-            </div>
-          ) : isLoadingRounds ? (
-            <div className="col-span-2 h-full min-h-0 animate-pulse rounded-3xl border border-zinc-200 bg-white/70 p-4 shadow-xl dark:border-zinc-800 dark:bg-zinc-900/60" />
-          ) : !isHost && !rounds.length && nextScheduledRound ? (
-            <div className="col-span-2 flex h-full min-h-0 flex-col items-center justify-center gap-3 rounded-3xl border border-zinc-200 bg-white/80 p-6 text-center shadow-xl dark:border-zinc-800 dark:bg-zinc-900/70">
-              <p className="text-sm font-semibold uppercase tracking-[0.25em] text-zinc-600 dark:text-zinc-300">
-                Waiting for the next round
-              </p>
-            </div>
-          ) : (
-            <div className="col-span-2 flex h-full min-h-0 flex-col gap-3">
-              {isHost && allRoundsClosed ? (
-                <div className="rounded-2xl border border-dashed border-red-300 bg-red-50/70 px-4 py-3 text-sm text-red-700 shadow-sm dark:border-red-900 dark:bg-red-950/30 dark:text-red-200">
-                  All rounds closed.
-                  <button
-                    type="button"
-                    onClick={handleEndGame}
-                    className="ml-3 inline-flex items-center justify-center rounded-lg bg-red-500 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-red-400 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-1"
-                  >
-                    End game
-                  </button>
-                </div>
-              ) : null}
-
-              {isHost && !allRoundsClosed && !hasActiveForegroundRound(roundsMeta) && nextScheduledRound ? (
-                <div className="rounded-2xl border border-dashed border-emerald-300 bg-emerald-50/60 px-4 py-3 text-sm text-emerald-700 shadow-sm dark:border-emerald-900 dark:bg-emerald-900/20 dark:text-emerald-200">
-                  Next up: {nextScheduledRound.title}
-                  <button
-                    type="button"
-                    onClick={handleActivateNextRound}
-                    disabled={isActivatingNext}
-                    className="ml-3 inline-flex items-center justify-center rounded-lg bg-emerald-500 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70 dark:bg-emerald-400 dark:text-emerald-950 dark:hover:bg-emerald-300 dark:focus:ring-emerald-300 dark:focus:ring-offset-zinc-900"
-                  >
-                    {isActivatingNext ? "Starting..." : "Next round"}
-                  </button>
-                </div>
-              ) : null}
-
-              <div className="flex-1 min-h-0 space-y-2">{roundsPanel}</div>
-            </div>
-          )}
-
-          <article className="col-span-3 flex h-full min-h-0 flex-col overflow-hidden rounded-3xl border border-zinc-200 bg-zinc-950 shadow-2xl dark:border-zinc-800">
+        <section className="grid min-h-0 h-full w-full grid-cols-1 grid-rows-2 items-stretch gap-3 md:grid-cols-2 md:grid-rows-1">
+          <article className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-3xl border border-zinc-200 bg-zinc-950 shadow-2xl dark:border-zinc-800">
             <header className="border-b border-white/10 px-5 py-4 text-white">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
@@ -1606,15 +1454,50 @@ export default function RoomContent({
             ) : null}
           </article>
 
-    <RoomChatPanel
-      className="col-span-2 h-full min-h-0 rounded-3xl border border-zinc-200 bg-white/95 shadow-2xl backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/85"
-      roomSlug={roomSlug}
-      teams={teams}
-      viewerTeamId={viewerTeamId ?? undefined}
-      isHost={isHost}
-      viewerName={resolvedChatName}
-      memberNames={memberNames}
-    />
+          <RoomInteractivePanel
+            rounds={isHost ? hostRounds : rounds}
+            isHost={Boolean(isHost)} keepRoundsMounted={!isHost}
+            loading={isLoadingRounds} error={roundsError} onDismissError={() => setRoundsError(null)}
+            notice={<>
+              {isHost && allRoundsClosed ? (
+                <div className="rounded-2xl border border-dashed border-red-300 bg-red-50/70 px-4 py-3 text-sm text-red-700 shadow-sm dark:border-red-900 dark:bg-red-950/30 dark:text-red-200">
+                  All rounds closed.
+                  <button
+                    type="button"
+                    onClick={handleEndGame}
+                    className="ml-3 inline-flex items-center justify-center rounded-lg bg-red-500 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-red-400 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-1"
+                  >
+                    End game
+                  </button>
+                </div>
+              ) : null}
+
+              {isHost && !allRoundsClosed && !hasActiveForegroundRound(roundsMeta) && nextScheduledRound ? (
+                <div className="rounded-2xl border border-dashed border-emerald-300 bg-emerald-50/60 px-4 py-3 text-sm text-emerald-700 shadow-sm dark:border-emerald-900 dark:bg-emerald-900/20 dark:text-emerald-200">
+                  Next up: {nextScheduledRound.title}
+                  <button
+                    type="button"
+                    onClick={handleActivateNextRound}
+                    disabled={isActivatingNext}
+                    className="ml-3 inline-flex items-center justify-center rounded-lg bg-emerald-500 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70 dark:bg-emerald-400 dark:text-emerald-950 dark:hover:bg-emerald-300 dark:focus:ring-emerald-300 dark:focus:ring-offset-zinc-900"
+                  >
+                    {isActivatingNext ? "Starting..." : "Next round"}
+                  </button>
+                </div>
+              ) : null}
+
+            </>}
+            chat={(active) => <RoomChatPanel active={active} roomSlug={roomSlug} teams={teams} viewerTeamId={viewerTeamId}
+              isHost={isHost} viewerName={resolvedChatName} memberNames={memberNames} />}
+            renderRound={(roundId) => isHost ? <RoomHostRoundsPanel rounds={hostRounds} selectedRoundId={roundId}
+              presenting={presenting} pending={isPresentingUpdatePending || isEndingRound || isActivatingNext}
+              onPresentQuestion={presentQuestionFromPanel} onHideQuestion={hideQuestionFromPanel}
+              onStartRound={handleActivateSpecificRound} onEndRound={handleEndSpecificRound}
+              onGradeRound={autoGradeRound} onRevealRound={revealRoundFromPanel} /> : (() => {
+                const round = rounds.find((entry) => entry.id === roundId);
+                return round ? <QuizRound {...round} embedded roomSlug={roomSlug} teamId={viewerTeamId ?? undefined} /> : null;
+              })()}
+          />
         </section>
 
         <section className="grid min-h-0 h-full grid-cols-5 gap-3">

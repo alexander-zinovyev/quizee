@@ -1,201 +1,108 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import {
-  getVisibleHostQuestions,
-  resolveHostRoundId,
-  type HostRound,
-} from "./host-rounds";
+import type { ReactNode } from "react";
+import { PanelIcon } from "@/lib/components/room/panel-icon";
+import { SortingQuestions } from "@/lib/components/sorting-round";
+import ZoomableImage from "@/lib/components/zoomable-image";
+import { getHostSortingView, getVisibleHostQuestions, type HostRound } from "./host-rounds";
 
-type RoomHostRoundsPanelProps = {
+export type RoomHostRoundsPanelProps = {
   rounds: HostRound[];
+  selectedRoundId: string | null;
   className?: string;
   presenting?: {
     round?: string | null;
     question?: string | null;
+    withAnswer?: boolean;
   } | null;
-  onPresentRound?: (roundId: string) => void;
+  pending?: boolean;
   onPresentQuestion?: (roundId: string, questionId: string) => void;
   onHideQuestion?: () => void;
   onStartRound?: (roundId: string) => void;
   onEndRound?: (roundId: string) => void;
   onGradeRound?: (roundId: string) => void;
+  onRevealRound?: (roundId: string, withAnswer: boolean) => void;
 };
+
+function HostImages({ round }: { round: HostRound }) {
+  return <div className="grid grid-cols-2 justify-items-center gap-x-8 gap-y-8 px-2 py-2 @min-[600px]:grid-cols-4" aria-label="Round images">
+    {(round.images ?? []).map((image) => {
+      const question = round.questions.find((entry) => entry.answer === String(image.id));
+      return <figure key={image.id} className="flex w-full min-w-0 max-w-[152px] flex-col items-center gap-2">
+        <ZoomableImage src={image.src} alt={image.alt ?? "Quiz image"} label={question?.prompt}
+          wrapperClassName="w-full overflow-hidden rounded-[7px] border border-black/70 dark:border-zinc-600"
+          imageClassName="aspect-[2/1] w-full object-contain"
+          zoomOverlay zoomIcon={<PanelIcon name="zoom" tone="white" />} />
+        <figcaption className="w-full whitespace-pre-wrap break-words text-center text-sm font-semibold text-black dark:text-zinc-100">
+          {question?.prompt || "No description"}
+        </figcaption>
+      </figure>;
+    })}
+    {!round.images?.length ? <p className="col-span-full text-sm text-zinc-500">Loading round images…</p> : null}
+  </div>;
+}
 
 export default function RoomHostRoundsPanel({
   rounds,
+  selectedRoundId,
   className,
   presenting,
+  pending = false,
   onPresentQuestion,
-  onPresentRound,
   onHideQuestion,
   onStartRound,
   onEndRound,
   onGradeRound,
+  onRevealRound,
 }: RoomHostRoundsPanelProps) {
-  const sanitizedRounds = useMemo(
-    () => rounds.slice().sort((a, b) => a.order - b.order),
-    [rounds]
-  );
-  const [selectedRoundId, setSelectedRoundId] = useState<string | null>(null);
-  const activeId = resolveHostRoundId(sanitizedRounds, selectedRoundId);
-
-  const activeRound =
-    sanitizedRounds.find((round) => round.id === activeId) ??
-    sanitizedRounds[0];
-  const visibleQuestions = activeRound ? getVisibleHostQuestions(activeRound) : [];
-
-  if (!activeRound) {
-    return (
-      <section
-        className={`flex h-full w-full flex-col items-center justify-center rounded-3xl border border-dashed border-zinc-300 bg-white/70 p-6 text-center text-sm font-semibold uppercase tracking-[0.25em] text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900/60 dark:text-zinc-300 ${className ?? ""}`}
-      >
-        All rounds finished
-      </section>
-    );
+  const round = rounds.find((entry) => entry.id === selectedRoundId);
+  if (!round) return <p className="p-4 text-sm text-zinc-500">Select a round.</p>;
+  const visibleQuestions = getVisibleHostQuestions(round);
+  const isRevealing = presenting?.round === round.id && presenting.withAnswer === true;
+  const buttonClass = "rounded-lg px-5 py-1.5 text-sm font-semibold leading-5 text-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500 disabled:cursor-not-allowed disabled:opacity-60";
+  let action: ReactNode = null;
+  if (round.state === "scheduled") {
+    action = <button type="button" disabled={pending} onClick={() => onStartRound?.(round.id)} className={`${buttonClass} bg-[#00e000] hover:bg-green-400`}>Activate</button>;
+  } else if (round.state === "active") {
+    action = <button type="button" disabled={pending} onClick={() => onEndRound?.(round.id)} className={`${buttonClass} bg-[#ef0000] text-white hover:bg-red-600`}>End round</button>;
+  } else if (round.type === "image" || round.type === "sorting") {
+    action = <button type="button" disabled={pending} onClick={() => onRevealRound?.(round.id, !isRevealing)} className={`${buttonClass} bg-[#ff9d00] hover:bg-amber-400`}>{isRevealing ? "Hide answers" : "Show answers"}</button>;
   }
 
-  return (
-    <div className={`flex h-full w-full flex-col ${className ?? ""}`}>
-      <div className="mb-3 flex items-center gap-2 overflow-x-auto rounded-full border border-emerald-200 bg-emerald-50/70 px-3 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-emerald-600 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-emerald-200 dark:border-emerald-900/60 dark:bg-emerald-900/20 dark:text-emerald-300">
-        {sanitizedRounds.map((round) => {
-          const isActive = round.id === activeRound.id;
-          const indicatorColor =
-            round.state === "active"
-              ? "bg-emerald-500"
-              : round.state === "closed"
-                ? "bg-red-500"
-                : "bg-amber-400";
-          return (
-            <button
-              key={round.id}
-              onClick={() => setSelectedRoundId(round.id)}
-              title={round.title}
-              className={`inline-flex shrink-0 items-center gap-2 rounded-full px-3 py-1 transition ${
-                isActive
-                  ? "bg-emerald-500 text-white shadow-sm"
-                  : "text-emerald-600 hover:bg-emerald-100 dark:text-emerald-200 dark:hover:bg-emerald-900/40"
-              }`}
-              type="button"
-            >
-              <span className="flex h-2.5 w-2.5 rounded-full border border-white/70 dark:border-emerald-950/60">
-                <span className={`h-full w-full rounded-full ${indicatorColor}`} />
-              </span>
-              R{round.roundNumber}
-            </button>
-          );
-        })}
-      </div>
+  const sortingView = round.type === "sorting" ? getHostSortingView(round) : null;
 
-      <div className="relative flex-1 overflow-hidden rounded-3xl border border-zinc-200 bg-white/90 p-4 shadow-lg backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/90">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-500">
-            Round #{activeRound.roundNumber}
-          </p>
-          <div className="flex items-center gap-2">
-            {activeRound.state === "scheduled" ? (
-              <button
-                type="button"
-                onClick={() => onStartRound?.(activeRound.id)}
-                className="rounded-md bg-emerald-500 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-1"
-              >
-                Activate
-              </button>
-            ) : null}
-            {activeRound.type === "sorting" && activeRound.state === "closed" && activeRound.gradingRequired ? (
-              <button type="button" onClick={() => onGradeRound?.(activeRound.id)} className="rounded-md bg-emerald-600 px-3 py-1 text-xs font-semibold text-white">Score round</button>
-            ) : null}
-            {activeRound.state === "active" ? (
-              <button
-                type="button"
-                onClick={() => onEndRound?.(activeRound.id)}
-                className="rounded-md bg-red-500 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-red-400 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-1"
-              >
-                End
-              </button>
-            ) : null}
-          </div>
-        </div>
-        <div className="flex h-full flex-col gap-3 overflow-auto pr-2">
-          {activeRound.type === "sorting" ? <div className="space-y-3">
-            <p>{activeRound.criterion}</p>
-            {activeRound.state !== "scheduled" ? <button type="button" onClick={() => presenting?.round === activeRound.id ? onHideQuestion?.() : onPresentRound?.(activeRound.id)} className="rounded bg-emerald-600 px-3 py-2 text-sm text-white">{presenting?.round === activeRound.id ? "Hide round" : "Show round"}</button> : null}
-          </div> : null}
-          {visibleQuestions.map((question) => (
-              <div
-                key={question.id}
-                className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
-              >
-                <div className="mb-2 flex items-start justify-between gap-3">
-                  <p className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">
-                    {question.order + 1}. {question.prompt}
-                  </p>
-                  {(activeRound.state === "active" || activeRound.state === "closed") && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const isPresented =
-                          presenting?.round === activeRound.id &&
-                          presenting?.question === question.id;
-                        if (isPresented) {
-                          onHideQuestion?.();
-                        } else {
-                          onPresentQuestion?.(activeRound.id, question.id);
-                        }
-                      }}
-                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-600 transition hover:bg-emerald-50 hover:text-emerald-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-emerald-900/30 dark:hover:text-emerald-200"
-                      title={
-                        presenting?.round === activeRound.id &&
-                        presenting?.question === question.id
-                          ? "Hide question"
-                          : "Show question"
-                      }
-                    >
-                      {presenting?.round === activeRound.id &&
-                      presenting?.question === question.id ? (
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.5"
-                          className="h-4 w-4"
-                        >
-                          <path d="M3 3l18 18" strokeLinecap="round" />
-                          <path d="M4.5 4.5C3 6 2 8 2 12c2 3 5.6 6 10 6 2.1 0 4-.5 5.6-1.4M9.88 9.88a3 3 0 104.24 4.24" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      ) : (
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.5"
-                          className="h-4 w-4"
-                        >
-                          <path
-                            d="M2 12c2-3 5.6-6 10-6s8 3 10 6c-2 3-5.6 6-10 6s-8-3-10-6z"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                          <circle cx="12" cy="12" r="2.5" />
-                        </svg>
-                      )}
-                    </button>
-                  )}
-                </div>
-                <p className="rounded-xl bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200">
-                  {question.answer || "—"}
-                </p>
-              </div>
-            ))}
-          {!visibleQuestions.length && activeRound.type !== "sorting" ? (
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">
-              No questions available.
-            </p>
-          ) : null}
-        </div>
-      </div>
+  return <section aria-label={`Host round: ${round.title}`} className={`@container flex h-full min-h-0 w-full flex-col px-3 py-3 text-black dark:text-zinc-100 ${className ?? ""}`}>
+    <header className="mb-2 grid shrink-0 grid-cols-[1fr_auto] items-center gap-2 border-b border-zinc-100 pb-2 dark:border-zinc-800 @min-[600px]:grid-cols-[180px_minmax(0,1fr)_180px]">
+      <div className="hidden @min-[600px]:block" aria-hidden="true" />
+      <h2 className="min-w-0 break-words text-center text-sm font-semibold leading-8">{round.type === "sorting" ? round.criterion ?? round.title : round.title}</h2>
+      <div className="flex flex-wrap items-center justify-end gap-2">{action}</div>
+    </header>
+    <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
+      {round.type === "image" ? <HostImages round={round} /> : round.type === "sorting" ? (
+        <div className="p-2">{sortingView ? <SortingQuestions items={sortingView.items} order={sortingView.order} layout="columns" /> : <p role="status" className="text-sm text-zinc-500">Loading sorting items…</p>}</div>
+      ) : <div className="space-y-4 p-2">
+        {visibleQuestions.map((question) => {
+          const isPresented = presenting?.round === round.id && presenting?.question === question.id;
+          return <article key={question.id} className="rounded-2xl border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <p className="min-w-0 whitespace-pre-wrap break-words px-1 py-1 text-sm font-semibold leading-4">{question.order + 1}. {question.prompt}</p>
+              {round.state !== "scheduled" ? <button type="button" disabled={pending}
+                aria-label={`${isPresented ? "Hide" : "Show"} question ${question.order + 1}`}
+                title={isPresented ? "Hide question" : "Show question"}
+                aria-pressed={isPresented}
+                onClick={() => isPresented ? onHideQuestion?.() : onPresentQuestion?.(round.id, question.id)}
+                className={`flex size-[42px] shrink-0 items-center justify-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500 disabled:opacity-60 ${isPresented ? "bg-red-500 hover:bg-red-600" : "bg-[#2cc852] hover:bg-green-600"}`}>
+                <PanelIcon name="eye" tone="white" />
+              </button> : null}
+            </div>
+            <p className="rounded-lg bg-emerald-50 px-4 py-1.5 text-sm font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200">{question.answer || "No text answer"}</p>
+          </article>;
+        })}
+        {!visibleQuestions.length ? <p className="text-sm text-zinc-500">No questions available.</p> : null}
+      </div>}
     </div>
-  );
+    {round.state === "closed" && round.gradingRequired && (round.type === "sorting" || round.type === "image" || round.type === "color") ? <div className="shrink-0 pt-2 text-right">
+      <button type="button" disabled={pending} onClick={() => onGradeRound?.(round.id)} className={`${buttonClass} bg-emerald-500 text-white`}>Retry scoring</button>
+    </div> : null}
+  </section>;
 }

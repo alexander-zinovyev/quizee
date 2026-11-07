@@ -63,7 +63,7 @@ export async function transitionPresentation(
     if (options.activateRound && ((rounds.get(options.activateRound)?.type === "sorting" ? !samePresentation(current, next) : next.round !== options.activateRound) || rounds.get(options.activateRound)?.state !== "scheduled")) {
       throw new Error("Round cannot be activated.");
     }
-    if (options.closeRound && (!["text", "multi-step", "color", "sorting"].includes(rounds.get(options.closeRound)?.type) || rounds.get(options.closeRound)?.state !== "active")) {
+    if (options.closeRound && (!["text", "image", "multi-step", "color", "sorting"].includes(rounds.get(options.closeRound)?.type) || rounds.get(options.closeRound)?.state !== "active")) {
       throw new Error("Round cannot be closed.");
     }
     if (next.round && next.round !== options.activateRound && next.round !== options.closeRound &&
@@ -156,8 +156,11 @@ export async function transitionPresentation(
             continue;
           }
           for (const answer of answers.docs) {
+            const roundType = rounds.get(options.closeRound)!.type;
+            // Image packs historically omitted lock/user fields; their grading contract is the image ID.
+            const data = roundType === "image" ? { locked: false, user: null, ...answer.data() } : answer.data();
             const input = current.round === options.closeRound && answer.id === current.question && captured
-              ? captured : parseTeamAnswer(answer.data());
+              ? captured : parseTeamAnswer(data);
             const committed = snapshotTeamAnswer(input, rounds.get(options.closeRound)!.type, rounds.get(options.closeRound)!.allowWager === true);
             writes.push({ ref: target.collection("answers").doc(answer.id), data: committed, merge: false });
           }
