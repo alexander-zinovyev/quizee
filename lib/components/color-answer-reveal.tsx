@@ -15,6 +15,7 @@ export function ColorAnswerReveal({ artwork, submittedColor, targetColor, label 
   const comparing = hovered || held || focused;
   const showTeam = defaultVersion === "team" || comparing;
   const showOriginal = defaultVersion === "original" || comparing;
+  const comparisonPosition = comparing ? "50%" : defaultVersion === "original" ? "0%" : "100%";
 
   return (
     <button
@@ -42,14 +43,14 @@ export function ColorAnswerReveal({ artwork, submittedColor, targetColor, label 
         <ColorImage artwork={artwork} color={submittedColor} label={label} className="block h-full w-full object-contain" />
         <ColorImageIndicator version="team" hidden={!showTeam} />
       </span>
-      <span className="color-answer-correct-layer absolute inset-0 block" aria-hidden={!showOriginal} style={{ clipPath: comparing ? "inset(0 0 0 50%)" : showOriginal ? "inset(0)" : "inset(0 0 0 100%)" }}>
+      <span className="color-answer-correct-layer absolute inset-0 block" aria-hidden={!showOriginal} style={{ clipPath: `inset(0 0 0 ${comparisonPosition})` }}>
         <span className="color-answer-transition relative block h-full" style={{ animation: revealed ? "none" : undefined }} onAnimationEnd={() => setRevealed(true)}>
           <ColorImage artwork={artwork} color={targetColor} label="Correct answer" className="block h-full w-full object-contain" />
           <ColorImageIndicator version="original" hidden={!showOriginal} />
         </span>
       </span>
       <span aria-hidden="true" className="color-answer-fold" style={{ animation: revealed ? "none" : undefined }} />
-      <span aria-hidden="true" className="color-answer-comparison-edge" style={{ left: comparing ? "50%" : "0%", opacity: comparing ? 1 : 0 }} />
+      <span aria-hidden="true" className="color-answer-comparison-edge" style={{ left: comparisonPosition, opacity: comparing ? 1 : 0 }} />
     </button>
   );
 }
