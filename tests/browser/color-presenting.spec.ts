@@ -5,8 +5,8 @@ import sharp from "sharp";
 test.use({ hasTouch: true });
 
 type Harness = Window & {
-  renderColor: (host: boolean, state: "active" | "closed", reveal?: boolean) => void;
-  setTeamColor: (team: string, color: string) => void;
+  renderColor: (host: boolean, state: "active" | "closed", reveal?: boolean, questionId?: string, teamId?: string) => void;
+  setTeamColor: (team: string, color: string, questionId?: string) => void;
   setTeamLocked: (team: string, locked: boolean) => void;
   colorReads: string[];
   colorAssetReads: string[];
@@ -14,6 +14,11 @@ type Harness = Window & {
   colorWrites: Array<{ teamId: string; answer?: string; locked?: boolean }>;
   getTeamColor: (team: string) => string;
   rejectNextColorWrite: boolean;
+  deferColorReads: boolean;
+  releaseColorReads: () => void;
+  rejectColorRead?: string;
+  setFrozenColor: (team: string, color: string | null, questionId: string) => void;
+  colorTeams?: Array<{ id: string; name: string }>;
 };
 
 async function bundle(format: "raster" | "svg") {
@@ -23,13 +28,13 @@ async function bundle(format: "raster" | "svg") {
       import { createRoot } from 'react-dom/client';
       import { ColorPresenting } from './lib/components/color-presenting';
       const root = createRoot(document.getElementById('color-test'));
-      window.renderColor = (host, state, reveal = false) => {
+      window.renderColor = (host, state, reveal = false, questionId = 'q1', teamId = 'red') => {
         if (state === 'closed') window.freezeColorAnswers();
         root.render(
-        <ColorPresenting key={host ? 'host' : 'player'} roomSlug="demo"
+        <ColorPresenting key={[host ? 'host' : teamId, questionId].join(':')} roomSlug="demo"
           round={{ id:'r1', type:'color', state, title:'Colors', order:0 }}
-          question={{ id:'q1', order:0, prompt:null, displayPrompt:'Question 1', initialColor:'#83C547', media:{storagePath:'image'}, ${format === "svg" ? "regionIds:['left','right']" : "mask:{storagePath:'mask'}"} }}
-          teamId="red" isHost={host} teams={[{id:'red',name:'Red team'},{id:'blue',name:'Blue team'}]} withAnswer={reveal} />);
+          question={{ id:questionId, order:0, prompt:null, displayPrompt:questionId, initialColor:questionId === 'q1' ? '#83C547' : '#112233', media:{storagePath:'image'}, ${format === "svg" ? "regionIds:['left','right']" : "mask:{storagePath:'mask'}"} }}
+          teamId={teamId} isHost={host} teams={window.colorTeams ?? [{id:'red',name:'Red team'},{id:'blue',name:'Blue team'}]} withAnswer={reveal} />);
       };
       window.renderColor(false, 'active');`, resolveDir: process.cwd(), loader: "tsx" },
     bundle: true, write: false, jsx: "automatic", define: { "process.env.NODE_ENV": '"development"' },
@@ -39,7 +44,7 @@ async function bundle(format: "raster" | "svg") {
         if (args.path === "firebase/firestore") return { contents: `
           export const doc = (_, ...parts) => parts.join('/');
           export const onSnapshot = (path, optionsOrCallback, callback) => window.colorTransport.subscribe(path, typeof optionsOrCallback === 'function' ? optionsOrCallback : callback);
-          export const getDocFromServer = async path => window.colorTransport.snapshot(path);` };
+          export const getDocFromServer = async path => window.colorTransport.read(path);` };
         if (args.path === "firebase/storage") return { contents: `
           export const getStorage = () => ({});
           export const ref = (_, path) => path;
@@ -66,20 +71,31 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
   await page.evaluate(({ image, mask }) => {
     const root = document.createElement("div"); root.id = "color-test"; root.className = "flex h-[420px] flex-col bg-zinc-950";
     document.body.replaceChildren(root);
-    const docs: Record<string, { answer: string; locked?: boolean; perceptionScore?: number; awardedPoints?: number }> = { "rooms/demo/rounds/r1/answers/q1": { answer: "#4285F4" } };
+    const docs: Record<string, { answer: string; locked?: boolean; perceptionScore?: number; awardedPoints?: number }> = {
+      "rooms/demo/rounds/r1/answers/q1": { answer: "#4285F4" },
+      "rooms/demo/rounds/r1/answers/q2": { answer: "#FF00FF" },
+      "rooms/demo/teams/red/rounds/r1/answers/q2": { answer: "#FFFF00" },
+    };
     const w = window as unknown as Record<string, unknown>;
     const reads: string[] = [];
     w.colorAssets = { image, mask }; w.colorReads = reads; w.colorAssetReads = []; w.colorWrites = [];
-    const snapshot = (path: string) => ({ data: () => docs[path], metadata: { fromCache: false } });
+    const snapshot = (path: string) => ({ data: () => docs[path], exists: () => !!docs[path], metadata: { fromCache: false } });
+    const deferredReads: Array<() => void> = [];
+    w.releaseColorReads = () => { w.deferColorReads = false; deferredReads.splice(0).forEach((release) => release()); };
     const listeners = new Map<string, Set<(value: ReturnType<typeof snapshot>) => void>>();
-    w.colorTransport = { snapshot, subscribe: (path: string, callback: (value: ReturnType<typeof snapshot>) => void) => {
+    w.colorTransport = { read: (path: string) => {
+      reads.push(path);
+      if (w.rejectColorRead === path) throw new Error("Unable to load team submissions.");
+      if (w.deferColorReads && path.includes("/teamAnswers/")) return new Promise((resolve) => deferredReads.push(() => resolve(snapshot(path))));
+      return snapshot(path);
+    }, subscribe: (path: string, callback: (value: ReturnType<typeof snapshot>) => void) => {
       reads.push(path);
       if (!listeners.has(path)) listeners.set(path, new Set());
       listeners.get(path)!.add(callback); queueMicrotask(() => callback(snapshot(path)));
       return () => listeners.get(path)!.delete(callback);
     } };
-    const setTeamColor = (team: string, color: string) => {
-      const path = `rooms/demo/teams/${team}/rounds/r1/answers/q1`;
+    const setTeamColor = (team: string, color: string, questionId = "q1") => {
+      const path = `rooms/demo/teams/${team}/rounds/r1/answers/${questionId}`;
       docs[path] = { ...docs[path], answer: color }; listeners.get(path)?.forEach((callback) => callback(snapshot(path)));
     };
     const setTeamLocked = (team: string, locked: boolean) => {
@@ -90,11 +106,19 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
     w.setTeamColor = setTeamColor;
     w.setTeamLocked = setTeamLocked;
     w.getTeamColor = (team: string) => docs[`rooms/demo/teams/${team}/rounds/r1/answers/q1`]?.answer ?? "#83C547";
+    let frozen = false;
     w.freezeColorAnswers = () => {
-      for (const team of ["red", "blue"]) {
-        const path = `rooms/demo/rounds/r1/teamAnswers/${team}/answers/q1`;
-        if (!docs[path]) docs[path] = { answer: docs[`rooms/demo/teams/${team}/rounds/r1/answers/q1`]?.answer ?? "#83C547" };
+      if (frozen) return;
+      frozen = true;
+      for (const team of ["red", "blue"]) for (const questionId of ["q1", "q2"]) {
+        const path = `rooms/demo/rounds/r1/teamAnswers/${team}/answers/${questionId}`;
+        if (!docs[path]) docs[path] = { answer: docs[`rooms/demo/teams/${team}/rounds/r1/answers/${questionId}`]?.answer ?? (questionId === "q1" ? "#83C547" : "#112233") };
       }
+    };
+    w.setFrozenColor = (team: string, color: string | null, questionId: string) => {
+      const path = `rooms/demo/rounds/r1/teamAnswers/${team}/answers/${questionId}`;
+      if (color === null) delete docs[path];
+      else docs[path] = { answer: color };
     };
     w.gradeTeamColor = (team: string, perceptionScore: number, awardedPoints: number) => {
       const path = `rooms/demo/rounds/r1/teamAnswers/${team}/answers/q1`;
@@ -136,6 +160,8 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
     } finally { URL.revokeObjectURL(url); }
   }, x);
   await expect.poll(() => pixel("Color question")).toEqual([131, 197, 71, 255]);
+  await expect(page.getByRole("region", { name: "Other teams' submissions" })).toHaveCount(0);
+  expect(await page.evaluate(() => (window as unknown as Harness).colorReads.some((path) => path.includes("/teams/blue/") || path.includes("/teamAnswers/blue/")))).toBe(false);
   await expect(page.getByText("Team", { exact: true })).toBeVisible();
   if (format === "svg") await expect.poll(() => pixel("Color question", 40)).toEqual([131, 197, 71, 255]);
   const hue = page.getByRole("slider", { name: "Hue", exact: true });
@@ -323,12 +349,20 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
   async function expectImagesFitPanel() {
     const panel = page.locator("#color-test");
     const bounds = (await panel.boundingBox())!;
-    expect(await panel.evaluate((element) => [...element.querySelectorAll("div")].every((child) => child.scrollHeight <= child.clientHeight + 1))).toBe(true);
+    expect(await panel.evaluate((element) => [...element.querySelectorAll("div")].filter((child) => !child.closest("section[aria-label=\"Other teams' submissions\"]")).every((child) => child.scrollHeight <= child.clientHeight + 1))).toBe(true);
     for (const image of await panel.getByRole("img").all()) {
       const imageBounds = (await image.boundingBox())!;
       expect(imageBounds.height).toBeGreaterThan(0);
+      if (await image.evaluate((element) => !!element.closest("section[aria-label=\"Other teams' submissions\"]"))) continue;
       expect(imageBounds.y).toBeGreaterThanOrEqual(bounds.y);
       expect(imageBounds.y + imageBounds.height).toBeLessThanOrEqual(bounds.y + bounds.height);
+    }
+    const gallery = panel.getByRole("region", { name: "Other teams' submissions" });
+    if (await gallery.count()) {
+      const galleryBounds = (await gallery.boundingBox())!;
+      expect(galleryBounds.y).toBeGreaterThanOrEqual(bounds.y);
+      expect(galleryBounds.y + galleryBounds.height).toBeLessThanOrEqual(bounds.y + bounds.height);
+      expect(await gallery.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
     }
   }
   await page.locator("#color-test").evaluate((element) => { element.style.height = "240px"; });
@@ -340,6 +374,7 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
   await expectImagesFitPanel();
   await expect(page.getByText("Original", { exact: true })).toBeVisible();
   await expect(page.getByText("Team", { exact: true })).toHaveCount(0);
+  const readsBeforePlayer = await page.evaluate(() => (window as unknown as Harness).colorReads.length);
   await page.evaluate(() => (window as unknown as Harness).renderColor(false, "closed"));
   await expect(page.getByRole("slider")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /^(Unl|L)ock answer$/ })).toHaveCount(0);
@@ -347,15 +382,25 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
   await expect(page.getByLabel("Question score")).toHaveCount(0);
   await expect(page.getByRole("img", { name: "Correct answer" })).toHaveCount(0);
   await expect.poll(() => pixel("Color question")).toEqual([255, 0, 0, 255]);
+  await expect(page.getByRole("region", { name: "Other teams' submissions" })).toHaveCount(0);
+  expect(await page.evaluate((start) => (window as unknown as Harness).colorReads.slice(start).some((path) => path.includes("/teams/blue/") || path.includes("/teamAnswers/blue/")), readsBeforePlayer)).toBe(false);
   await page.evaluate(() => (window as unknown as Harness).setTeamColor("red", "#00FF00"));
   await expect.poll(() => pixel("Color question")).toEqual([255, 0, 0, 255]);
   await page.mouse.move(0, 0);
   await page.evaluate(() => (window as unknown as Harness).renderColor(false, "closed", true));
   await expect.poll(() => pixel("Correct answer")).toEqual([66, 133, 244, 255]);
+  const gallery = page.getByRole("region", { name: "Other teams' submissions" });
+  await expect(gallery).toBeVisible();
+  await expect(gallery.getByText("Blue team", { exact: true })).toBeVisible();
+  await expect(gallery.getByText("Red team", { exact: true })).toHaveCount(0);
+  await expect.poll(() => pixel("Blue team's answer")).toEqual([0, 255, 0, 255]);
+  await page.evaluate(() => (window as unknown as Harness).setTeamColor("blue", "#0000FF"));
+  await expect.poll(() => pixel("Blue team's answer")).toEqual([0, 255, 0, 255]);
   await expect(page.getByLabel("Question score")).toContainText("Scoring...");
   await page.evaluate(() => (window as unknown as Harness).gradeTeamColor("red", 8.74, 0.5));
   await expect(page.getByLabel("Question score")).toContainText("8.74 / 10");
   await expect(page.getByLabel("Question score")).toContainText("Points 0.5");
+  expect(await page.evaluate((start) => (window as unknown as Harness).colorReads.slice(start).filter((path) => path.includes("/teamAnswers/blue/")), readsBeforePlayer)).toEqual(["rooms/demo/rounds/r1/teamAnswers/blue/answers/q1"]);
   await expectImagesFitPanel();
   const comparison = page.getByRole("button", { name: "Compare submitted image" });
   const transition = page.locator(".color-answer-transition");
@@ -416,6 +461,7 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.evaluate(() => (window as unknown as Harness).renderColor(false, "closed", false));
   await expect(page.getByRole("img", { name: "Correct answer" })).toHaveCount(0);
+  await expect(gallery).toHaveCount(0);
   await page.evaluate(() => (window as unknown as Harness).renderColor(false, "closed", true));
   await expect(transition).toHaveCSS("animation-name", "none");
   await page.evaluate(() => (window as unknown as Harness).gradeTeamColor("red", 0, 0));
@@ -423,4 +469,68 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
   await expect(page.getByLabel("Question score")).toContainText("Points 0");
   expect(await page.evaluate(() => (window as unknown as Harness).colorAssetReads)).toEqual(assetReads);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.evaluate(() => (window as unknown as Harness).renderColor(false, "closed", true, "q2"));
+  await expect.poll(() => pixel("Correct answer")).toEqual([255, 0, 255, 255]);
+  await expect.poll(() => pixel("Blue team's answer")).toEqual([17, 34, 51, 255]);
+  await comparison.hover();
+  await expect.poll(() => pixel("Submitted answer")).toEqual([255, 255, 0, 255]);
+  await page.evaluate(() => (window as unknown as Harness).renderColor(false, "closed", true, "q1", "blue"));
+  await expect(gallery.getByText("Red team", { exact: true })).toBeVisible();
+  await expect(gallery.getByText("Blue team", { exact: true })).toHaveCount(0);
+  await expect.poll(() => pixel("Red team's answer")).toEqual([255, 0, 0, 255]);
+  await page.mouse.move(0, 0);
+  await comparison.hover();
+  await expect.poll(() => pixel("Submitted answer")).toEqual([0, 255, 0, 255]);
+
+  await page.evaluate(() => {
+    const w = window as unknown as Harness;
+    w.deferColorReads = true;
+    w.renderColor(false, "closed", true, "q2");
+  });
+  await expect(gallery.getByRole("status")).toHaveText("Loading submission...");
+  await page.evaluate(() => (window as unknown as Harness).renderColor(false, "closed", true));
+  await expect(gallery.getByRole("status")).toHaveText("Loading submission...");
+  await page.evaluate(() => (window as unknown as Harness).releaseColorReads());
+  await expect.poll(() => pixel("Blue team's answer")).toEqual([0, 255, 0, 255]);
+  await expect.poll(() => pixel("Correct answer")).toEqual([66, 133, 244, 255]);
+
+  await page.evaluate(() => {
+    const w = window as unknown as Harness;
+    w.rejectColorRead = "rooms/demo/rounds/r1/teamAnswers/blue/answers/q2";
+    w.renderColor(false, "closed", true, "q2");
+  });
+  await expect(page.getByRole("alert")).toHaveText("Unable to load team submissions.");
+  await page.evaluate(() => {
+    const w = window as unknown as Harness;
+    w.rejectColorRead = undefined;
+    w.renderColor(false, "closed", true);
+  });
+  await expect(gallery).toBeVisible();
+  await page.evaluate(() => {
+    const w = window as unknown as Harness;
+    w.setFrozenColor("blue", "red", "q2");
+    w.renderColor(false, "closed", true, "q2");
+  });
+  await expect(page.getByRole("alert")).toHaveText("Invalid final color submission for team blue.");
+  await page.evaluate(() => (window as unknown as Harness).renderColor(false, "closed", true));
+  await expect(gallery).toBeVisible();
+  await page.evaluate(() => {
+    const w = window as unknown as Harness;
+    w.setFrozenColor("blue", null, "q2");
+    w.renderColor(false, "closed", true, "q2");
+  });
+  await expect(gallery.getByText("No final submission")).toBeVisible();
+
+  await page.evaluate(() => {
+    const w = window as unknown as Harness;
+    w.colorTeams = [{ id: "red", name: "Red team" }, ...Array.from({ length: 9 }, (_, index) => ({ id: `extra-${index}`, name: `Team ${index + 1}` }))];
+    w.colorTeams.slice(1).forEach((team) => w.setFrozenColor(team.id, "#00FFFF", "q1"));
+    w.renderColor(false, "closed", true);
+  });
+  const lastSubmission = gallery.getByRole("figure").last();
+  await lastSubmission.scrollIntoViewIfNeeded();
+  await expect(lastSubmission.getByText("Team 9", { exact: true })).toBeVisible();
+  await expect.poll(() => pixel("Team 9's answer")).toEqual([0, 255, 255, 255]);
+  await expectImagesFitPanel();
+  await page.screenshot({ path: testInfo.outputPath(`gallery-many-teams-${width}.png`), fullPage: true });
 });

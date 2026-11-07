@@ -11,6 +11,7 @@ import { saveImageMatch } from "@/lib/image-match-store";
 import { recordedAnswer } from "@/lib/answers";
 import { applySortingEdit, parseSortingSnapshot, type SortingEdit } from "@/types/sorting";
 import { gradeSortingRound } from "./sorting";
+import { gradeColorRound, perceptionScore } from "./color-scoring";
 
 async function main() {
   const address = process.env.FIRESTORE_EMULATOR_HOST;
@@ -215,10 +216,14 @@ async function main() {
       await admin.doc(path).set({ state: "playing", presenting: presentation });
       for (const { uid } of apps) await admin.doc(`${path}/members/${uid}`).set({ role: uid === "host" ? "host" : "player", team: uid === "outsider" ? "blue" : "red" });
       await admin.doc(`${path}/teams/red`).set({ name: "Red" });
-      await admin.doc(`${path}/rounds/r1`).set({ type: "color", state: "active" });
+      await admin.doc(`${path}/teams/blue`).set({ name: "Blue" });
+      await admin.doc(`${path}/rounds/r1`).set({ type: "color", state: "active", scoring: { mode: "proportional" } });
       await admin.doc(`${path}/rounds/r1/questions/q1`).set({ initialColor: "#123456" });
+      await admin.doc(`${path}/rounds/r1/questions/q2`).set({ initialColor: "#FEDCBA" });
       await admin.doc(`${path}/rounds/r1/answers/q1`).set({ answer: "#FFFFFF" });
+      await admin.doc(`${path}/rounds/r1/answers/q2`).set({ answer: "#0000FF" });
       await saveTeamAnswer(admin, roomId, "r1", "q1", "a", parseAnswerSave({ teamId: "red", answer: "#AABBCC" }));
+      await saveTeamAnswer(admin, roomId, "r1", "q1", "outsider", parseAnswerSave({ teamId: "blue", answer: "#00FF00" }));
       const answerPath = `${path}/teams/red/rounds/r1/answers/q1`;
       assert.equal((await getDocFromServer(doc(hostClient.db, answerPath))).data()?.answer, "#AABBCC");
       await denied(getDocFromServer(doc(outsider.db, answerPath)));
@@ -241,6 +246,19 @@ async function main() {
       assert.equal((await getDocFromServer(doc(a.db, `${path}/rounds/r1/answers/q1`))).data()?.answer, "#FFFFFF", "Closed-round answers are readable before the host reveals them");
       await transitionPresentation(admin, roomId, "host", presentation, { ...presentation, withAnswer: true });
       assert.equal((await getDocFromServer(doc(a.db, `${path}/rounds/r1/answers/q1`))).data()?.answer, "#FFFFFF");
+      // The gallery reads the same frozen inputs as grading, even if live answers change after closure.
+      await updateDoc(doc(a.db, answerPath), { answer: "#FF0000" });
+      await gradeColorRound(admin, roomId, "r1", "host");
+      for (const [teamId, client, expected] of [["blue", a, "#00FF00"], ["red", outsider, "#AABBCC"]] as const) {
+        const frozen = `${path}/rounds/r1/teamAnswers/${teamId}/answers`;
+        const submitted = (await getDocFromServer(doc(client.db, `${frozen}/q1`))).data()!;
+        assert.equal(submitted.answer, expected);
+        assert.equal(submitted.perceptionScore, perceptionScore(expected, "#FFFFFF").perceptionScore);
+        assert.equal(submitted.awardedPoints, submitted.perceptionScore / 10);
+        assert.equal((await getDocFromServer(doc(client.db, `${frozen}/q2`))).data()?.answer, "#FEDCBA");
+      }
+      await transitionPresentation(admin, roomId, "host", { ...presentation, withAnswer: true }, { ...presentation, question: "q2", withAnswer: true });
+      assert.equal((await getDocFromServer(doc(a.db, `${path}/rounds/r1/answers/q2`))).data()?.answer, "#0000FF");
     }
     {
       const roomId = "rules-text", path = `rooms/${roomId}`;
