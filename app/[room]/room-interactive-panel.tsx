@@ -1,6 +1,8 @@
 "use client";
 
 import { useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { ExternalLink } from "lucide-react";
+import { PanelView } from "@/lib/components/room/panel-view";
 import { PanelIcon, type PanelIconName } from "@/lib/components/room/panel-icon";
 
 export type InteractiveRound = {
@@ -14,15 +16,6 @@ export type InteractiveRound = {
 const roundIcons: Record<InteractiveRound["type"], PanelIconName> = {
   text: "text", image: "image", sorting: "sorting", color: "image", "multi-step": "text",
 };
-
-function MountedPanelView({ id, active, children }: { id: string; active: boolean; children: ReactNode }) {
-  const ref = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    if (active) return;
-    ref.current?.querySelectorAll<HTMLMediaElement>("audio, video").forEach((media) => media.pause());
-  }, [active]);
-  return <div ref={ref} id={id} hidden={!active} className="h-full min-h-0 min-w-0">{children}</div>;
-}
 
 export default function RoomInteractivePanel({ rounds, chat, renderRound, isHost = false,
   keepRoundsMounted = true, loading = false, error, onDismissError, className = "" }: {
@@ -40,6 +33,26 @@ export default function RoomInteractivePanel({ rounds, chat, renderRound, isHost
   const [selectedView, setSelectedView] = useState("chat");
   const selected = selectedView === "chat" || rounds.some((round) => round.id === selectedView)
     ? selectedView : rounds[0]?.id ?? "chat";
+  const [floatingView, setFloatingView] = useState<string | null>(null);
+  // Preserve returned host views too, even when ordinary host tabs unmount.
+  const [floatedRoundIds, setFloatedRoundIds] = useState<string[]>([]);
+  const openButton = useRef<HTMLButtonElement>(null);
+  const restoreFocus = useRef(false);
+  const floating = floatingView === "chat" || rounds.some((round) => round.id === floatingView) ? floatingView : null;
+  const title = (view: string) => {
+    const round = rounds.find((entry) => entry.id === view);
+    return round ? `Round ${round.roundNumber}: ${round.title}` : "Chat";
+  };
+  function closeWindow() {
+    if (floating) setSelectedView(floating);
+    setFloatingView(null);
+    restoreFocus.current = true;
+  }
+  useLayoutEffect(() => {
+    if (!restoreFocus.current) return;
+    openButton.current?.focus();
+    restoreFocus.current = false;
+  }, [floating, selected]);
   const buttonClass = "relative flex h-10 w-[42px] shrink-0 items-center justify-center rounded-lg transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500";
 
   return <section aria-label="Interactive panel" className={`flex h-full min-h-0 min-w-0 overflow-hidden rounded-3xl border border-zinc-200 bg-white/95 shadow-2xl backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/95 ${className}`}>
@@ -64,13 +77,29 @@ export default function RoomInteractivePanel({ rounds, chat, renderRound, isHost
       {error ? <div role="alert" className="flex shrink-0 items-center justify-between gap-2 bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-200">
         <p>{error}</p><button type="button" onClick={onDismissError} className="underline">Dismiss</button>
       </div> : null}
-      <div className="min-h-0 flex-1">
-        <MountedPanelView id={`${id}-chat`} active={selected === "chat"}>{typeof chat === "function" ? chat(selected === "chat") : chat}</MountedPanelView>
+      {selected === floating ? <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 overflow-auto p-4 text-center text-sm">
+        <p>This tab is open in a window.</p>
+        <button type="button" onClick={closeWindow} className="rounded-lg border border-zinc-300 px-3 py-2 dark:border-zinc-700">Return to panel</button>
+      </div> : <div className="flex shrink-0 justify-end border-b border-zinc-200 px-2 py-1 dark:border-zinc-800">
+        <button ref={openButton} type="button" aria-label={`Open ${title(selected)} in window`} title="Open in window"
+          disabled={loading && selected !== "chat"}
+          onClick={() => {
+            setFloatingView(selected);
+            if (selected !== "chat") setFloatedRoundIds((current) => current.includes(selected) ? current : [...current, selected]);
+          }}
+          className="flex size-8 items-center justify-center rounded-lg hover:bg-zinc-100 focus-visible:outline-2 focus-visible:outline-emerald-500 disabled:opacity-50 dark:hover:bg-zinc-800">
+          <ExternalLink aria-hidden="true" className="size-4" />
+        </button>
+      </div>}
+      <div className={`min-h-0 flex-1 ${selected === floating ? "hidden" : ""}`}>
+        <PanelView id={`${id}-chat`} title="Chat" active={selected === "chat"} floating={floating === "chat"} onClose={closeWindow}>
+          {typeof chat === "function" ? chat(selected === "chat" || floating === "chat") : chat}
+        </PanelView>
         {loading && selected !== "chat" ? <p role="status" className="p-4 text-sm text-zinc-500">Loading rounds…</p> : null}
-        {!loading ? rounds.filter((round) => keepRoundsMounted || round.id === selected).map((round) =>
-          <MountedPanelView key={round.id} id={`${id}-${round.id}`} active={selected === round.id}>
+        {!loading ? rounds.filter((round) => keepRoundsMounted || round.id === selected || round.id === floating || floatedRoundIds.includes(round.id)).map((round) =>
+          <PanelView key={round.id} id={`${id}-${round.id}`} title={title(round.id)} active={selected === round.id} floating={floating === round.id} onClose={closeWindow}>
             {renderRound(round.id)}
-          </MountedPanelView>) : null}
+          </PanelView>) : null}
       </div>
     </div>
   </section>;

@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { build } from "esbuild";
 
 // Keep native scrollbars visible for the presentation appearance regressions.
@@ -235,6 +235,176 @@ async function setup(page: Page, withGate = false) {
 const room = (page: Page, id: string) => page.getByRole("region", { name: `${id} room`, exact: true });
 const panel = (page: Page, id: string) => room(page, id).getByRole("region", { name: "Interactive panel", exact: true });
 const view = (page: Page, id: string, name: string) => panel(page, id).getByRole("button", { name, exact: true });
+
+const floating = (page: Page, title: string) => page.getByRole("dialog", { name: `${title} window`, exact: true });
+
+async function moveWindow(page: Page, floatingWindow: Locator, x: number, y: number, touch = false) {
+  const handle = floatingWindow.getByRole("button", { name: /^Move / });
+  const grip = (await handle.boundingBox())!, bounds = (await floatingWindow.boundingBox())!;
+  const start = { x: grip.x + grip.width / 2, y: grip.y + grip.height / 2 };
+  const end = { x: start.x + x - bounds.x, y: start.y + y - bounds.y };
+  if (touch) {
+    const client = await page.context().newCDPSession(page);
+    try {
+      await client.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [start] });
+      await client.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [end] });
+      await client.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    } finally { await client.detach(); }
+  } else {
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    await page.mouse.move(end.x, end.y, { steps: 10 });
+    await page.mouse.up();
+  }
+}
+
+for (const width of [1440, 390]) test(`floating tabs preserve live work and independent layouts at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 900 });
+  await setup(page);
+  const first = panel(page, "first"), teammate = panel(page, "teammate");
+  const presentation = await page.evaluate(() => (window as unknown as Fixture).roomTransport.presentation());
+  await first.getByRole("textbox", { name: "Message input" }).fill("Unsent draft");
+  await first.getByRole("button", { name: "Open Chat in window", exact: true }).click();
+  const chat = floating(page, "Chat");
+  await expect(first.getByText("This tab is open in a window.", { exact: true })).toBeVisible();
+  await expect(chat.getByRole("textbox", { name: "Message input" })).toHaveValue("Unsent draft");
+  await expect(page.getByRole("dialog")).toHaveCount(1);
+  await expect(teammate.getByRole("textbox", { name: "Message input" })).toBeVisible();
+  await moveWindow(page, chat, 8, 480, width === 390);
+  const bounds = (await chat.boundingBox())!;
+  expect(bounds.x).toBeCloseTo(8, 0);
+  expect(bounds.y).toBeGreaterThan(400);
+  await view(page, "first", "Round 1: Capital cities").click();
+  await first.getByRole("textbox", { name: "Answer 1", exact: true }).fill("Paris");
+  await first.getByRole("button", { name: "Lock answer", exact: true }).click();
+  await chat.getByRole("textbox", { name: "Message input" }).press("Enter");
+  await expect(teammate.getByRole("log")).toContainText("Unsent draft");
+  await expect(teammate.getByRole("log").getByText("Unsent draft", { exact: true })).toHaveCount(1);
+  await chat.getByRole("textbox", { name: "Message input" }).fill("Keep across replacement");
+  await first.getByRole("button", { name: "Open Round 1: Capital cities in window", exact: true }).click();
+  const answer = floating(page, "Round 1: Capital cities");
+  await expect(chat).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(1);
+  await expect(answer.getByRole("textbox", { name: "Answer 1", exact: true })).toHaveValue("Paris");
+  await expect(answer.getByRole("textbox", { name: "Answer 1", exact: true })).toBeDisabled();
+  await moveWindow(page, answer, 8, 480);
+  await view(page, "first", "Chat").click();
+  await expect(first.getByRole("textbox", { name: "Message input" })).toHaveValue("Keep across replacement");
+  await answer.getByRole("button", { name: "Close window", exact: true }).click();
+  await expect(view(page, "first", "Round 1: Capital cities")).toHaveAttribute("aria-pressed", "true");
+  await expect(first.getByRole("textbox", { name: "Answer 1", exact: true })).toHaveValue("Paris");
+  await expect(first.getByRole("textbox", { name: "Answer 1", exact: true })).toBeDisabled();
+  expect(await page.evaluate(() => (window as unknown as Fixture).roomTransport.writes.filter(write => write.body.locked === true))).toHaveLength(1);
+  expect(await page.evaluate(() => (window as unknown as Fixture).roomTransport.presentation())).toEqual(presentation);
+  await expect(view(page, "teammate", "Chat")).toHaveAttribute("aria-pressed", "true");
+  await expect(view(page, "host", "Chat")).toHaveAttribute("aria-pressed", "true");
+  await teammate.getByRole("button", { name: "Open Chat in window", exact: true }).click();
+  const teammateChat = floating(page, "Chat");
+  await moveWindow(page, teammateChat, 8, 480);
+  const teammatePlacement = await teammateChat.boundingBox();
+  await first.getByRole("button", { name: "Open Round 1: Capital cities in window", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(2);
+  await moveWindow(page, floating(page, "Round 1: Capital cities"), 8, 8);
+  expect(await teammateChat.boundingBox()).toEqual(teammatePlacement);
+  expect(await page.evaluate(() => (window as unknown as Fixture).roomTransport.presentation())).toEqual(presentation);
+});
+
+for (const width of [1440, 390]) test(`floating sorting keeps item dragging separate and close reachable at ${width}px`, async ({ page }, testInfo) => {
+  await page.setViewportSize({ width, height: 900 });
+  await setup(page);
+  await view(page, "first", "Round 2: Timeline").click();
+  await panel(page, "first").getByRole("button", { name: "Open Round 2: Timeline in window", exact: true }).click();
+  const floatingWindow = floating(page, "Round 2: Timeline");
+  await floatingWindow.screenshot({ path: testInfo.outputPath(`floating-sorting-${width}.png`) });
+  const bounds = (await floatingWindow.boundingBox())!;
+  const source = (await floatingWindow.getByRole("button", { name: "Reorder item 1", exact: true }).boundingBox())!;
+  const target = (await floatingWindow.locator('[data-item-id="b"]').boundingBox())!;
+  await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(source.x + source.width / 2, target.y + target.height / 2, { steps: 10 });
+  await expect(floatingWindow.getByRole("button", { name: "Reorder item 1", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await page.mouse.up();
+  await expect.poll(() => page.evaluate(() => (window as unknown as Fixture).roomTransport.writes.filter(write => write.url.endsWith("/sorting/answer")).length)).toBe(1);
+  expect(await floatingWindow.boundingBox()).toEqual(bounds);
+  await expect.poll(() => floatingWindow.getByRole("list", { name: "Sorting order", exact: true }).locator(":scope > li").evaluateAll(rows => rows.map(row => row.getAttribute("data-item-id")))).toEqual(["b", "a", "c", "d"]);
+  const grip = floatingWindow.getByRole("button", { name: "Move Round 2: Timeline window", exact: true });
+  const viewportWidth = await page.evaluate(() => window.visualViewport?.width ?? window.innerWidth);
+  await grip.press("ArrowRight");
+  expect((await floatingWindow.boundingBox())!.x).toBeCloseTo(Math.min(bounds.x + 16, viewportWidth - bounds.width - 8), 0);
+  await grip.press("ArrowDown");
+  expect((await floatingWindow.boundingBox())!.y).toBeCloseTo(bounds.y + 16, 0);
+  await moveWindow(page, floatingWindow, 5000, 5000);
+  await expect(floatingWindow.getByRole("button", { name: "Close window", exact: true })).toBeInViewport();
+  await page.setViewportSize({ width: 320, height: 500 });
+  await expect(floatingWindow.getByRole("button", { name: "Close window", exact: true })).toBeInViewport();
+  await floatingWindow.getByRole("button", { name: "Close window", exact: true }).click();
+  await expect(panel(page, "first").getByRole("list", { name: "Sorting order", exact: true }).locator(":scope > li").first()).toHaveAttribute("data-item-id", "b");
+});
+
+test("moving a text round preserves its in-flight answer queue and returns focus", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await setup(page);
+  const first = panel(page, "first");
+  await view(page, "first", "Round 1: Capital cities").click();
+  await page.evaluate(() => { (window as unknown as Fixture).roomTransport.holdAnswers = true; });
+  const input = first.getByRole("textbox", { name: "Answer 1", exact: true });
+  const originalInput = await input.elementHandle();
+  await input.fill("P");
+  await expect.poll(() => page.evaluate(() => (window as unknown as Fixture).roomTransport.writes.length)).toBe(1);
+  await input.fill("Paris");
+  await first.getByRole("button", { name: "Open Round 1: Capital cities in window", exact: true }).click();
+  await expect(floating(page, "Round 1: Capital cities").getByRole("textbox", { name: "Answer 1", exact: true })).toHaveValue("Paris");
+  expect(await originalInput!.evaluate(element => element.isConnected)).toBe(true);
+  await first.getByRole("button", { name: "Return to panel", exact: true }).click();
+  await expect(input).toHaveValue("Paris");
+  expect(await originalInput!.evaluate(element => element.isConnected)).toBe(true);
+  await expect(first.getByRole("button", { name: "Open Round 1: Capital cities in window", exact: true })).toBeFocused();
+  await page.evaluate(() => (window as unknown as Fixture).roomTransport.releaseAnswers());
+  await view(page, "teammate", "Round 1: Capital cities").click();
+  await expect(panel(page, "teammate").getByRole("textbox", { name: "Answer 1", exact: true })).toHaveValue("Paris");
+  expect(await page.evaluate(() => (window as unknown as Fixture).roomTransport.writes.map(write => write.body.answer))).toEqual(["P", "Paris"]);
+});
+
+test("players can float each round type available to them", async ({ page }) => {
+  await setup(page);
+  await page.evaluate(() => (window as unknown as Fixture).roomTransport.set("rooms/demo/rounds/image", { state: "active" }));
+  const first = panel(page, "first");
+  for (const title of ["Round 1: Capital cities", "Round 2: Timeline", "Round 4: Flags", "Round 5: Clues", "Round 6: Colors"]) {
+    await view(page, "first", title).click();
+    const roundName = title.split(": ")[1];
+    const originalContent = await first.getByRole("region", { name: roundName, exact: true }).elementHandle();
+    await first.getByRole("button", { name: `Open ${title} in window`, exact: true }).click();
+    await expect(floating(page, title)).toBeVisible();
+    await expect(floating(page, title).getByRole("region", { name: roundName, exact: true })).toBeVisible();
+    await expect(first.getByRole("region", { name: roundName, exact: true })).toHaveCount(0);
+    expect(await originalContent!.evaluate(element => element.isConnected)).toBe(true);
+    await floating(page, title).getByRole("button", { name: "Close window", exact: true }).click();
+    await expect(first.getByRole("region", { name: roundName, exact: true })).toBeVisible();
+    expect(await originalContent!.evaluate(element => element.isConnected)).toBe(true);
+  }
+});
+
+for (const width of [1440, 390]) test(`host can float every tab and use live round controls at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 900 });
+  await setup(page);
+  const host = panel(page, "host");
+  for (const title of ["Chat", "Round 1: Capital cities", "Round 2: Timeline", "Round 3: Foreground two", "Round 4: Flags", "Round 5: Clues", "Round 6: Colors"]) {
+    await view(page, "host", title).click();
+    await host.getByRole("button", { name: `Open ${title} in window`, exact: true }).click();
+    await expect(floating(page, title)).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(1);
+    await floating(page, title).getByRole("button", { name: "Close window", exact: true }).click();
+    await expect(view(page, "host", title)).toHaveAttribute("aria-pressed", "true");
+  }
+  await view(page, "host", "Round 4: Flags").click();
+  await host.getByRole("button", { name: "Open Round 4: Flags in window", exact: true }).click();
+  const floatingWindow = floating(page, "Round 4: Flags");
+  await floatingWindow.getByRole("button", { name: "Activate", exact: true }).click();
+  await expect(floatingWindow.getByRole("button", { name: "End round", exact: true })).toBeVisible();
+  await floatingWindow.getByRole("button", { name: "Close window", exact: true }).click();
+  await expect(host.getByRole("button", { name: "End round", exact: true })).toBeVisible();
+  expect(await page.evaluate(() => (window as unknown as Fixture).roomTransport.writes.filter(write => write.body.activateRound === "image"))).toHaveLength(1);
+});
 
 for (const width of [1440, 390]) test(`two teammates retain answers, wagers, sorting and independent views at ${width}px`, async ({ page }, testInfo) => {
   await page.setViewportSize({ width, height: 900 });
