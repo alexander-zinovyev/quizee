@@ -7,14 +7,14 @@ Each team shares one coin budget across the entire round. Coins buy clues, not p
   {
     "type": "clues",
     "title": "Name the city",
-    "startingCoins": 5,
+    "startingCoins": 16,
     "questions": [
       {
-        "prompt": "Which city is this?",
-        "answer": "Paris",
+        "generalClue": { "text": "Which city is this?", "media": "cities/intro.aac" },
+        "answer": { "hint": "Paris", "stages": [{ "text": "Paris", "media": "cities/answer.webm" }] },
         "clues": [
-          { "id": "history", "category": "History", "price": 2, "text": "A European capital" },
-          { "id": "photo", "category": "Photo", "price": 3, "text": "Look at the skyline", "image": "cities/paris.png" }
+          { "id": "history", "category": "History", "price": 2, "content": { "text": "A European capital" } },
+          { "id": "photo", "category": "Photo", "price": 3, "content": { "text": "Look at the skyline", "media": "cities/paris.png" } }
         ]
       }
     ]
@@ -22,9 +22,11 @@ Each team shares one coin budget across the entire round. Coins buy clues, not p
 ]
 ```
 
-Budgets and prices must be positive safe integers. Each question needs a prompt, an accepted answer, and at least one clue. Clue IDs must be unique within their question and contain 1 to 128 letters, numbers, underscores, or dashes, excluding names wrapped in double underscores. Categories and clue text must be nonempty. Questions have no configurable point value.
+Budgets and prices must be positive safe integers. The builder defaults to 16 coins. Each question needs one `generalClue` stage, an `answer` with a separate host-only `hint` and one or more `stages`, and at least one paid clue. Each paid clue has a `content` stage. Clue IDs must be unique within their question and contain 1 to 128 letters, numbers, underscores, or dashes, excluding names wrapped in double underscores. Categories and supplied text must be nonempty. Every stage requires text and/or media. Questions have no configurable point value.
 
-Images use paths relative to the pack's `media/` folder. PNG, JPEG, GIF, WebP, and SVG are accepted. Room creation validates static images up to 16 megapixels and rasterizes them to PNG. Invalid or animated images are refused. The builder preserves the authored image and configuration through export and re-import.
+All content uses the existing stage schema: text, media, or both. Media paths are relative to the pack's `media/` folder and use the usual image, audio, and video extensions. Media-only stages are supported. The builder preserves authored media and configuration through export and re-import.
+
+The question editor places the general clue on the left and the answer hint and stages on the right, with paid clues underneath. Questions and paid clues can be reordered by dragging their handles or using Space and arrow keys. Reordering preserves each paid clue's ID, content, category, and price. Saved drafts from the earlier clues editor are converted to stage fields without changing their configured budgets. Pack imports require the stage-based format above.
 
 Only the currently presented question in an active round accepts purchases. One server transaction debits the team's round balance and records the purchased clue. Duplicate requests and simultaneous purchases of the same clue charge once. Spending the last coins succeeds; insufficient funds leave both the clue and balance unchanged. Teammates share purchases, including after navigation or reconnecting.
 
@@ -32,9 +34,9 @@ The host sees every clue while presenting a question, including during the activ
 
 ## Access and deployment
 
-Public question documents contain only clue IDs, categories, and prices. Complete definitions live in host-only question subcollections. Server-owned balances and purchased content live at `rooms/{room}/cluePurchases/{team}/rounds/{round}`, outside the writable team-round namespace. Teams can read their own purchase records; clients, including the host, cannot write them directly.
+Question documents contain the public general-clue stage and only the IDs, categories, and prices of paid clues. Complete definitions live in host-only question subcollections. Server-owned balances and purchased content live at `rooms/{room}/cluePurchases/{team}/rounds/{round}`, outside the writable team-round namespace. Teams can read their own purchase records; clients, including the host, cannot write them directly.
 
-Authenticated clue endpoints return content only for the host, the purchasing team, or a clue publicly revealed for the currently presented question in a closed round. Clue images use the private `rooms/{room}/clue-media/` Storage namespace. They are served through the same authorization check with `Cache-Control: no-store`; clients cannot access that Storage namespace directly. Private images are saved without inherited Firebase download tokens. Buckets must not grant public object access through Google Cloud IAM or ACLs.
+Authenticated clue endpoints return content only for the host, the purchasing team, or a clue publicly revealed for the currently presented question in a closed round. Paid-clue media uses the private `rooms/{room}/clue-media/` Storage namespace. They are served through the same authorization check with `Cache-Control: no-store`; clients cannot access that Storage namespace directly. Private media is saved without inherited Firebase download tokens. Buckets must not grant public object access through Google Cloud IAM or ACLs.
 
 Deploy both `firestore.rules` and `storage.rules` before enabling clues in production:
 

@@ -1,5 +1,7 @@
 "use client";
 
+import type { QuizStage } from "@/types/quiz-stage";
+import { upgradeCluesDrafts } from "@/lib/build/clues-drafts";
 import { gunzipSync } from "fflate";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -12,7 +14,7 @@ import { readTarEntries } from "@/lib/build/tar-reader";
 import { validateAgainstQuizSchema } from "@/lib/build/quiz-schema-validator";
 import quizSchema from "@/types/quiz.schema.json";
 import { parseColorQuestion, parseColorScoring, type ColorPackRound } from "@/types/color";
-import { parseCluesRound, type CluesPackRound } from "@/types/clues";
+import { parseCluesRound, cluesStages, type CluesPackRound } from "@/types/clues";
 import { parseSortingRound, type SortingPackRound } from "@/types/sorting";
 import { validateColorPackAssets } from "@/lib/build/color-assets";
 import MediaTreePanel, {
@@ -27,11 +29,6 @@ import {
 import RoundBuilderPanel, {
   type BuildRound,
 } from "@/lib/components/build/round-builder-panel";
-
-type QuizStage = {
-  text?: string;
-  media?: string;
-};
 
 type QuizTextRound = {
   allowWager?: boolean;
@@ -130,11 +127,14 @@ export function buildQuizFromBuilderState(rounds: BuildRound[], mediaFiles: Medi
     if (round.type === "clues") {
       try {
         const parsed = parseCluesRound({ type: "clues", title, startingCoins: round.startingCoins,
-          questions: (round.cluesQuestions ?? []).map(({ prompt, answer, clues }) => ({ prompt, answer, clues })) });
-        parsed.questions.forEach((question) => question.clues.forEach((clue) => {
-          if (clue.image && !mediaByPath.has(clue.image)) errors.push(`Round ${roundNo}: media file not found (${clue.image}).`);
-          if (clue.image) usedMediaPaths.add(clue.image);
-        }));
+          questions: (round.cluesQuestions ?? []).map(({ generalClue, answerHint, answerStages, clues }) => ({
+            generalClue: normalizeBuilderStage(generalClue), answer: { hint: answerHint, stages: answerStages.map(normalizeBuilderStage) },
+            clues: clues.map(({ id, category, price, content }) => ({ id, category, price, content: normalizeBuilderStage(content) })),
+          })) });
+        cluesStages(parsed).forEach((stage) => {
+          if (stage.media && !mediaByPath.has(stage.media)) errors.push(`Round ${roundNo}: media file not found (${stage.media}).`);
+          if (stage.media) usedMediaPaths.add(stage.media);
+        });
         quizRounds.push(parsed);
       } catch (error) { errors.push(`Round ${roundNo}: ${(error as Error).message}`); }
       return;
@@ -362,7 +362,7 @@ function collectReferencedMediaPaths(rounds: QuizRound[]): Set<string> {
   const refs = new Set<string>();
 
   rounds.forEach((round) => {
-    if (round.type === "clues") { round.questions.forEach((question) => question.clues.forEach((clue) => { if (clue.image) refs.add(clue.image); })); return; }
+    if (round.type === "clues") { cluesStages(round).forEach((stage) => { if (stage.media) refs.add(stage.media); }); return; }
     if (round.type === "sorting") { round.questions.forEach((question) => { if (question.media) refs.add(question.media); }); return; }
     if (round.type === "color") { round.questions.forEach((q) => { refs.add(q.image); if (q.mask) refs.add(q.mask); }); return; }
     if (round.type === "text") {
@@ -402,7 +402,10 @@ function mapQuizRoundsToBuildRounds(rounds: QuizRound[]): BuildRound[] {
   return rounds.map((round) => {
     if (round.type === "clues") return {
       id: makeId(), collapsed: false, name: round.title, type: "clues", textQuestions: [], imageItems: [], multiStepQuestions: [], pointsPerStep: [1], allowAnswerChanges: false,
-      startingCoins: round.startingCoins, cluesQuestions: round.questions.map((question) => ({ ...question, id: makeId() })),
+      startingCoins: round.startingCoins, cluesQuestions: round.questions.map((question) => ({
+        id: makeId(), collapsed: false, generalClue: toStage(question.generalClue), answerHint: question.answer.hint,
+        answerStages: question.answer.stages.map(toStage), clues: question.clues.map((clue) => ({ ...clue, content: toStage(clue.content) })),
+      })),
     } satisfies BuildRound;
     if (round.type === "sorting") return {
       id: makeId(), collapsed: false, name: round.title, type: "sorting", textQuestions: [], imageItems: [], multiStepQuestions: [], pointsPerStep: [1], allowAnswerChanges: false,
@@ -602,7 +605,7 @@ export default function BuildPage() {
         if (cancelled) return;
 
         if (snapshot) {
-          const rounds = Array.isArray(snapshot.rounds) ? (snapshot.rounds as BuildRound[]) : [];
+          const rounds = upgradeCluesDrafts(Array.isArray(snapshot.rounds) ? (snapshot.rounds as BuildRound[]) : []);
           const mediaState = (snapshot.mediaTreeState ?? undefined) as
             | MediaTreePanelState
             | undefined;

@@ -1,3 +1,4 @@
+import { upgradeCluesDrafts } from "@/lib/build/clues-drafts";
 import assert from "node:assert/strict";
 
 import { buildQuizFromBuilderState } from "./page";
@@ -137,3 +138,15 @@ assert.ok(buildQuizFromBuilderState([sortingRound], []).errors.some((error) => e
 assert.ok(buildQuizFromBuilderState([{ ...sortingRound, sortingCorrectOrder: ["event-a", "event-a"] }], sortingMedia).errors.some((error) => error.includes("exactly once")));
 assert.ok(buildQuizFromBuilderState([{ ...sortingRound, sortingCriterion: "" }], sortingMedia).errors.length);
 assert.ok(buildQuizFromBuilderState([{ ...sortingRound, sortingQuestions: [{ id: "empty", collapsed: false, text: "", mediaPath: null }] }], []).errors.some((error) => error.includes("add text or media")));
+
+const oldCluesDraft = { ...round, type: "clues", startingCoins: 5, cluesQuestions: [{ id: "saved-question", prompt: "Where?", answer: "Paris",
+  clues: [{ id: "photo", category: "Photo", price: 2, text: "A skyline", image: "photo.png" }] }] } as unknown as BuildRound;
+const upgraded = upgradeCluesDrafts([oldCluesDraft])[0];
+assert.equal(upgraded.startingCoins, 5);
+assert.equal(upgraded.cluesQuestions![0].generalClue.text, "Where?");
+assert.equal(upgraded.cluesQuestions![0].answerHint, "Paris");
+assert.equal(upgraded.cluesQuestions![0].answerStages[0].text, "Paris");
+assert.deepEqual(upgraded.cluesQuestions![0].clues.map(({ id, category, price, content }) => ({ id, category, price, text: content.text, media: content.mediaPath })),
+  [{ id: "photo", category: "Photo", price: 2, text: "A skyline", media: "photo.png" }]);
+assert.deepEqual(upgradeCluesDrafts([upgraded]), [upgraded]);
+assert.equal(upgradeCluesDrafts([round])[0], round);
