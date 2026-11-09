@@ -1,7 +1,7 @@
 "use client";
 
 export function PromptNavigation({ type, page, count, pending = false, onPrevious, onNext }: {
-  type: "text" | "image" | "multi-step" | "color" | "sorting";
+  type: "text" | "image" | "multi-step" | "color" | "sorting" | "clues";
   page: number;
   count: number;
   pending?: boolean;

@@ -199,7 +199,7 @@ async function readPublicPlayer(db: Firestore, id: string): Promise<PublicStatsP
     }
     const frequencies = (counts: Map<string, number>) => [...counts].map(([personId, games]) => ({ personId, displayName: names.get(personId)!, games }))
       .sort((a, b) => b.games - a.games || (a.personId < b.personId ? -1 : 1));
-    const byRoundType = Object.fromEntries(["text", "image", "multi-step", "color", "sorting"].filter((type) => Object.hasOwn(person.player.counters, `round:${type}:TotalGames`)).map((type) => [type,
+    const byRoundType = Object.fromEntries(["text", "image", "multi-step", "color", "sorting", "clues"].filter((type) => Object.hasOwn(person.player.counters, `round:${type}:TotalGames`)).map((type) => [type,
       { percentage: percentageFromCounters(person.player.counters, `round:${type}:`), poolPercentage: percentageFromCounters(person.player.counters, `round:${type}:pool:`) }]));
     return { ...publicPerson(id, person), ...history, version: person.version, summary: playerSummary(person.player.counters),
       percentage: percentageFromCounters(person.player.counters, "percentage"), poolPercentage: percentageFromCounters(person.player.counters, "pool"), byRoundType,

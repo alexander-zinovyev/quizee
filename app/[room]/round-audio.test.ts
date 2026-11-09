@@ -21,3 +21,5 @@ const scheduled: RoundMeta = { id: "next", title: "Next", order: 1, type: "text"
 const closed: RoundMeta = { ...scheduled, id: "previous", state: "closed" };
 const active: RoundMeta = { ...scheduled, id: "current", type: "color", state: "active" };
 assert.equal(getAudioIsolatedRound([closed, scheduled, active]), active);
+
+assert.equal(getAudioIsolatedRound([{ id: "clues", type: "clues", state: "active", title: "Clues", order: 0, startingCoins: 5 }])?.id, "clues");

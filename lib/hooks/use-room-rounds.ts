@@ -11,13 +11,14 @@ import { parseHostRoundAnswers } from "@/lib/room-round-answers";
 import { closeSortingRound } from "./use-sorting-order";
 import { getClientFirestore } from "@/lib/firebase/client";
 import type { SortingQuestion } from "@/types/quiz";
+import { positiveCoins, type ClueMetadata } from "@/types/clues";
 import { parseRegionIds } from "@/types/color";
 
 export type RoundMeta = {
   id: string;
   title: string;
   order: number;
-  type: "text" | "image" | "multi-step" | "color" | "sorting";
+  type: "text" | "image" | "multi-step" | "color" | "sorting" | "clues";
   state: "scheduled" | "active" | "closed";
   gradingRequired?: boolean;
   criterion?: string;
@@ -25,6 +26,7 @@ export type RoundMeta = {
   pointsPerStep?: number[];
   allowAnswerChanges?: boolean;
   allowWager?: boolean;
+  startingCoins?: number;
 };
 
 export type RoundQuestionMedia = {
@@ -41,6 +43,7 @@ export type RoundQuestionStage = {
 };
 
 export type RoundQuestion = {
+  clues?: ClueMetadata[];
   regionIds?: string[];
   mask?: RoundQuestionMedia | null;
   initialColor?: string;
@@ -126,7 +129,7 @@ function parsePointsPerStep(pointsRaw: unknown): number[] | undefined {
 
 export function parseRoundMeta(id: string, data: Record<string, unknown>, index: number): RoundMeta | null {
   const type = (data.type as string | undefined)?.toLowerCase();
-  if (type !== "text" && type !== "image" && type !== "multi-step" && type !== "color" && type !== "sorting") {
+  if (type !== "text" && type !== "image" && type !== "multi-step" && type !== "color" && type !== "sorting" && type !== "clues") {
     return null;
   }
 
@@ -164,6 +167,7 @@ export function parseRoundMeta(id: string, data: Record<string, unknown>, index:
     if (!Array.isArray(data.startingOrder) || !data.startingOrder.every((id) => typeof id === "string") || new Set(data.startingOrder).size !== data.startingOrder.length) throw new Error("Invalid starting order.");
     meta.startingOrder = data.startingOrder;
   }
+  if (type === "clues") meta.startingCoins = positiveCoins(data.startingCoins);
   if (type === "text") meta.allowWager = data.allowWager === true;
 
   if (type === "multi-step") {
@@ -320,6 +324,7 @@ export function useRoomRounds(roomSlug: string, isHost?: boolean) {
 
                     return {
                       id: questionSnap.id,
+                      ...(meta.type === "clues" ? { clues: data.clues as ClueMetadata[] } : {}),
                       finalizedStep: typeof data.finalizedStep === "number" ? data.finalizedStep : -1,
                       prompt: promptRaw,
                       displayPrompt,

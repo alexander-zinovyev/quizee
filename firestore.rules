@@ -97,6 +97,16 @@ service cloud.firestore {
         }
       }
 
+      // Server-owned clue balances and purchased content.
+      match /cluePurchases/{teamId}/rounds/{roundId} {
+        allow read: if isHost(roomId) || isTeamMember(roomId, teamId);
+        allow write: if false;
+        match /openedClues/{clueId} {
+          allow read: if isHost(roomId) || isTeamMember(roomId, teamId);
+          allow write: if false;
+        }
+      }
+
       // Chat collection
       match /messages/{messageId} {
         allow read, write: if isMember(roomId);
@@ -124,7 +134,11 @@ service cloud.firestore {
         }
 
         match /answers/{answerId} {
-          allow read: if isMember(roomId) && roundDoc().data.state == "closed";
+          allow read: if isMember(roomId) && roundDoc().data.state == "closed"
+            && (roundDoc().data.type != "clues" ||
+              (roomDoc(roomId).data.presenting.round == roundId &&
+               roomDoc(roomId).data.presenting.question == answerId &&
+               roomDoc(roomId).data.presenting.withAnswer == true));
         }
 
         match /teamAnswers/{teamId} {

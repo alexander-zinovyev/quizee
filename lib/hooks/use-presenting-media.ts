@@ -47,7 +47,7 @@ function getMediaKind(media: RoundQuestionMedia | null | undefined): MediaKind {
 }
 
 export function usesStagedAnswerReveal(roundType: RoundMeta["type"] | null | undefined): boolean {
-  return roundType === "text" || roundType === "multi-step";
+  return roundType === "text" || roundType === "clues" || roundType === "multi-step";
 }
 
 export function getColorPreloadQuestions(questions: RoundQuestion[], questionId?: string | null): RoundQuestion[] {

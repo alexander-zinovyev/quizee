@@ -62,6 +62,7 @@ function parseScoring(data: Record<string, unknown>, questions: SourceDocument[]
       // Text packs explicitly make wagers optional; an omitted flag is ordinary text.
       scoring = { type: "text", allowWager: data.allowWager === undefined ? false : bool(data.allowWager, "wager policy") };
       break;
+    case "clues": scoring = { type: "clues" }; break;
     case "image": scoring = { type: "image" }; break;
     case "sorting": {
       if (questions.length < 2) malformed("sorting questions");

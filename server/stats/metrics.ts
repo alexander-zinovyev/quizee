@@ -26,6 +26,7 @@ export function inferQuestionMaximum(scoring: StatsRoundScoring, override?: numb
       if (scoring.allowWager === null) break;
       if (typeof scoring.allowWager !== "boolean") throw new Error("Invalid wager configuration.");
       return configured(scoring.allowWager ? 2 : 1);
+    case "clues":
     case "image": return configured(1);
     case "sorting": return configured(1);
     case "multi-step":

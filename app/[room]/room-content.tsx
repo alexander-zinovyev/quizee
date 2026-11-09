@@ -20,6 +20,7 @@ import Team from "@/lib/components/team";
 import { RoundStage } from "@/lib/components/room/round-stage";
 import { SortingPresentationControls } from "@/lib/components/room/sorting-presentation-controls";
 import { SortingRound } from "@/lib/components/sorting-round";
+import { CluesPresenting } from "@/lib/components/clues-presenting";
 import { ColorPresenting } from "@/lib/components/color-presenting";
 import { PromptNavigation } from "@/lib/components/room/prompt-navigation";
 import { canRetryAutoGrade, getAwardedPoints } from "@/lib/components/room/grading";
@@ -56,6 +57,7 @@ type RoomContentProps = {
     withAnswer?: boolean;
     promptPage?: number;
     answerPage?: number;
+    revealedClueIds?: string[];
   } | null;
   viewerTeamId?: string | null;
   viewerName?: string | null;
@@ -249,10 +251,10 @@ export default function RoomContent({
           questions: questions.map((q) => ({ id: q.id, initialColor: q.initialColor })),
         };
 
-        if (meta.type === "text") {
+        if (meta.type === "text" || meta.type === "clues") {
           return {
             id: meta.id,
-            type: "text",
+            type: meta.type,
             allowWager: meta.allowWager,
             title: meta.title,
             roundNumber: meta.order + 1 || index + 1,
@@ -379,7 +381,7 @@ export default function RoomContent({
 
   const presentingAnswer = useMemo(() => {
     if (!presenting?.round || !presenting?.question || !presenting?.withAnswer) return null;
-    if (presentingRoundMeta?.type === "text" || presentingRoundMeta?.type === "multi-step") {
+    if (presentingRoundMeta?.type === "text" || presentingRoundMeta?.type === "clues" || presentingRoundMeta?.type === "multi-step") {
       return presentingTextAnswer?.trim().length ? presentingTextAnswer : null;
     }
     const answerFromCollection =
@@ -482,7 +484,7 @@ export default function RoomContent({
 
   const answerPageCount = useMemo(() => {
     if (!presenting?.withAnswer || !presentingRoundMeta) return 0;
-    if (presentingRoundMeta.type === "text" || presentingRoundMeta.type === "multi-step") {
+    if (presentingRoundMeta.type === "text" || presentingRoundMeta.type === "clues" || presentingRoundMeta.type === "multi-step") {
       return presentingTextAnswerStageCount;
     }
     return presentingAnswerMediaUrl ? 1 : 0;
@@ -505,8 +507,16 @@ export default function RoomContent({
     withAnswer: boolean;
     promptPage?: number;
     answerPage?: number;
+    revealedClueIds?: string[];
   }, options: { activateRound?: string; closeRound?: string } = {}) {
     const token = await getToken();
+    const nextPresentation = { ...next, promptPage: next.promptPage ?? 0, answerPage: next.answerPage ?? 0 };
+    if (roundsMeta.find((round) => round.id === next.round)?.type === "clues") {
+      nextPresentation.revealedClueIds = next.revealedClueIds ??
+        (next.round === presenting?.round && next.question === presenting?.question ? presenting?.revealedClueIds ?? [] : []);
+    } else {
+      delete nextPresentation.revealedClueIds;
+    }
     const response = await fetch(`/api/rooms/${roomSlug}/presenting`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -515,8 +525,9 @@ export default function RoomContent({
           round: presenting?.round ?? null, question: presenting?.question ?? null,
           withAnswer: presenting?.withAnswer ?? false, promptPage: presenting?.promptPage ?? 0,
           answerPage: presenting?.answerPage ?? 0,
+          ...(presenting?.revealedClueIds === undefined ? {} : { revealedClueIds: presenting.revealedClueIds }),
         },
-        next: { ...next, promptPage: next.promptPage ?? 0, answerPage: next.answerPage ?? 0 },
+        next: nextPresentation,
         ...options,
       }),
     });
@@ -532,6 +543,7 @@ export default function RoomContent({
     withAnswer: boolean;
     promptPage?: number;
     answerPage?: number;
+    revealedClueIds?: string[];
   }) {
     if (!isHost) return;
     setIsPresentingUpdatePending(true);
@@ -572,7 +584,7 @@ export default function RoomContent({
       setRoundsError("Only closed rounds awaiting grading can be graded.");
       return;
     }
-    if (round.type === "text" || round.type === "multi-step") {
+    if (round.type === "text" || round.type === "clues" || round.type === "multi-step") {
       await updatePresenting({ round: roundId, question: null, withAnswer: false, promptPage: 0, answerPage: 0 });
     } else {
       await autoGradeRound(roundId);
@@ -621,7 +633,8 @@ export default function RoomContent({
   function currentPresentation() {
     return { round: presenting?.round ?? null, question: presenting?.question ?? null,
       withAnswer: presenting?.withAnswer ?? false, promptPage: presenting?.promptPage ?? 0,
-      answerPage: presenting?.answerPage ?? 0 };
+      answerPage: presenting?.answerPage ?? 0,
+      ...(presenting?.revealedClueIds === undefined ? {} : { revealedClueIds: presenting.revealedClueIds }) };
   }
 
   async function activateRound(roundId: string) {
@@ -1335,7 +1348,12 @@ export default function RoomContent({
                 </div>
               </div>
             </header>
-            {presentingRoundMeta?.type === "sorting" ? (
+            {presentingRoundMeta?.type === "clues" && presentingQuestion ? (
+              <CluesPresenting key={`${presentingRoundMeta.id}:${presentingQuestion.id}:${viewerTeamId ?? "host"}`}
+                roomSlug={roomSlug} round={presentingRoundMeta} question={presentingQuestion} teamId={viewerTeamId} isHost={!!isHost}
+                revealedClueIds={presenting?.revealedClueIds ?? []} pending={isPresentingUpdatePending} answer={presentingAnswer}
+                onReveal={(revealedClueIds) => void updatePresenting({ ...currentPresentation(), revealedClueIds })} />
+            ) : presentingRoundMeta?.type === "sorting" ? (
               <div className="min-h-0 flex-1 overflow-auto text-white">
                 <SortingRound key={`${presentingRoundMeta.id}:${presentingRoundMeta.state}`}
                   roomSlug={roomSlug} roundId={presentingRoundMeta.id} criterion={presentingRoundMeta.criterion!} startingOrder={presentingRoundMeta.startingOrder} questions={getSortingQuestions(roundQuestions[presentingRoundMeta.id] ?? [])}

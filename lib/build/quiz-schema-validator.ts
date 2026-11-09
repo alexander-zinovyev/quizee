@@ -1,3 +1,4 @@
+import { parseCluesRound } from "@/types/clues";
 import { parseSortingRound } from "@/types/sorting";
 
 type JsonSchema = {
@@ -240,7 +241,8 @@ function validateNode(
     return errors;
   }
 
-  if (schema.type === "number") {
+  if (schema.type === "integer" && !Number.isSafeInteger(value)) return [validationError(path, "expected safe whole number.")];
+  if (schema.type === "number" || schema.type === "integer") {
     if (typeof value !== "number" || !Number.isFinite(value)) return [validationError(path, "expected finite number.")];
     if ((schema.minimum !== undefined && value < schema.minimum) ||
         (schema.maximum !== undefined && value > schema.maximum) ||
@@ -253,8 +255,8 @@ function validateNode(
 export function validateAgainstQuizSchema(quizData: unknown, schema: JsonSchema): string[] {
   const errors = validateNode(quizData, schema, "$", schema);
   if (Array.isArray(quizData)) quizData.forEach((round, index) => {
-    if (!isObject(round) || round.type !== "sorting") return;
-    try { parseSortingRound(round); }
+    if (!isObject(round) || (round.type !== "sorting" && round.type !== "clues")) return;
+    try { if (round.type === "clues") parseCluesRound(round); else parseSortingRound(round); }
     catch (error) { errors.push(`Round ${index + 1}: ${(error as Error).message}`); }
   });
   return uniqueErrors(errors);
