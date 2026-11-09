@@ -1353,9 +1353,9 @@ export default function RoomContent({
                 roomSlug={roomSlug} round={presentingRoundMeta} question={presentingQuestion} teamId={viewerTeamId} isHost={!!isHost}
                 revealedClueIds={presenting?.revealedClueIds ?? []} pending={isPresentingUpdatePending}
                 generalMediaLoading={isMediaLoading} generalMediaError={mediaError} mediaVolume={DEFAULT_MEDIA_VOLUME}
-                generalMedia={presentingMediaUrl && presentingMedia ? { url: presentingMediaUrl, filename: presentingMedia.filename ?? "" } : undefined}
+                generalMedia={presentingMedia ? { url: presentingMediaUrl ?? undefined, filename: presentingMedia.filename ?? "" } : undefined}
                 answer={presenting?.withAnswer ? { text: presentingAnswer, loading: isAnswerMediaLoading, error: answerMediaError,
-                  ...(presentingAnswerMediaUrl && presentingAnswerMedia ? { media: { url: presentingAnswerMediaUrl, filename: presentingAnswerMedia.filename ?? "" } } : {}) } : undefined}
+                  ...(presentingAnswerMedia ? { media: { url: presentingAnswerMediaUrl ?? undefined, filename: presentingAnswerMedia.filename ?? "" } } : {}) } : undefined}
                 onReveal={(revealedClueIds) => void updatePresenting({ ...currentPresentation(), revealedClueIds })} />
             ) : presentingRoundMeta?.type === "sorting" ? (
               <div className="min-h-0 flex-1 overflow-auto text-white">
