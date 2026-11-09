@@ -2,6 +2,7 @@
 
 import type { RoundMeta, RoundQuestion } from "@/lib/hooks/use-room-rounds";
 import { allowsNegativePoints, getAwardedPoints, getAwardShortcut, getIncorrectAwardShortcut } from "@/lib/components/room/grading";
+import { isQuestionMediaPlaybackActive } from "@/lib/media/presentation-playback";
 import StageMedia from "@/lib/components/room/stage-media";
 
 type GradingAnswer = {
@@ -86,11 +87,9 @@ export function RoundStage({
       presentingMedia &&
       !presentingQuestion.prompt
   );
-  const questionMediaPlaybackActive = !(
-    presenting?.withAnswer &&
-    presentingMedia &&
-    presentingAnswerMedia
-  );
+  const questionMediaPlaybackActive = isQuestionMediaPlaybackActive({
+    withAnswer: presenting?.withAnswer === true, hasQuestionMedia: Boolean(presentingMedia), hasAnswerMedia: Boolean(presentingAnswerMedia),
+  });
 
   return (
     <div className="presentation-scrollbars relative flex-1 overflow-hidden bg-black">

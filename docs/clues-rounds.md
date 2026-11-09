@@ -30,7 +30,7 @@ The question editor places the general clue on the left and the answer hint and 
 
 Only the currently presented question in an active round accepts purchases. One server transaction debits the team's round balance and records the purchased clue. Duplicate requests and simultaneous purchases of the same clue charge once. Spending the last coins succeeds; insufficient funds leave both the clue and balance unchanged. Teammates share purchases, including after navigation or reconnecting.
 
-The host sees every clue while presenting a question, including during the active round. After closure, the host can show/hide all clues or individual clues independently of the answer. These public reveals reset when changing questions. Hiding a public clue leaves it readable to teams that purchased it. Reveals never spend coins or change purchases. Closing the round freezes answers and purchases; players' active answer tab disappears, while the host can continue presenting questions and revealing clues and answers.
+The host sees every clue while presenting a question, including during the active round. After closure, the host can show/hide all clues or individual clues independently of the answer. These public reveals reset when changing questions. Hiding a public clue leaves it readable to teams that purchased it. Reveals never spend coins or change purchases. General-clue audio/video pauses when the revealed answer has its own media. Purchase updates preserve current playback, including clips already purchased by the team. Closing the round freezes answers and purchases; players' active answer tab disappears, while the host can continue presenting questions and revealing clues and answers.
 
 ## Access and deployment
 
