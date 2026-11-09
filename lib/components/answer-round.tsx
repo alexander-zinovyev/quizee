@@ -10,7 +10,7 @@ import { useFirebaseAuth } from "@/app/providers/firebase-auth-provider";
 import { PanelIcon } from "./room/panel-icon";
 
 type AnswerRoundProps = {
-  type: "text" | "multi-step";
+  type: "text" | "multi-step" | "clues";
   questions: Question[];
   roomSlug?: string;
   roundId: string;

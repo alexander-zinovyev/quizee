@@ -1,3 +1,5 @@
+import { prepareClueImage } from "@/server/rooms/clue-image";
+import { writeCluesRound } from "@/server/rooms/clues-manifest";
 import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
@@ -252,8 +254,17 @@ async function createRoom(request: NextRequest) {
     });
   }
 
+  const clueImages = new Map<string, Buffer>();
   try {
     for (const round of rounds) {
+      if (round.type === "clues") {
+        for (const question of round.questions) for (const clue of question.clues) {
+          if (!clue.image || clueImages.has(clue.image)) continue;
+          const [bytes] = await bucket.file(mediaFiles.get(clue.image)!.uploadPath).download();
+          clueImages.set(clue.image, await prepareClueImage(bytes));
+        }
+        continue;
+      }
       if (round.type !== "color") continue;
       for (const question of round.questions) {
         if (question.regionIds) {
@@ -354,7 +365,9 @@ async function createRoom(request: NextRequest) {
 
     batch.set(roundRef, createRoundDocumentData(round));
 
-    if (round.type === "sorting") {
+    if (round.type === "clues") {
+      await writeCluesRound(batch, roundRef, roomId, round, clueImages, bucket);
+    } else if (round.type === "sorting") {
       for (const question of round.questions) {
         const [stage] = await resolveStages([question]);
         batch.set(roundRef.collection("questions").doc(question.id), stage);

@@ -1,3 +1,4 @@
+import { parseRevealedClues } from "@/types/clues";
 import { randomInt } from "node:crypto";
 import { parseSortingSnapshot } from "@/types/sorting";
 import { Timestamp, type Firestore, type DocumentData, type DocumentReference } from "firebase-admin/firestore";
@@ -11,6 +12,7 @@ export type Presentation = {
   withAnswer: boolean;
   promptPage: number;
   answerPage: number;
+  revealedClueIds?: string[];
 };
 
 export function parsePresentation(value: unknown): Presentation {
@@ -25,12 +27,14 @@ export function parsePresentation(value: unknown): Presentation {
       !Number.isInteger(answerPage) || (answerPage as number) < 0 ||
       (!data.round && data.question)) throw new Error("Invalid presentation pages.");
   return { round: data.round as string | null, question: data.question as string | null,
-    withAnswer: data.withAnswer, promptPage: promptPage as number, answerPage: answerPage as number };
+    withAnswer: data.withAnswer, promptPage: promptPage as number, answerPage: answerPage as number,
+    ...(data.revealedClueIds === undefined ? {} : { revealedClueIds: parseRevealedClues(data.revealedClueIds) }) };
 }
 
 export function samePresentation(a: Presentation, b: Presentation): boolean {
   return a.round === b.round && a.question === b.question && a.withAnswer === b.withAnswer &&
-    a.promptPage === b.promptPage && a.answerPage === b.answerPage;
+    a.promptPage === b.promptPage && a.answerPage === b.answerPage &&
+    JSON.stringify(a.revealedClueIds ?? []) === JSON.stringify(b.revealedClueIds ?? []);
 }
 
 export function leavesStep(current: Presentation, next: Presentation): boolean {
@@ -63,7 +67,7 @@ export async function transitionPresentation(
     if (options.activateRound && ((rounds.get(options.activateRound)?.type === "sorting" ? !samePresentation(current, next) : next.round !== options.activateRound) || rounds.get(options.activateRound)?.state !== "scheduled")) {
       throw new Error("Round cannot be activated.");
     }
-    if (options.closeRound && (!["text", "image", "multi-step", "color", "sorting"].includes(rounds.get(options.closeRound)?.type) || rounds.get(options.closeRound)?.state !== "active")) {
+    if (options.closeRound && (!["text", "image", "multi-step", "color", "sorting", "clues"].includes(rounds.get(options.closeRound)?.type) || rounds.get(options.closeRound)?.state !== "active")) {
       throw new Error("Round cannot be closed.");
     }
     if (next.round && next.round !== options.activateRound && next.round !== options.closeRound &&
@@ -74,10 +78,19 @@ export async function transitionPresentation(
       if (next.question !== null) throw new Error("Sorting presents the whole round.");
       if (next.withAnswer && rounds.get(next.round)?.state !== "closed") throw new Error("End the sorting round before revealing answers.");
     }
+    if ((next.revealedClueIds?.length ?? 0) > 0 && (!next.question || !next.round || rounds.get(next.round)?.type !== "clues" || rounds.get(next.round)?.state !== "closed")) {
+      throw new Error("Clues can only be revealed for a presented question in a closed clues round.");
+    }
     if (next.question && next.round) {
       if (rounds.get(next.round)?.type === "color" && next.withAnswer && rounds.get(next.round)?.state !== "closed") throw new Error(`End the ${rounds.get(next.round)?.type} round before revealing answers.`);
       const question = await tx.get(roomRef.collection("rounds").doc(next.round).collection("questions").doc(next.question));
       if (!question.exists) throw new Error("Question not found.");
+      if (rounds.get(next.round)?.type === "clues") {
+        if (next.withAnswer && rounds.get(next.round)?.state !== "closed") throw new Error("End the clues round before revealing answers.");
+        const ids = (question.data()?.clues as Array<{ id: string }>).map((clue) => clue.id);
+        if (next.revealedClueIds?.some((id) => !ids.includes(id))) throw new Error("Unknown clue reveal.");
+        if ((current.round !== next.round || current.question !== next.question) && next.revealedClueIds?.length) throw new Error("Reset clues when changing questions.");
+      }
       const stages = question.data()?.stages;
       const stageCount = Array.isArray(stages) && stages.length ? stages.length : 1;
       if (next.promptPage >= stageCount) throw new Error("Invalid step.");

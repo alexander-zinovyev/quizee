@@ -2,6 +2,7 @@ import type { ColorScoring } from "./color";
 
 export type StatsRoundScoring =
   | { type: "text"; allowWager: boolean | null }
+  | { type: "clues" }
   | { type: "image" }
   | { type: "sorting" }
   | { type: "multi-step"; pointsPerStep: number[] | null }

@@ -1,5 +1,7 @@
 "use client";
 
+import { parseRevealedClues } from "@/types/clues";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { collection, doc, onSnapshot, updateDoc } from "firebase/firestore";
 
@@ -26,6 +28,7 @@ type PresentingState =
       withAnswer?: boolean;
       promptPage?: number;
       answerPage?: number;
+      revealedClueIds?: string[];
     }
   | null;
 
@@ -257,6 +260,8 @@ export default function RoomGate({ roomSlug }: RoomGateProps) {
                         ? presentingData.question
                         : presentingData.question ?? null,
                     withAnswer: Boolean(presentingData.withAnswer),
+                    ...((presentingData as { revealedClueIds?: unknown }).revealedClueIds === undefined ? {} :
+                      { revealedClueIds: parseRevealedClues((presentingData as { revealedClueIds?: unknown }).revealedClueIds) }),
                     promptPage:
                       typeof (presentingData as { promptPage?: unknown }).promptPage === "number"
                         ? Math.max(0, (presentingData as { promptPage?: number }).promptPage ?? 0)

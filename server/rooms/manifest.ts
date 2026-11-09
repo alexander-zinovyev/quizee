@@ -12,6 +12,7 @@ export type RoundDocumentData = {
   pointsPerStep?: number[];
   allowAnswerChanges?: boolean;
   allowWager?: boolean;
+  startingCoins?: number;
   scoring?: ColorScoring;
   criterion?: string;
 };
@@ -28,6 +29,10 @@ export function collectReferencedMedia(rounds: ValidatedRound[]): Set<string> {
   const referencedMedia = new Set<string>();
 
   rounds.forEach((round) => {
+    if (round.type === "clues") {
+      round.questions.forEach((question) => question.clues.forEach((clue) => { if (clue.image) referencedMedia.add(clue.image); }));
+      return;
+    }
     if (round.type === "sorting") {
       addStageMedia(referencedMedia, round.questions);
       return;
@@ -74,6 +79,7 @@ export function createRoundDocumentData(round: ValidatedRound): RoundDocumentDat
     gradingRequired: false,
   };
 
+  if (round.type === "clues") return { ...base, startingCoins: round.startingCoins };
   if (round.type === "sorting") return { ...base, criterion: round.criterion };
   if (round.type === "text" && round.allowWager !== undefined) return { ...base, allowWager: round.allowWager };
   if (round.type === "color") return { ...base, scoring: round.scoring };

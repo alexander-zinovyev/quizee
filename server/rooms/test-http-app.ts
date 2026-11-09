@@ -11,7 +11,7 @@ export async function availablePort(): Promise<number> {
 
 export async function startApp(port: number, projectId: string): Promise<ChildProcess> {
   const child = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", String(port)], {
-    env: { ...process.env, QUIZEE_NEXT_DIST_DIR: ".next", FIREBASE_PROJECT_ID: projectId,
+    env: { ...process.env, FIREBASE_STORAGE_BUCKET: `${projectId}.appspot.com`, QUIZEE_NEXT_DIST_DIR: ".next", FIREBASE_PROJECT_ID: projectId,
       NEXT_PUBLIC_FIREBASE_PROJECT_ID: projectId, NEXT_PUBLIC_FIREBASE_API_KEY: "fake",
       NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: `${projectId}.firebaseapp.com`, NEXT_PUBLIC_FIREBASE_APP_ID: "sorting-http-test" },
     stdio: ["ignore", "pipe", "pipe"],

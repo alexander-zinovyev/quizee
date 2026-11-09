@@ -1,17 +1,18 @@
 "use client";
 
 import { useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Puzzle } from "lucide-react";
 import { PanelIcon, type PanelIconName } from "@/lib/components/room/panel-icon";
 
 export type InteractiveRound = {
   id: string;
   title: string;
   roundNumber: number;
-  type: "text" | "image" | "sorting" | "color" | "multi-step";
+  type: "text" | "image" | "sorting" | "color" | "multi-step" | "clues";
   state?: "scheduled" | "active" | "closed";
 };
 
-const roundIcons: Record<InteractiveRound["type"], PanelIconName> = {
+const roundIcons: Record<Exclude<InteractiveRound["type"], "clues">, PanelIconName> = {
   text: "text", image: "image", sorting: "sorting", color: "image", "multi-step": "text",
 };
 
@@ -55,7 +56,7 @@ export default function RoomInteractivePanel({ rounds, chat, renderRound, isHost
         return <button key={round.id} type="button" aria-label={`Round ${round.roundNumber}: ${round.title}`}
           aria-pressed={active} aria-controls={`${id}-${round.id}`} title={`Round ${round.roundNumber}: ${round.title}${isHost && round.state ? ` (${round.state})` : ""}`}
           onClick={() => setSelectedView(round.id)} className={`${buttonClass} ${active ? "bg-black" : "hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}>
-          <PanelIcon name={roundIcons[round.type]} tone={active ? "white" : "foreground"} />
+          {round.type === "clues" ? <Puzzle aria-hidden="true" className={`size-[26px] ${active ? "text-white" : "text-black dark:text-white"}`} /> : <PanelIcon name={roundIcons[round.type]} tone={active ? "white" : "foreground"} />}
           {isHost && round.state ? <span role="img" aria-label={round.state} className={`absolute right-1 top-1 size-2 rounded-full ring-1 ring-white/80 ${round.state === "active" ? "bg-green-300" : round.state === "closed" ? "bg-red-600" : "bg-yellow-400"}`} /> : null}
         </button>;
       })}

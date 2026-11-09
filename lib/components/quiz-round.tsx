@@ -34,7 +34,7 @@ export default function QuizRound(props: QuizRoundData & { embedded?: boolean })
       reveal={props.presenting?.round === roundId && props.presenting.withAnswer === true} />;
   } else if (props.type === "color") {
     body = <ColorAnswerSummary key={`${roomSlug}:${teamId}:${roundId}`} roomSlug={roomSlug} roundId={roundId} teamId={teamId} questions={questions} />;
-  } else if (props.type === "text" || props.type === "multi-step") {
+  } else if (props.type === "text" || props.type === "clues" || props.type === "multi-step") {
     const hydrationKey = props.questions
       .map((question) => {
         const baseKey = question.id ?? question.prompt;

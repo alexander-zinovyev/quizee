@@ -25,6 +25,7 @@ import type { MediaTreeFile } from "@/lib/components/build/media-tree-shared";
 import MediaSelector from "@/lib/components/build/media-selector";
 import { ColorRoundEditor, createColorQuestion, type BuildColorQuestion } from "./color-round-editor";
 import type { ColorScoring } from "@/types/color";
+import { CluesRoundEditor, createCluesQuestion, type BuildCluesQuestion } from "./clues-round-editor";
 import { SortingRoundEditor, type BuildSortingQuestion } from "./sorting-round-editor";
 import type {
   RoundMeta,
@@ -33,7 +34,7 @@ import type {
   RoundQuestionStage,
 } from "@/lib/hooks/use-room-rounds";
 
-type RoundType = "text" | "image" | "multi-step" | "color" | "sorting";
+type RoundType = "text" | "image" | "multi-step" | "color" | "sorting" | "clues";
 
 export type Stage = {
   id: string;
@@ -76,6 +77,8 @@ export type BuildRound = {
   pointsPerStep: number[];
   allowAnswerChanges: boolean;
   allowWager?: boolean;
+  startingCoins?: number;
+  cluesQuestions?: BuildCluesQuestion[];
   sortingCriterion?: string;
   sortingQuestions?: BuildSortingQuestion[];
   sortingCorrectOrder?: string[];
@@ -515,6 +518,7 @@ export default function RoundBuilderPanel({
 
   function resetRoundByType(round: BuildRound, type: RoundType): BuildRound {
     round = { ...round, allowWager: false };
+    if (type === "clues") return { ...round, type, textQuestions: [], imageItems: [], multiStepQuestions: [], startingCoins: 5, cluesQuestions: [createCluesQuestion()] };
     if (type === "sorting") {
       const sortingQuestions = Array.from({ length: 2 }, createStage);
       return { ...round, type, textQuestions: [], imageItems: [], multiStepQuestions: [], sortingCriterion: "", sortingQuestions, sortingCorrectOrder: sortingQuestions.map((item) => item.id) };
@@ -928,7 +932,7 @@ export default function RoundBuilderPanel({
                 <div className="space-y-2">
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">Type</p>
                   <div className="inline-flex rounded-lg border border-zinc-300 p-1 dark:border-zinc-700">
-                    {(["text", "image", "multi-step", "color", "sorting"] as const).map((type) => (
+                    {(["text", "image", "multi-step", "color", "sorting", "clues"] as const).map((type) => (
                       <button
                         key={type}
                         type="button"
@@ -946,13 +950,16 @@ export default function RoundBuilderPanel({
                           .filter(Boolean)
                           .join(" ")}
                       >
-                        {type === "text" ? "Text" : type === "image" ? "Image" : type === "color" ? "Color" : type === "sorting" ? "Sorting" : "Multi-step"}
+                        {type === "clues" ? "Clues" : type === "text" ? "Text" : type === "image" ? "Image" : type === "color" ? "Color" : type === "sorting" ? "Sorting" : "Multi-step"}
                       </button>
                     ))}
                   </div>
                 </div>
 
-                {round.type === "sorting" ? (
+                {round.type === "clues" ? (
+                  <CluesRoundEditor startingCoins={round.startingCoins ?? 5} questions={round.cluesQuestions ?? []} mediaFiles={mediaFiles}
+                    onChange={(startingCoins, cluesQuestions) => updateRound(round.id, (prev) => ({ ...prev, startingCoins, cluesQuestions }))} />
+                ) : round.type === "sorting" ? (
                   <SortingRoundEditor value={{ criterion: round.sortingCriterion ?? "", questions: round.sortingQuestions ?? [], correctOrder: round.sortingCorrectOrder ?? [] }}
                     mediaFiles={mediaFiles} createStage={createStage} StageEditor={StageEditor}
                     onChange={(value) => updateRound(round.id, (prev) => ({ ...prev, sortingCriterion: value.criterion, sortingQuestions: value.questions, sortingCorrectOrder: value.correctOrder }))} />

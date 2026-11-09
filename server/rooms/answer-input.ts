@@ -45,7 +45,7 @@ export async function saveTeamAnswer(
     if (!team.exists || !round.exists || !question.exists) throw new RoomOperationError("Answer destination not found.", 404);
     const roundData = round.data()!;
     if (room.data()?.state !== "playing" || roundData.state !== "active") throw new RoomOperationError("Round is not accepting answers.");
-    if (roundData.type !== "text" && roundData.type !== "multi-step" && roundData.type !== "color" && roundData.type !== "sorting") throw new RoomOperationError("Unsupported answer type.", 400);
+    if (roundData.type !== "text" && roundData.type !== "clues" && roundData.type !== "multi-step" && roundData.type !== "color" && roundData.type !== "sorting") throw new RoomOperationError("Unsupported answer type.", 400);
     if ("wagered" in save.mutation && (roundData.type !== "text" || roundData.allowWager !== true)) {
       throw new RoomOperationError("Wagers are not enabled for this round.", 400);
     }

@@ -14,7 +14,7 @@ export type HostRound = {
   roundNumber: number;
   order: number;
   state: "scheduled" | "active" | "closed";
-  type: "text" | "image" | "multi-step" | "color" | "sorting";
+  type: "text" | "image" | "multi-step" | "color" | "sorting" | "clues";
   questions: HostRoundQuestion[];
   gradingRequired?: boolean;
   criterion?: string;

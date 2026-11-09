@@ -1,3 +1,4 @@
+import { parseCluesRound, type CluesPackRound } from "@/types/clues";
 import { posix } from "node:path";
 import { parseSortingRound, type SortingQuestion } from "@/types/sorting";
 import { parseColorQuestion, parseColorScoring, type ColorScoring } from "@/types/color";
@@ -74,7 +75,9 @@ export type ValidatedSortingRound = {
   correctOrder: string[];
 };
 
-export type ValidatedRound = ValidatedSortingRound | ValidatedTextRound | ValidatedImageRound | ValidatedMultiStepRound | ValidatedColorRound;
+export type ValidatedCluesRound = CluesPackRound & { order: number };
+
+export type ValidatedRound = ValidatedCluesRound | ValidatedSortingRound | ValidatedTextRound | ValidatedImageRound | ValidatedMultiStepRound | ValidatedColorRound;
 
 export { ROOM_ID_REGEX } from "@/lib/room-id";
 import { RESERVED_ROOM_IDS, ROOM_ID_REGEX } from "@/lib/room-id";
@@ -262,6 +265,12 @@ export function validateQuizFile(content: string): ValidatedRound[] | string {
     const type = round?.type;
     const title = ensureString(round?.title);
     const questions = round?.questions;
+
+    if (type === "clues") {
+      try { validatedRounds.push({ ...parseCluesRound(round), order: roundIndex }); }
+      catch (error) { return `Round ${roundIndex + 1}: ${(error as Error).message}`; }
+      continue;
+    }
 
     if (type === "sorting") {
       try {

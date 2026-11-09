@@ -77,6 +77,8 @@ export type TextRoundData = RoundData & {
   onAnswer?: (question: Question, answer: string) => void;
 };
 
+export type CluesRoundData = Omit<TextRoundData, "type"> & { type: "clues" };
+
 export type ImageItem = {
     /**
      * Identifier to match this image with a description.
@@ -142,4 +144,4 @@ export type SortingRoundData = RoundData & {
   teamId?: string;
 };
 
-export type QuizRoundData = TextRoundData | ImageRoundData | MultiStepRoundData | ColorRoundData | SortingRoundData;
+export type QuizRoundData = TextRoundData | CluesRoundData | ImageRoundData | MultiStepRoundData | ColorRoundData | SortingRoundData;

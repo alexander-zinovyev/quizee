@@ -1,0 +1,52 @@
+# Clues rounds
+
+Each team shares one coin budget across the entire round. Coins buy clues, not points. Correct answers earn one point; incorrect answers earn zero by default. Hosts grade answers and can adjust awards, including partial credit. Final awarded points feed standings and game history.
+
+```json
+[
+  {
+    "type": "clues",
+    "title": "Name the city",
+    "startingCoins": 5,
+    "questions": [
+      {
+        "prompt": "Which city is this?",
+        "answer": "Paris",
+        "clues": [
+          { "id": "history", "category": "History", "price": 2, "text": "A European capital" },
+          { "id": "photo", "category": "Photo", "price": 3, "text": "Look at the skyline", "image": "cities/paris.png" }
+        ]
+      }
+    ]
+  }
+]
+```
+
+Budgets and prices must be positive safe integers. Each question needs a prompt, an accepted answer, and at least one clue. Clue IDs must be unique within their question and contain 1 to 128 letters, numbers, underscores, or dashes, excluding names wrapped in double underscores. Categories and clue text must be nonempty. Questions have no configurable point value.
+
+Images use paths relative to the pack's `media/` folder. PNG, JPEG, GIF, WebP, and SVG are accepted. Room creation validates static images up to 16 megapixels and rasterizes them to PNG. Invalid or animated images are refused. The builder preserves the authored image and configuration through export and re-import.
+
+Only the currently presented question in an active round accepts purchases. One server transaction debits the team's round balance and records the purchased clue. Duplicate requests and simultaneous purchases of the same clue charge once. Spending the last coins succeeds; insufficient funds leave both the clue and balance unchanged. Teammates share purchases, including after navigation or reconnecting.
+
+The host sees every clue while presenting a question, including during the active round. After closure, the host can show/hide all clues or individual clues independently of the answer. These public reveals reset when changing questions. Hiding a public clue leaves it readable to teams that purchased it. Reveals never spend coins or change purchases. Closing the round freezes answers and purchases; players' active answer tab disappears, while the host can continue presenting questions and revealing clues and answers.
+
+## Access and deployment
+
+Public question documents contain only clue IDs, categories, and prices. Complete definitions live in host-only question subcollections. Server-owned balances and purchased content live at `rooms/{room}/cluePurchases/{team}/rounds/{round}`, outside the writable team-round namespace. Teams can read their own purchase records; clients, including the host, cannot write them directly.
+
+Authenticated clue endpoints return content only for the host, the purchasing team, or a clue publicly revealed for the currently presented question in a closed round. Clue images use the private `rooms/{room}/clue-media/` Storage namespace. They are served through the same authorization check with `Cache-Control: no-store`; clients cannot access that Storage namespace directly. Private images are saved without inherited Firebase download tokens. Buckets must not grant public object access through Google Cloud IAM or ACLs.
+
+Deploy both `firestore.rules` and `storage.rules` before enabling clues in production:
+
+```sh
+firebase deploy --only firestore:rules,storage
+```
+
+Storage rules permit owners to stage pack uploads and room members to read ordinary presentation media. Storage membership checks use the default Firestore database and require the Firebase Storage rules service to have access to it. CI exercises these rules with local emulators; it does not deploy rules or validate production bucket IAM.
+
+Run the purchase/privacy integration tests against a built app:
+
+```sh
+npm run build
+firebase emulators:exec --only firestore,auth,storage --project demo-quizee-drafts "npm run test:rules && npm run test:clues:http"
+```

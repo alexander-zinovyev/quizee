@@ -1,0 +1,18 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Only authenticated owners can stage quiz packs for server-side room creation.
+    match /uploads/{uid}/{sessionId}/{path=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+    // Ordinary presentation media retains room-member access.
+    match /rooms/{roomId}/media/{path=**} {
+      allow read: if request.auth != null && firestore.exists(/databases/(default)/documents/rooms/$(roomId)/members/$(request.auth.uid));
+      allow write: if false;
+    }
+    // Private clue images are served exclusively by the authenticated clue API.
+    match /rooms/{roomId}/clue-media/{path=**} {
+      allow read, write: if false;
+    }
+  }
+}
