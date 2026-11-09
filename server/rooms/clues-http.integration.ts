@@ -30,13 +30,14 @@ async function main() {
   });
   const roomId = `clues-${randomUUID()}`, room = db.doc(`rooms/${roomId}`), round = room.collection("rounds").doc("r1");
   const imagePath = `rooms/${roomId}/clue-media/test.png`;
+  const audioPath = `rooms/${roomId}/clue-media/test.mp3`, videoPath = `rooms/${roomId}/clue-media/test.webm`;
   let server: ChildProcess | null = null;
   const users: User[] = [];
   try {
     for (const client of clients) users.push((await signInAnonymously(client.authClient)).user);
     const tokens = await Promise.all(users.map((user) => user.getIdToken()));
     let current = parsePresentation({ round: "r1", question: "q1", withAnswer: false });
-    const clues = [{ id: "two", category: "Two", price: 2 }, { id: "three", category: "Three", price: 3 }, { id: "four", category: "Four", price: 4 }];
+    const clues = [{ id: "two", category: "Two", price: 2 }, { id: "three", category: "Three", price: 3 }, { id: "four", category: "Four", price: 4 }, { id: "audio", category: "Audio", price: 1 }, { id: "video", category: "Video", price: 1 }];
     const batch = db.batch();
     batch.set(room, { state: "playing", presenting: current });
     for (const [index, user] of users.entries()) if (index !== 4) batch.set(room.collection("members").doc(user.uid), { role: index === 0 ? "host" : "player", team: index === 0 ? null : index === 3 ? "blue" : "red" });
@@ -45,10 +46,12 @@ async function main() {
     for (const id of ["q1", "q2"]) {
       batch.set(round.collection("questions").doc(id), { order: id === "q1" ? 0 : 1, stages: [{ text: id }], clues });
       batch.set(round.collection("answers").doc(id), { hint: "Paris", stages: [{ text: "Paris" }] });
-      for (const clue of clues) batch.set(round.collection("questions").doc(id).collection("clues").doc(clue.id), { price: clue.price, text: `secret-${id}-${clue.id}`, media: clue.id === "two" ? { storagePath: imagePath } : null });
+      for (const clue of clues) batch.set(round.collection("questions").doc(id).collection("clues").doc(clue.id), { price: clue.price, content: { text: ["audio", "video"].includes(clue.id) ? null : `secret-${id}-${clue.id}`, media: clue.id === "two" ? { storagePath: imagePath, filename: "test.png" } : clue.id === "audio" ? { storagePath: audioPath, filename: "test.mp3" } : clue.id === "video" ? { storagePath: videoPath, filename: "test.webm" } : null } });
     }
     await batch.commit();
     await bucket.file(imagePath).save(Buffer.from("private-image"), { metadata: { contentType: "image/png", cacheControl: "no-store" } });
+    await bucket.file(audioPath).save(Buffer.from("private-audio"), { metadata: { contentType: "audio/mpeg", cacheControl: "no-store" } });
+    await bucket.file(videoPath).save(Buffer.from("private-video"), { metadata: { contentType: "video/webm", cacheControl: "no-store" } });
     const port = await availablePort(); server = await startApp(port, projectId); server.stderr!.pipe(process.stderr);
     const base = `http://127.0.0.1:${port}/api/rooms/${roomId}/rounds/r1/answers`;
     async function request(question: string, suffix = "", index = 1, body?: unknown) {
@@ -58,16 +61,20 @@ async function main() {
     const buy = (question: string, clue: string, index = 1, teamId = "red") => request(question, `/${clue}`, index, { teamId });
     assert.equal((await request("q1", "", 4)).status, 403);
     const hidden = await request("q1"); assert.equal(hidden.data.remainingCoins, 5);
-    assert.ok(hidden.data.clues.every((clue: { text?: string; image?: boolean }) => clue.text === undefined && clue.image === undefined));
-    assert.ok((await request("q1", "", 0)).data.clues.every((clue: { text?: string }) => clue.text));
-    assert.equal((await request("q1", "/two/image")).status, 403);
+    assert.ok(hidden.data.clues.every((clue: { content?: unknown }) => clue.content === undefined));
+    assert.ok((await request("q1", "", 0)).data.clues.every((clue: { content?: unknown }) => clue.content));
+    assert.equal((await request("q1", "/two/media")).status, 403);
+    for (const id of ["audio", "video"]) {
+      assert.equal((await request("q1", `/${id}/media`)).status, 403);
+      assert.equal((await request("q1", `/${id}/media`, 0)).status, 200);
+    }
     assert.equal((await buy("q2", "two")).status, 409, "Only the presented question can sell clues");
     assert.equal((await buy("q1", "two", 3)).status, 409, "Stale team identity cannot charge another team");
     const duplicate = await Promise.all([buy("q1", "two"), buy("q1", "two", 2)]);
     assert.ok(duplicate.every((result) => result.status === 200 && result.data.remainingCoins === 3));
-    assert.equal((await request("q1", "", 2)).data.clues[0].text, "secret-q1-two");
-    assert.equal((await request("q1", "/two/image")).data, "private-image");
-    assert.equal((await request("q1", "/two/image", 3)).status, 403);
+    assert.equal((await request("q1", "", 2)).data.clues[0].content?.text, "secret-q1-two");
+    assert.equal((await request("q1", "/two/media")).data, "private-image");
+    assert.equal((await request("q1", "/two/media", 3)).status, 403);
     async function present(question: string, revealedClueIds: string[] = [], withAnswer = false) {
       const next = { ...current, question, revealedClueIds, withAnswer };
       await transitionPresentation(db, roomId, users[0].uid, current, next); current = next;
@@ -77,10 +84,10 @@ async function main() {
     assert.equal((await request("q2", "", 3)).data.remainingCoins, 5);
     assert.equal((await buy("q2", "four")).status, 409);
     assert.equal((await request("q2")).data.remainingCoins, 3);
-    assert.equal((await request("q2")).data.clues[2].text, undefined);
+    assert.equal((await request("q2")).data.clues[2].content?.text, undefined);
     assert.equal((await buy("q2", "three")).data.remainingCoins, 0, "Last coins open a clue on the first request");
-    assert.equal((await request("q1")).data.clues[0].text, "secret-q1-two", "Reconnecting/returning preserves purchases");
-    assert.equal((await request("q1", "", 3)).data.clues[0].text, undefined);
+    assert.equal((await request("q1")).data.clues[0].content?.text, "secret-q1-two", "Reconnecting/returning preserves purchases");
+    assert.equal((await request("q1", "", 3)).data.clues[0].content?.text, undefined);
     // Different purchases contend on a single team/round balance.
     const concurrent = await Promise.all([buy("q2", "three", 3, "blue"), buy("q2", "four", 3, "blue")]);
     assert.deepEqual(concurrent.map((result) => result.status).sort(), [200, 409]);
@@ -92,8 +99,10 @@ async function main() {
     for (const index of [0, 1, 2, 3]) {
       await denied(setDoc(doc(clients[index].firestoreClient, ledgerPath), { remainingCoins: 999 }));
       await denied(setDoc(doc(clients[index].firestoreClient, `${ledgerPath}/openedClues/q2:four`), { text: "forged" }));
-      await denied(getBytes(ref(clients[index].storageClient, imagePath)));
-      await denied(uploadBytes(ref(clients[index].storageClient, imagePath), new Uint8Array([1])));
+      for (const path of [imagePath, audioPath, videoPath]) {
+        await denied(getBytes(ref(clients[index].storageClient, path)));
+        await denied(uploadBytes(ref(clients[index].storageClient, path), new Uint8Array([1])));
+      }
     }
     await denied(getDocFromServer(doc(clients[3].firestoreClient, ledgerPath)));
     assert.equal((await getDocFromServer(doc(clients[2].firestoreClient, ledgerPath))).data()?.remainingCoins, 0);
@@ -109,19 +118,29 @@ async function main() {
     await present("q2");
     await denied(getDocFromServer(doc(clients[1].firestoreClient, answerPath)));
     await present("q2", ["two"]);
-    assert.equal((await request("q2", "", 3)).data.clues[0].text, "secret-q2-two");
-    assert.equal((await request("q2", "/two/image", 3)).status, 200);
+    assert.equal((await request("q2", "", 3)).data.clues[0].content?.text, "secret-q2-two");
+    assert.equal((await request("q2", "/two/media", 3)).status, 200);
     assert.equal((await request("q2")).data.remainingCoins, 0);
     await present("q2");
-    assert.equal((await request("q2", "", 3)).data.clues[0].text, undefined);
-    assert.equal((await request("q2", "/two/image", 3)).status, 403);
-    assert.equal((await request("q2")).data.clues[1].text, "secret-q2-three", "Hiding preserves purchased clues");
+    assert.equal((await request("q2", "", 3)).data.clues[0].content?.text, undefined);
+    assert.equal((await request("q2", "/two/media", 3)).status, 403);
+    assert.equal((await request("q2")).data.clues[1].content?.text, "secret-q2-three", "Hiding preserves purchased clues");
     await assert.rejects(present("q2", ["unknown"]), /Unknown clue/);
-    await present("q2", ["two", "three", "four"], true);
+    await present("q2", ["audio", "video"]);
+    for (const [id, type] of [["audio", "audio/mpeg"], ["video", "video/webm"]]) {
+      const result = await request("q2", `/${id}/media`, 3);
+      assert.equal(result.status, 200);
+      assert.equal(result.data, `private-${id}`);
+      assert.equal(result.response.headers.get("content-type"), type);
+      assert.equal(result.response.headers.get("cache-control"), "no-store");
+    }
+    await present("q2");
+    assert.equal((await request("q2", "/audio/media", 3)).status, 403);
+    await present("q2", clues.map((clue) => clue.id), true);
     assert.equal((await getDocFromServer(doc(clients[1].firestoreClient, answerPath))).data()?.hint, "Paris");
     await present("q1");
     await denied(getDocFromServer(doc(clients[1].firestoreClient, answerPath)));
-    assert.equal((await request("q2", "", 3)).data.clues[0].text, undefined, "Navigation resets public reveals");
+    assert.equal((await request("q2", "", 3)).data.clues[0].content?.text, undefined, "Navigation resets public reveals");
     for (const team of ["red", "blue"]) assert.equal((await round.collection("teamAnswers").doc(team).collection("answers").doc("q2").get()).data()?.answer, "Paris");
     // Navigation can overlap purchases on different questions; the round budget stays shared.
     const raceRound = room.collection("rounds").doc("race");
@@ -130,7 +149,7 @@ async function main() {
     for (const index of [1, 2]) await room.collection("members").doc(users[index].uid).update({ team: "race-team" });
     for (const question of ["q1", "q2"]) {
       await raceRound.collection("questions").doc(question).set({ stages: [{ text: question }], clues: [clues[2]] });
-      await raceRound.collection("questions").doc(question).collection("clues").doc("four").set({ price: 4, text: "Race clue", media: null });
+      await raceRound.collection("questions").doc(question).collection("clues").doc("four").set({ price: 4, content: { text: "Race clue", media: null } });
     }
     const before = { ...current, round: "race", question: "q1", withAnswer: false, revealedClueIds: [] };
     await room.update({ presenting: before });
@@ -150,7 +169,7 @@ async function main() {
   } finally {
     if (server && server.exitCode === null) { const stopped = new Promise<void>((resolve) => server!.once("exit", () => resolve())); server.kill("SIGTERM"); await stopped; }
     await Promise.all(clients.map(async (client) => { await terminate(client.firestoreClient); await deleteClient(client.app); }));
-    await db.recursiveDelete(room); await bucket.file(imagePath).delete({ ignoreNotFound: true });
+    await db.recursiveDelete(room); await Promise.all([imagePath, audioPath, videoPath].map((path) => bucket.file(path).delete({ ignoreNotFound: true })));
     await Promise.all(users.map((user) => adminAuth.deleteUser(user.uid))); await db.terminate(); await deleteApp(app);
   }
 }

@@ -1,6 +1,7 @@
 import type { Firestore } from "firebase-admin/firestore";
 import { CLUE_ID, clueKey, positiveCoins, type ClueMetadata, type CluesView } from "@/types/clues";
 import { RoomOperationError } from "./operation-error";
+import type { StoredClueStage } from "./clue-media";
 import { parsePresentation } from "./presentation";
 
 export function clueLedgerPath(roomId: string, teamId: string, roundId: string) {
@@ -52,13 +53,13 @@ export async function purchaseClue(db: Firestore, roomId: string, roundId: strin
     if (price > balance) throw new RoomOperationError("Not enough coins.", 409, "insufficient-coins");
     const next = balance - price;
     tx.set(ledgerRef, { remainingCoins: next });
-    tx.set(openedRef, { questionId, clueId, text: clue.data()!.text, image: Boolean(clue.data()!.media) });
+    tx.set(openedRef, { questionId, clueId, content: clue.data()!.content });
     return { remainingCoins: next };
   });
 }
 
 /** Read definitions only after checking either team purchase or the host's current reveal. */
-export async function readClues(db: Firestore, roomId: string, roundId: string, questionId: string, uid: string): Promise<CluesView & { images: Record<string, string> }> {
+export async function readClues(db: Firestore, roomId: string, roundId: string, questionId: string, uid: string): Promise<CluesView & { media: Record<string, string> }> {
   const roomRef = db.collection("rooms").doc(roomId);
   return db.runTransaction(async (tx) => {
     const room = await tx.get(roomRef);
@@ -78,21 +79,24 @@ export async function readClues(db: Firestore, roomId: string, roundId: string, 
     const presentation = parsePresentation(room.data()?.presenting);
     const shown = round.data()?.state === "closed" && presentation.round === roundId && presentation.question === questionId
       ? presentation.revealedClueIds ?? [] : [];
-    const images: Record<string, string> = {};
+    const mediaPaths: Record<string, string> = {};
     const clues = [];
     for (const metadata of question.data()!.clues as ClueMetadata[]) {
       const opened = ledgerRef ? await tx.get(ledgerRef.collection("openedClues").doc(clueKey(questionId, metadata.id))) : null;
       const purchased = opened?.exists === true;
       if (!host && !purchased && !shown.includes(metadata.id)) { clues.push({ ...metadata, purchased }); continue; }
       const definition = await tx.get(questionRef.collection("clues").doc(metadata.id));
-      if (!definition.exists || typeof definition.data()?.text !== "string") throw new Error("Missing clue definition.");
-      const media = definition.data()?.media;
+      const content = definition.data()?.content as StoredClueStage | undefined;
+      if (!definition.exists || !content || (!content.text && !content.media)) throw new Error("Missing clue definition stage.");
+      const media = content.media;
       if (media) {
-        if (typeof media.storagePath !== "string" || !media.storagePath.startsWith(`rooms/${roomId}/clue-media/`)) throw new Error("Invalid private clue image.");
-        images[metadata.id] = media.storagePath;
+        if (typeof media.storagePath !== "string" || !media.storagePath.startsWith(`rooms/${roomId}/clue-media/`) || !media.filename) throw new Error("Invalid private clue media.");
+        mediaPaths[metadata.id] = media.storagePath;
       }
-      clues.push({ ...metadata, purchased, text: definition.data()!.text as string, image: Boolean(media) });
+      clues.push({ ...metadata, purchased, content: {
+        ...(content.text ? { text: content.text } : {}), ...(media ? { media: { filename: media.filename } } : {}),
+      } });
     }
-    return { teamId: host ? null : teamId, remainingCoins: remainingCoins(ledger?.exists ? ledger.data()!.remainingCoins : round.data()!.startingCoins, round.data()!.startingCoins), clues, images };
+    return { teamId: host ? null : teamId, remainingCoins: remainingCoins(ledger?.exists ? ledger.data()!.remainingCoins : round.data()!.startingCoins, round.data()!.startingCoins), clues, media: mediaPaths };
   });
 }

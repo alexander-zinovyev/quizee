@@ -9,8 +9,8 @@
     "$ref": "#/$defs/round"
   },
   "$defs": {
-    "clue": {"type": "object", "additionalProperties": false, "required": ["id", "category", "price", "text"], "properties": {"id": {"type": "string", "pattern": "^(?!__.*__$)[A-Za-z0-9_-]{1,128}$"}, "category": {"$ref": "#/$defs/nonEmptyText"}, "price": {"type": "integer", "minimum": 1, "maximum": 9007199254740991}, "text": {"$ref": "#/$defs/nonEmptyText"}, "image": {"type": "string", "pattern": "^(?!/)(?!media/)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*[:\\\\\\x00-\\x1f]).+\\.(png|jpg|jpeg|gif|webp|svg)$"}}},
-    "cluesQuestion": {"type": "object", "additionalProperties": false, "required": ["prompt", "answer", "clues"], "properties": {"prompt": {"$ref": "#/$defs/nonEmptyText"}, "answer": {"$ref": "#/$defs/nonEmptyText"}, "clues": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/clue"}}}},
+    "clue": {"type": "object", "additionalProperties": false, "required": ["id", "category", "price", "content"], "properties": {"id": {"type": "string", "pattern": "^(?!__.*__$)[A-Za-z0-9_-]{1,128}$"}, "category": {"$ref": "#/$defs/nonEmptyText"}, "price": {"type": "integer", "minimum": 1, "maximum": 9007199254740991}, "content": {"$ref": "#/$defs/stage"}}},
+    "cluesQuestion": {"type": "object", "additionalProperties": false, "required": ["generalClue", "answer", "clues"], "properties": {"generalClue": {"$ref": "#/$defs/stage"}, "answer": {"$ref": "#/$defs/answer"}, "clues": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/clue"}}}},
     "cluesRound": {"type": "object", "additionalProperties": false, "required": ["type", "title", "startingCoins", "questions"], "properties": {"type": {"const": "clues"}, "title": {"$ref": "#/$defs/nonEmptyText"}, "startingCoins": {"type": "integer", "minimum": 1, "maximum": 9007199254740991}, "questions": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/cluesQuestion"}}}},
 
     "hexColor": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },

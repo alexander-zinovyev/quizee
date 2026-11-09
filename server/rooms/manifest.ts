@@ -1,3 +1,4 @@
+import { cluesStages } from "@/types/clues";
 import type { ValidatedRound } from "./validation";
 import type { ColorScoring } from "@/types/color";
 
@@ -30,7 +31,7 @@ export function collectReferencedMedia(rounds: ValidatedRound[]): Set<string> {
 
   rounds.forEach((round) => {
     if (round.type === "clues") {
-      round.questions.forEach((question) => question.clues.forEach((clue) => { if (clue.image) referencedMedia.add(clue.image); }));
+      cluesStages(round).forEach((stage) => { if (stage.media) referencedMedia.add(stage.media); });
       return;
     }
     if (round.type === "sorting") {

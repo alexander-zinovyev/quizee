@@ -10,7 +10,7 @@ service firebase.storage {
       allow read: if request.auth != null && firestore.exists(/databases/(default)/documents/rooms/$(roomId)/members/$(request.auth.uid));
       allow write: if false;
     }
-    // Private clue images are served exclusively by the authenticated clue API.
+    // Private paid-clue media are served exclusively by the authenticated clue API.
     match /rooms/{roomId}/clue-media/{path=**} {
       allow read, write: if false;
     }

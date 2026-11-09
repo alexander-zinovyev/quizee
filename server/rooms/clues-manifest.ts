@@ -1,24 +1,17 @@
-import { randomUUID } from "node:crypto";
-import type { Bucket } from "@google-cloud/storage";
 import type { DocumentReference, WriteBatch } from "firebase-admin/firestore";
 import type { CluesPackRound } from "@/types/clues";
+import type { QuizStage } from "@/types/quiz-stage";
+import type { StoredClueStage } from "./clue-media";
 
-export async function writeCluesRound(batch: WriteBatch, roundRef: DocumentReference, roomId: string, round: CluesPackRound, clueImages: Map<string, Buffer>, bucket: Bucket) {
+type ResolveStage = (stage: QuizStage) => Promise<StoredClueStage>;
+export async function writeCluesRound(batch: WriteBatch, roundRef: DocumentReference, round: CluesPackRound, resolveStage: ResolveStage, resolvePrivateStage: ResolveStage) {
   for (const [index, question] of round.questions.entries()) {
-    const questionId = `question-${index + 1}`;
-    const questionRef = roundRef.collection("questions").doc(questionId);
-    batch.set(questionRef, { order: index, stages: [{ text: question.prompt }],
+    const questionRef = roundRef.collection("questions").doc(`question-${index + 1}`);
+    batch.set(questionRef, { order: index, stages: [await resolveStage(question.generalClue)],
       clues: question.clues.map(({ id, category, price }) => ({ id, category, price })) });
-    batch.set(roundRef.collection("answers").doc(questionId), { hint: question.answer, stages: [{ text: question.answer }] });
+    batch.set(roundRef.collection("answers").doc(questionRef.id), { hint: question.answer.hint, stages: await Promise.all(question.answer.stages.map(resolveStage)) });
     for (const clue of question.clues) {
-      let media = null;
-      if (clue.image) {
-        const image = clueImages.get(clue.image)!;
-        const storagePath = `rooms/${roomId}/clue-media/${randomUUID()}.png`;
-        await bucket.file(storagePath).save(image, { metadata: { contentType: "image/png", cacheControl: "no-store", metadata: {} } });
-        media = { storagePath };
-      }
-      batch.set(questionRef.collection("clues").doc(clue.id), { price: clue.price, text: clue.text, media });
+      batch.set(questionRef.collection("clues").doc(clue.id), { price: clue.price, content: await resolvePrivateStage(clue.content) });
     }
   }
 }
