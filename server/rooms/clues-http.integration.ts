@@ -7,7 +7,7 @@ import { getAuth } from "firebase-admin/auth";
 import { getStorage } from "firebase-admin/storage";
 import { initializeApp as clientApp, deleteApp as deleteClient } from "firebase/app";
 import { connectAuthEmulator, getAuth as clientAuth, signInAnonymously, type User } from "firebase/auth";
-import { connectFirestoreEmulator, doc, getFirestore as clientFirestore, getDocFromServer, setDoc, terminate } from "firebase/firestore";
+import { collection, query, where, getDocsFromServer, onSnapshot, connectFirestoreEmulator, doc, getFirestore as clientFirestore, getDocFromServer, setDoc, terminate } from "firebase/firestore";
 import { connectStorageEmulator, getStorage as clientStorage, ref, getBytes, uploadBytes } from "firebase/storage";
 import { purchaseClue, clueLedgerPath } from "./clues";
 import { parsePresentation, transitionPresentation } from "./presentation";
@@ -59,10 +59,28 @@ async function main() {
       return { status: response.status, response, data: response.headers.get("Content-Type")?.includes("json") ? await response.json() : await response.text() };
     }
     const buy = (question: string, clue: string, index = 1, teamId = "red") => request(question, `/${clue}`, index, { teamId });
-    assert.equal((await request("q1", "", 4)).status, 403);
-    const hidden = await request("q1"); assert.equal(hidden.data.remainingCoins, 5);
-    assert.ok(hidden.data.clues.every((clue: { content?: unknown }) => clue.content === undefined));
-    assert.ok((await request("q1", "", 0)).data.clues.every((clue: { content?: unknown }) => clue.content));
+    const denied = (work: Promise<unknown>) => assert.rejects(work, (error: unknown) => ["permission-denied", "storage/unauthorized"].includes((error as { code: string }).code));
+    const ledgerPath = clueLedgerPath(roomId, "red", "r1");
+    const ledger = async (index = 1) => (await getDocFromServer(doc(clients[index].firestoreClient, clueLedgerPath(roomId, index === 3 ? "blue" : "red", "r1")))).data()?.remainingCoins ?? 5;
+    const opened = async (question: string, index = 1) => (await getDocsFromServer(query(collection(clients[index].firestoreClient, `${clueLedgerPath(roomId, index === 3 ? "blue" : "red", "r1")}/openedClues`), where("questionId", "==", question)))).docs.map((item) => item.data());
+    const definition = (question: string, clue: string, index = 1) => getDocFromServer(doc(clients[index].firestoreClient, `${round.path}/questions/${question}/clues/${clue}`));
+    await denied(getDocFromServer(doc(clients[4].firestoreClient, ledgerPath)));
+    assert.equal(await ledger(), 5);
+    assert.deepEqual(await opened("q1"), []);
+    assert.equal((await definition("q1", "two", 0)).data()?.content.text, "secret-q1-two");
+    await denied(definition("q1", "two"));
+    await room.update({ presenting: { ...current, revealedClueIds: ["two"] } });
+    await denied(definition("q1", "two")); // A forged reveal cannot expose active-round content.
+    await room.update({ presenting: current });
+    assert.equal((await request("q1", "/unknown/media", 0)).status, 403);
+    assert.equal((await request("q1", "/two/media", 4)).status, 403);
+    // A live teammate subscription receives the copied unlock without an HTTP content refresh.
+    let stopOpened = () => {};
+    const teammateUnlock = new Promise<void>((resolve, reject) => {
+      stopOpened = onSnapshot(query(collection(clients[2].firestoreClient, `${ledgerPath}/openedClues`), where("questionId", "==", "q1")), (snapshot) => {
+        if (snapshot.docs.some((item) => item.data().content.text === "secret-q1-two")) resolve();
+      }, reject);
+    });
     assert.equal((await request("q1", "/two/media")).status, 403);
     for (const id of ["audio", "video"]) {
       assert.equal((await request("q1", `/${id}/media`)).status, 403);
@@ -72,7 +90,8 @@ async function main() {
     assert.equal((await buy("q1", "two", 3)).status, 409, "Stale team identity cannot charge another team");
     const duplicate = await Promise.all([buy("q1", "two"), buy("q1", "two", 2)]);
     assert.ok(duplicate.every((result) => result.status === 200 && result.data.remainingCoins === 3));
-    assert.equal((await request("q1", "", 2)).data.clues[0].content?.text, "secret-q1-two");
+    await teammateUnlock; stopOpened();
+    assert.equal((await opened("q1", 2))[0].content.text, "secret-q1-two");
     assert.equal((await request("q1", "/two/media")).data, "private-image");
     assert.equal((await request("q1", "/two/media", 3)).status, 403);
     async function present(question: string, revealedClueIds: string[] = [], withAnswer = false) {
@@ -80,22 +99,20 @@ async function main() {
       await transitionPresentation(db, roomId, users[0].uid, current, next); current = next;
     }
     await present("q2");
-    assert.equal((await request("q2")).data.remainingCoins, 3);
-    assert.equal((await request("q2", "", 3)).data.remainingCoins, 5);
+    assert.equal(await ledger(), 3);
+    assert.equal(await ledger(3), 5);
     assert.equal((await buy("q2", "four")).status, 409);
-    assert.equal((await request("q2")).data.remainingCoins, 3);
-    assert.equal((await request("q2")).data.clues[2].content?.text, undefined);
+    assert.equal(await ledger(), 3);
+    assert.deepEqual(await opened("q2"), []);
     assert.equal((await buy("q2", "three")).data.remainingCoins, 0, "Last coins open a clue on the first request");
-    assert.equal((await request("q1")).data.clues[0].content?.text, "secret-q1-two", "Reconnecting/returning preserves purchases");
-    assert.equal((await request("q1", "", 3)).data.clues[0].content?.text, undefined);
+    assert.equal((await opened("q1"))[0].content.text, "secret-q1-two", "Reconnecting/returning preserves purchases");
+    assert.deepEqual(await opened("q1", 3), []);
     // Different purchases contend on a single team/round balance.
     const concurrent = await Promise.all([buy("q2", "three", 3, "blue"), buy("q2", "four", 3, "blue")]);
     assert.deepEqual(concurrent.map((result) => result.status).sort(), [200, 409]);
-    const blueBalance = (await request("q2", "", 3)).data.remainingCoins; assert.ok(blueBalance === 1 || blueBalance === 2);
+    const blueBalance = await ledger(3); assert.ok(blueBalance === 1 || blueBalance === 2);
     await assert.rejects(present("q2", ["two"]), /closed clues round/);
     // Real SDK rules: no ledger forgery, cross-team reads, definition reads, or direct image access.
-    const ledgerPath = clueLedgerPath(roomId, "red", "r1");
-    const denied = (work: Promise<unknown>) => assert.rejects(work, (error: unknown) => ["permission-denied", "storage/unauthorized"].includes((error as { code: string }).code));
     for (const index of [0, 1, 2, 3]) {
       await denied(setDoc(doc(clients[index].firestoreClient, ledgerPath), { remainingCoins: 999 }));
       await denied(setDoc(doc(clients[index].firestoreClient, `${ledgerPath}/openedClues/q2:four`), { text: "forged" }));
@@ -118,13 +135,18 @@ async function main() {
     await present("q2");
     await denied(getDocFromServer(doc(clients[1].firestoreClient, answerPath)));
     await present("q2", ["two"]);
-    assert.equal((await request("q2", "", 3)).data.clues[0].content?.text, "secret-q2-two");
+    assert.equal((await definition("q2", "two", 3)).data()?.content.text, "secret-q2-two");
+    await denied(definition("q2", "three"));
+    await denied(definition("q1", "two", 3));
+    await denied(definition("q2", "two", 4));
+    await denied(getDocsFromServer(collection(clients[3].firestoreClient, `${round.path}/questions/q2/clues`)));
+    await denied(setDoc(doc(clients[3].firestoreClient, `${round.path}/questions/q2/clues/two`), { content: { text: "forged" } }));
     assert.equal((await request("q2", "/two/media", 3)).status, 200);
-    assert.equal((await request("q2")).data.remainingCoins, 0);
+    assert.equal(await ledger(), 0);
     await present("q2");
-    assert.equal((await request("q2", "", 3)).data.clues[0].content?.text, undefined);
+    await denied(definition("q2", "two", 3));
     assert.equal((await request("q2", "/two/media", 3)).status, 403);
-    assert.equal((await request("q2")).data.clues[1].content?.text, "secret-q2-three", "Hiding preserves purchased clues");
+    assert.equal((await opened("q2"))[0].content.text, "secret-q2-three", "Hiding preserves purchased clues");
     await assert.rejects(present("q2", ["unknown"]), /Unknown clue/);
     await present("q2", ["audio", "video"]);
     for (const [id, type] of [["audio", "audio/mpeg"], ["video", "video/webm"]]) {
@@ -140,7 +162,7 @@ async function main() {
     assert.equal((await getDocFromServer(doc(clients[1].firestoreClient, answerPath))).data()?.hint, "Paris");
     await present("q1");
     await denied(getDocFromServer(doc(clients[1].firestoreClient, answerPath)));
-    assert.equal((await request("q2", "", 3)).data.clues[0].content?.text, undefined, "Navigation resets public reveals");
+    await denied(definition("q2", "two", 3)); // Navigation resets public reveals.
     for (const team of ["red", "blue"]) assert.equal((await round.collection("teamAnswers").doc(team).collection("answers").doc("q2").get()).data()?.answer, "Paris");
     // Navigation can overlap purchases on different questions; the round budget stays shared.
     const raceRound = room.collection("rounds").doc("race");

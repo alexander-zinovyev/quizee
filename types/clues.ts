@@ -24,6 +24,19 @@ export function positiveCoins(raw: unknown): number {
   if (!Number.isSafeInteger(raw) || (raw as number) <= 0) throw new Error("Coins must be positive whole numbers within the safe integer range.");
   return raw as number;
 }
+export function remainingCoins(raw: unknown, startingCoins: number): number {
+  if (!Number.isSafeInteger(raw) || (raw as number) < 0 || (raw as number) > positiveCoins(startingCoins)) throw new Error("Invalid stored coin balance.");
+  return raw as number;
+}
+
+export function parseClueContent(raw: unknown): NonNullable<VisibleClue["content"]> {
+  if (!raw || typeof raw !== "object") throw new Error("Missing clue definition stage.");
+  const { text, media } = raw as { text?: unknown; media?: { filename?: unknown } | null };
+  if ((text != null && typeof text !== "string") || (media != null && (typeof media !== "object" || typeof media.filename !== "string" || !media.filename))) throw new Error("Invalid clue definition stage.");
+  if (!text && !media) throw new Error("Missing clue definition stage.");
+  return { ...(text ? { text: text as string } : {}), ...(media ? { media: { filename: media.filename as string } } : {}) };
+}
+
 export function parseCluesRound(raw: unknown): CluesPackRound {
   const round = object(raw, ["type", "title", "startingCoins", "questions"], "clues round");
   if (round.type !== "clues") throw new Error("Expected a clues round.");

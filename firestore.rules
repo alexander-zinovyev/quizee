@@ -127,6 +127,15 @@ service cloud.firestore {
 
         match /questions/{questionId} {
           allow read: if isMember(roomId) && roundDoc().data.state != "scheduled";
+
+          match /clues/{clueId} {
+            // Individual revealed documents only. Listing would expose hidden clues.
+            allow get: if isMember(roomId) && roundDoc().data.type == "clues"
+              && roundDoc().data.state == "closed"
+              && roomDoc(roomId).data.presenting.round == roundId
+              && roomDoc(roomId).data.presenting.question == questionId
+              && clueId in roomDoc(roomId).data.presenting.revealedClueIds;
+          }
         }
 
         match /images/{imageId} {
