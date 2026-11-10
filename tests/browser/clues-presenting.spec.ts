@@ -61,6 +61,8 @@ async function setup(page: import("@playwright/test").Page, mode: "standard" | "
     }createRoot(document.querySelector('main')).render(${mode === 'live' ? '<LiveHarness/>' : mode === 'media' ? '<MediaHarness/>' : mode === 'playback' ? '<PlaybackHarness/>' : mode === 'live-media' ? '<LiveMediaHarness/>' : '<Harness/>'});`, resolveDir: process.cwd(), loader: "tsx" },
     bundle: true, write: false, jsx: "automatic", define: { "process.env": "{}", "process.env.NODE_ENV": '"development"' },
     plugins: [{ name: "clues-transport", setup(builder) {
+      builder.onResolve({ filter: /^firebase\/storage$/ }, () => ({ path: "firebase/storage", namespace: "clues-storage" }));
+      builder.onLoad({ filter: /.*/, namespace: "clues-storage" }, () => ({ contents: "export const getStorage=()=>({});export const ref=(_,path)=>path;export const getDownloadURL=async path=>'/test-storage/'+path;" }));
       builder.onResolve({ filter: /^firebase\/firestore$/ }, () => ({ path: "firebase/firestore", namespace: "clues-firestore" }));
       builder.onLoad({ filter: /.*/, namespace: "clues-firestore" }, () => ({ contents: `
         export const doc=(_, ...parts)=>({path:parts.join('/')});
@@ -83,7 +85,7 @@ async function setup(page: import("@playwright/test").Page, mode: "standard" | "
         export const onSnapshot=(ref,callback,error)=>{const listener={ref,callback,error};listeners.add(listener);emit(listener);return ()=>listeners.delete(listener);};
       ` }));
       builder.onResolve({ filter: /^(@\/lib\/firebase\/client|@\/app\/providers\/firebase-auth-provider)$/ }, (args) => ({ path: args.path, namespace: "clues-mock" }));
-      builder.onLoad({ filter: /.*/, namespace: "clues-mock" }, (args) => ({ contents: args.path.includes("firebase-auth") ? "const getToken=async()=>'';export const useFirebaseAuth=()=>({getToken});" : "export const getClientFirestore=()=>({});" }));
+      builder.onLoad({ filter: /.*/, namespace: "clues-mock" }, (args) => ({ contents: args.path.includes("firebase-auth") ? "const getToken=async()=>'';export const useFirebaseAuth=()=>({getToken});" : "export const getClientFirestore=()=>({});export const getFirebaseClientApp=()=>({});" }));
     } }],
   });
   await page.addScriptTag({ content: bundle.outputFiles[0].text });
@@ -197,16 +199,16 @@ test("purchases stream balance and content from Firestore and survive reconnect 
   expect(charges).toBe(2); expect(contentReads).toBe(0);
 });
 
-test("last-coin unlock streams before private media finishes downloading", async ({ page }) => {
+test("last-coin unlock streams before Storage media finishes downloading", async ({ page }) => {
   const clue = { id: "audio", category: "Audio", price: 5 };
   await seed(page, { teamId: "red", remainingCoins: 5, clues: [{ ...clue, purchased: false }] });
   let release!: () => void;
   const gate = new Promise<void>((resolve) => { release = resolve; });
   await page.route("**/clues/audio", async (route) => {
     await route.fulfill({ json: { remainingCoins: 0 } });
-    await publish(page, { teamId: "red", remainingCoins: 0, clues: [{ ...clue, purchased: true, content: { media: { filename: "clue.wav" } } }] });
+    await publish(page, { teamId: "red", remainingCoins: 0, clues: [{ ...clue, purchased: true, content: { media: { filename: "clue.wav", storagePath: "rooms/demo/media/clue.wav" } } }] });
   });
-  await page.route("**/clues/audio/media", async (route) => { await gate; await route.fulfill({ contentType: "audio/wav", body: silentWave() }); });
+  await page.route("**/test-storage/rooms/demo/media/clue.wav", async (route) => { await gate; await route.fulfill({ contentType: "audio/wav", body: silentWave() }); });
   await setup(page, "live");
   try {
     await page.getByRole("button", { name: "Open for 5", exact: true }).click();
@@ -255,10 +257,10 @@ test("hiding a public clue immediately removes its content and preserves purchas
 });
 
 test("teammate purchases preserve already purchased media without downloading it again", async ({ page }) => {
-  const sound = { id: "sound", category: "Sound", price: 1, purchased: true, content: { media: { filename: "sound.wav" } } };
+  const sound = { id: "sound", category: "Sound", price: 1, purchased: true, content: { media: { filename: "sound.wav", storagePath: "rooms/demo/media/sound.wav" } } };
   await seed(page, { ...hidden, remainingCoins: 4, clues: [sound, ...hidden.clues] });
   let downloads = 0;
-  await page.route("**/clues/sound/media", (route) => { downloads++; return route.fulfill({ contentType: "audio/wav", body: silentWave() }); });
+  await page.route("**/test-storage/rooms/demo/media/sound.wav", (route) => { downloads++; return route.fulfill({ contentType: "audio/wav", body: silentWave() }); });
   await setup(page, "live-media");
   await expect(page.locator("audio")).toHaveCount(2);
   const paid = page.locator("audio").nth(1);
@@ -280,9 +282,9 @@ for (const id of ["constructor", "toString", "valueOf"] as const) {
     const gate = new Promise<void>((resolve) => { release = resolve; });
     await page.route(`**/api/rooms/demo/rounds/r1/answers/q1/clues/${id}`, async (route) => {
       await route.fulfill({ json: { remainingCoins: 3 } });
-      await publish(page, { teamId: "red", remainingCoins: 3, clues: [{ ...clue, purchased: true, content: { text: "Purchased content", media: { filename: "clue.wav" } } }] });
+      await publish(page, { teamId: "red", remainingCoins: 3, clues: [{ ...clue, purchased: true, content: { text: "Purchased content", media: { filename: "clue.wav", storagePath: "rooms/demo/media/clue.wav" } } }] });
     });
-    await page.route(`**/clues/${id}/media`, async (route) => { await gate; await route.fulfill({ contentType: "audio/wav", body: silentWave() }); });
+    await page.route("**/test-storage/rooms/demo/media/clue.wav", async (route) => { await gate; await route.fulfill({ contentType: "audio/wav", body: silentWave() }); });
     await setup(page, "live");
     try {
       await expect(page.getByText("Opened", { exact: true })).toHaveCount(0);
@@ -313,3 +315,20 @@ for (const id of ["constructor", "toString", "valueOf"] as const) {
     await expect(page.getByText("Clue hidden", { exact: true })).toBeVisible();
   });
 }
+
+
+test("paid clues sharing a room media path download the asset once", async ({ page }) => {
+  await seed(page, { teamId: "red", remainingCoins: 3, clues: ["first", "second"].map((id) => ({
+    id, category: id, price: 1, purchased: true, content: { media: { filename: "shared.wav", storagePath: "rooms/demo/media/shared.wav" } },
+  })) });
+  let downloads = 0;
+  await page.route("**/test-storage/rooms/demo/media/shared.wav", (route) => {
+    downloads++;
+    return route.fulfill({ contentType: "audio/wav", body: silentWave() });
+  });
+  await setup(page, "live");
+  await expect(page.locator('audio[src^="blob:"]')).toHaveCount(2);
+  const sources = await page.locator("audio").evaluateAll((elements) => elements.map((element) => (element as HTMLAudioElement).src));
+  expect(sources[0]).toBe(sources[1]);
+  expect(downloads).toBe(1);
+});

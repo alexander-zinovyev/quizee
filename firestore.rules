@@ -98,6 +98,7 @@ service cloud.firestore {
       }
 
       // Server-owned clue balances and purchased content.
+      // Keep this at room scope so team-write grants cannot reach balances or unlocks.
       match /cluePurchases/{teamId}/rounds/{roundId} {
         allow read: if isHost(roomId) || isTeamMember(roomId, teamId);
         allow write: if false;

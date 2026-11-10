@@ -1,6 +1,8 @@
 "use client";
 
 import Image from "next/image";
+import { getDownloadURL, getStorage, ref } from "firebase/storage";
+import { getFirebaseClientApp } from "@/lib/firebase/client";
 import { useEffect, useRef, useState } from "react";
 import type { CluesView } from "@/types/clues";
 import type { RoundMeta, RoundQuestion } from "@/lib/hooks/use-room-rounds";
@@ -86,7 +88,7 @@ export function CluesPresenting({ roomSlug, round, question, teamId, isHost, rev
   const [loaded, setLoaded] = useState<{ mediaUrls: Record<string, string>; key: string; loadingMedia: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [buying, setBuying] = useState(false);
-  const mediaKey = JSON.stringify(view?.clues.filter((clue) => clue.content?.media).map((clue) => clue.id) ?? []);
+  const mediaKey = JSON.stringify(view?.clues.filter((clue) => clue.content?.media).map((clue) => ({ id: clue.id, path: clue.content!.media!.storagePath })) ?? []);
   const mediaCache = useRef(new Map<string, string>());
   useEffect(() => {
     const cache = mediaCache.current;
@@ -97,25 +99,25 @@ export function CluesPresenting({ roomSlug, round, question, teamId, isHost, rev
     const controller = new AbortController();
     const cache = mediaCache.current;
     async function load() {
-      const ids: string[] = JSON.parse(mediaKey);
-      const authorizedMedia = new Set(ids);
-      for (const [id, url] of cache) if (!authorizedMedia.has(id)) { URL.revokeObjectURL(url); cache.delete(id); }
-      const mediaUrls = Object.fromEntries(cache);
-      const missing = ids.filter((id) => !cache.has(id));
+      const assets: { id: string; path: string }[] = JSON.parse(mediaKey);
+      const authorizedPaths = new Set(assets.map((asset) => asset.path));
+      for (const [path, url] of cache) if (!authorizedPaths.has(path)) { URL.revokeObjectURL(url); cache.delete(path); }
+      const mediaUrls = Object.fromEntries(assets.flatMap(({ id, path }) => cache.has(path) ? [[id, cache.get(path)!]] : []));
+      const missing = [...authorizedPaths].filter((path) => !cache.has(path));
       setLoaded({ mediaUrls, key, loadingMedia: missing.length > 0 }); setError(null);
       if (!missing.length) return;
-      const token = await getToken();
-      const headers = { Authorization: `Bearer ${token}` };
-      if (controller.signal.aborted) return;
-      await Promise.all(missing.map(async (id) => {
-        const media = await fetch(`${endpoint}/${id}/media`, { headers, signal: controller.signal, cache: "no-store" });
+      const storage = getStorage(getFirebaseClientApp());
+      await Promise.all(missing.map(async (path) => {
+        const downloadUrl = await getDownloadURL(ref(storage, path));
+        if (controller.signal.aborted) return;
+        const media = await fetch(downloadUrl, { signal: controller.signal });
         if (!media.ok) throw new Error("Unable to load clue media.");
         if (controller.signal.aborted) return;
         const blob = await media.blob();
         if (controller.signal.aborted) return;
-        const url = URL.createObjectURL(blob); cache.set(id, url); mediaUrls[id] = url;
+        const url = URL.createObjectURL(blob); cache.set(path, url);
       }));
-      if (!controller.signal.aborted) { setLoaded({ mediaUrls, key, loadingMedia: false }); setError(null); }
+      if (!controller.signal.aborted) { setLoaded({ mediaUrls: Object.fromEntries(assets.map(({ id, path }) => [id, cache.get(path)!])), key, loadingMedia: false }); setError(null); }
     }
     void load().catch((failure) => {
       if (!controller.signal.aborted) {
@@ -124,7 +126,7 @@ export function CluesPresenting({ roomSlug, round, question, teamId, isHost, rev
       }
     });
     return () => controller.abort();
-  }, [endpoint, getToken, key, mediaKey]);
+  }, [key, mediaKey]);
   async function purchase(id: string) {
     setBuying(true); setError(null);
     try {

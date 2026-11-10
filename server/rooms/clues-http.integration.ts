@@ -29,8 +29,8 @@ async function main() {
     return { app, authClient, firestoreClient, storageClient };
   });
   const roomId = `clues-${randomUUID()}`, room = db.doc(`rooms/${roomId}`), round = room.collection("rounds").doc("r1");
-  const imagePath = `rooms/${roomId}/clue-media/test.png`;
-  const audioPath = `rooms/${roomId}/clue-media/test.mp3`, videoPath = `rooms/${roomId}/clue-media/test.webm`;
+  const imagePath = `rooms/${roomId}/media/test.png`;
+  const audioPath = `rooms/${roomId}/media/test.mp3`, videoPath = `rooms/${roomId}/media/test.webm`;
   let server: ChildProcess | null = null;
   const users: User[] = [];
   try {
@@ -54,7 +54,7 @@ async function main() {
     await bucket.file(videoPath).save(Buffer.from("private-video"), { metadata: { contentType: "video/webm", cacheControl: "no-store" } });
     const port = await availablePort(); server = await startApp(port, projectId); server.stderr!.pipe(process.stderr);
     const base = `http://127.0.0.1:${port}/api/rooms/${roomId}/rounds/r1/answers`;
-    async function request(question: string, suffix = "", index = 1, body?: unknown) {
+    async function request(question: string, suffix: string, index = 1, body?: unknown) {
       const response = await fetch(`${base}/${question}/clues${suffix}`, { method: body === undefined ? "GET" : "POST", headers: { Authorization: `Bearer ${tokens[index]}`, "Content-Type": "application/json" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
       return { status: response.status, response, data: response.headers.get("Content-Type")?.includes("json") ? await response.json() : await response.text() };
     }
@@ -72,8 +72,6 @@ async function main() {
     await room.update({ presenting: { ...current, revealedClueIds: ["two"] } });
     await denied(definition("q1", "two")); // A forged reveal cannot expose active-round content.
     await room.update({ presenting: current });
-    assert.equal((await request("q1", "/unknown/media", 0)).status, 403);
-    assert.equal((await request("q1", "/two/media", 4)).status, 403);
     // A live teammate subscription receives the copied unlock without an HTTP content refresh.
     let stopOpened = () => {};
     const teammateUnlock = new Promise<void>((resolve, reject) => {
@@ -81,19 +79,12 @@ async function main() {
         if (snapshot.docs.some((item) => item.data().content.text === "secret-q1-two")) resolve();
       }, reject);
     });
-    assert.equal((await request("q1", "/two/media")).status, 403);
-    for (const id of ["audio", "video"]) {
-      assert.equal((await request("q1", `/${id}/media`)).status, 403);
-      assert.equal((await request("q1", `/${id}/media`, 0)).status, 200);
-    }
     assert.equal((await buy("q2", "two")).status, 409, "Only the presented question can sell clues");
     assert.equal((await buy("q1", "two", 3)).status, 409, "Stale team identity cannot charge another team");
     const duplicate = await Promise.all([buy("q1", "two"), buy("q1", "two", 2)]);
     assert.ok(duplicate.every((result) => result.status === 200 && result.data.remainingCoins === 3));
     await teammateUnlock; stopOpened();
     assert.equal((await opened("q1", 2))[0].content.text, "secret-q1-two");
-    assert.equal((await request("q1", "/two/media")).data, "private-image");
-    assert.equal((await request("q1", "/two/media", 3)).status, 403);
     async function present(question: string, revealedClueIds: string[] = [], withAnswer = false) {
       const next = { ...current, question, revealedClueIds, withAnswer };
       await transitionPresentation(db, roomId, users[0].uid, current, next); current = next;
@@ -112,15 +103,16 @@ async function main() {
     assert.deepEqual(concurrent.map((result) => result.status).sort(), [200, 409]);
     const blueBalance = await ledger(3); assert.ok(blueBalance === 1 || blueBalance === 2);
     await assert.rejects(present("q2", ["two"]), /closed clues round/);
-    // Real SDK rules: no ledger forgery, cross-team reads, definition reads, or direct image access.
+    // Real SDK rules: no ledger forgery, cross-team reads, definition reads, or media writes. Room members may fetch any known media path.
     for (const index of [0, 1, 2, 3]) {
       await denied(setDoc(doc(clients[index].firestoreClient, ledgerPath), { remainingCoins: 999 }));
       await denied(setDoc(doc(clients[index].firestoreClient, `${ledgerPath}/openedClues/q2:four`), { text: "forged" }));
       for (const path of [imagePath, audioPath, videoPath]) {
-        await denied(getBytes(ref(clients[index].storageClient, path)));
+        assert.ok((await getBytes(ref(clients[index].storageClient, path))).byteLength > 0);
         await denied(uploadBytes(ref(clients[index].storageClient, path), new Uint8Array([1])));
       }
     }
+    for (const path of [imagePath, audioPath, videoPath]) await denied(getBytes(ref(clients[4].storageClient, path)));
     await denied(getDocFromServer(doc(clients[3].firestoreClient, ledgerPath)));
     assert.equal((await getDocFromServer(doc(clients[2].firestoreClient, ledgerPath))).data()?.remainingCoins, 0);
     await denied(getDocFromServer(doc(clients[1].firestoreClient, `${round.path}/questions/q2/clues/two`)));
@@ -141,23 +133,15 @@ async function main() {
     await denied(definition("q2", "two", 4));
     await denied(getDocsFromServer(collection(clients[3].firestoreClient, `${round.path}/questions/q2/clues`)));
     await denied(setDoc(doc(clients[3].firestoreClient, `${round.path}/questions/q2/clues/two`), { content: { text: "forged" } }));
-    assert.equal((await request("q2", "/two/media", 3)).status, 200);
     assert.equal(await ledger(), 0);
     await present("q2");
     await denied(definition("q2", "two", 3));
-    assert.equal((await request("q2", "/two/media", 3)).status, 403);
     assert.equal((await opened("q2"))[0].content.text, "secret-q2-three", "Hiding preserves purchased clues");
     await assert.rejects(present("q2", ["unknown"]), /Unknown clue/);
     await present("q2", ["audio", "video"]);
-    for (const [id, type] of [["audio", "audio/mpeg"], ["video", "video/webm"]]) {
-      const result = await request("q2", `/${id}/media`, 3);
-      assert.equal(result.status, 200);
-      assert.equal(result.data, `private-${id}`);
-      assert.equal(result.response.headers.get("content-type"), type);
-      assert.equal(result.response.headers.get("cache-control"), "no-store");
-    }
+    for (const id of ["audio", "video"]) assert.ok((await definition("q2", id, 3)).data()?.content.media.storagePath.startsWith(`rooms/${roomId}/media/`));
     await present("q2");
-    assert.equal((await request("q2", "/audio/media", 3)).status, 403);
+    for (const id of ["audio", "video"]) await denied(definition("q2", id, 3));
     await present("q2", clues.map((clue) => clue.id), true);
     assert.equal((await getDocFromServer(doc(clients[1].firestoreClient, answerPath))).data()?.hint, "Paris");
     await present("q1");
@@ -187,7 +171,7 @@ async function main() {
     for (const result of [race[0], race[2]]) if (result.status === "rejected") assert.equal(result.reason.status, 409);
     const raceBalance = (await db.doc(clueLedgerPath(roomId, "race-team", "race")).get()).data()?.remainingCoins ?? 5;
     assert.equal(raceBalance, 5 - successes * 4);
-    console.log("Verified clue HTTP purchases, last-coin spending, concurrent transactions, team isolation, Firestore/Storage rules, private images, closure, and host reveals.");
+    console.log("Verified clue HTTP purchases, last-coin spending, concurrent transactions, team isolation, Firestore/Storage rules, normal room media access, closure, and host reveals.");
   } finally {
     if (server && server.exitCode === null) { const stopped = new Promise<void>((resolve) => server!.once("exit", () => resolve())); server.kill("SIGTERM"); await stopped; }
     await Promise.all(clients.map(async (client) => { await terminate(client.firestoreClient); await deleteClient(client.app); }));
