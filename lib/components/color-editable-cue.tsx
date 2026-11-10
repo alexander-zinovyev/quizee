@@ -28,7 +28,7 @@ function Cue({ artwork, rasterMask }: { artwork: ColorArtwork; rasterMask?: RefO
   const [ready, setReady] = useState(artwork.kind === "svg");
   const id = `editable-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const viewBox = artwork.kind === "svg" ? artwork.root.attributes.viewBox : `0 0 ${artwork.image.width} ${artwork.image.height}`;
-  const [x, y, width, height] = viewBox.split(/[\s,]+/).map(Number);
+  const [x, y, width, height] = viewBox.trim().split(/[\s,]+/).map(Number);
   return <svg aria-hidden="true" className="color-editable-cue" viewBox={viewBox}
     preserveAspectRatio={artwork.kind === "svg" ? artwork.root.attributes.preserveAspectRatio : undefined}>
     <defs>

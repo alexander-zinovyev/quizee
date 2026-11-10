@@ -80,6 +80,7 @@ async function mountColor(page: Page, format: "raster" | "svg") {
     maskBytes.fill(128, pixel, pixel + 4);
   }
   const mask = await sharp(maskBytes, { raw: { width: 160, height: 64, channels: 4 } }).png().toBuffer();
+  // Keep the SVG viewBox padded to cover cue dimensions for valid whitespace.
   await page.evaluate(({ image, mask }) => {
     const root = document.createElement("div"); root.id = "color-test"; root.className = "flex h-[420px] flex-col bg-zinc-950";
     document.body.replaceChildren(root);
@@ -152,7 +153,7 @@ async function mountColor(page: Page, format: "raster" | "svg") {
       } else setTeamLocked(body.teamId, body.locked);
       return new Response("{}", { status: 200 });
     };
-  }, { image: format === "svg" ? `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 64"><rect width="160" height="64" style="fill:#4285F4"/><rect id="left" x="16" width="48" height="64" fill="red" style="fill:#4285F4!important"/><rect id="right" x="88" width="72" height="64" style="fill:#4285F4"/></svg>')}` : `data:image/png;base64,${image.toString("base64")}`, mask: `data:image/png;base64,${mask.toString("base64")}` });
+  }, { image: format === "svg" ? `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox=" 0 0 160 64 "><rect width="160" height="64" style="fill:#4285F4"/><rect id="left" x="16" width="48" height="64" fill="red" style="fill:#4285F4!important"/><rect id="right" x="88" width="72" height="64" style="fill:#4285F4"/></svg>')}` : `data:image/png;base64,${image.toString("base64")}`, mask: `data:image/png;base64,${mask.toString("base64")}` });
   await page.addScriptTag({ content: await bundle(format) });
 }
 
