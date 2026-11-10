@@ -204,3 +204,37 @@ body {
     transition: none;
   }
 }
+
+.color-editable-cue {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.color-editable-cue-band {
+  transform-box: fill-box;
+  animation: color-editable-shimmer 1300ms linear both;
+}
+
+@keyframes color-editable-shimmer {
+  0% { transform: translateX(-100%); opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { transform: translateX(100%); opacity: 0; }
+}
+
+@keyframes color-editable-stationary {
+  0%, 60% { opacity: 0.7; }
+  100% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .color-editable-cue-band {
+    fill: white;
+    transform: none;
+    animation-name: color-editable-stationary;
+  }
+}

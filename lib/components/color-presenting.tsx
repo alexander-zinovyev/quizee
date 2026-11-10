@@ -147,8 +147,8 @@ export function ColorPresenting({ roomSlug, round, question, teamId, isHost, tea
     {showSubmissions ? <ColorSubmissions artwork={artwork.artwork}
       ownSubmission={{ id: teamId ?? "", name: teams.find((team) => team.id === teamId)?.name ?? "Your team", color: saved ?? initial }}
       opponents={otherTeams.map((team) => ({ ...team, color: submissions?.colors?.[team.id] }))} targetColor={reveal ? target : null} /> : canEdit ? (
-      <div className="relative flex min-h-0 items-center justify-center"><ColorImage artwork={artwork.artwork} color={color} className="block h-full w-full object-contain" />{teamId ? <ColorImageIndicator version="team" /> : null}</div>
-    ) : <div className="relative min-h-0"><ColorImage artwork={artwork.artwork} color={color} className="block h-full w-full object-contain" />{teamId ? <ColorImageIndicator version="team" /> : null}</div>}
+      <div className="relative flex min-h-0 items-center justify-center"><ColorImage artwork={artwork.artwork} color={color} highlightEditable={round.state === "active" && !withAnswer} className="block h-full w-full object-contain" />{teamId ? <ColorImageIndicator version="team" /> : null}</div>
+    ) : <div className="relative min-h-0"><ColorImage artwork={artwork.artwork} color={color} highlightEditable={round.state === "active" && !withAnswer} className="block h-full w-full object-contain" />{teamId ? <ColorImageIndicator version="team" /> : null}</div>}
     {canEdit ? <div className="w-full max-w-[472px] justify-self-center">
       {saveError ? <p role="alert" className="mb-2 text-sm text-red-300">{saveError}</p> : null}
       <div className="flex min-w-0 items-center gap-3">
