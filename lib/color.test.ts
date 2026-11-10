@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { hexToHsv, hsvToHex, recolorPixels } from "./color";
+import { colorMaskWeight, hexToHsv, hsvToHex, recolorPixels } from "./color";
 
 for (const hex of ["#FFFFFF", "#000000", "#4285F4", "#FF0000", "#00FF00", "#0000FF", "#123ABC"]) assert.equal(hsvToHex(hexToHsv(hex)), hex);
 assert.equal(hsvToHex({ h: 360, s: 100, v: 100 }), "#FF0000");
@@ -12,3 +12,8 @@ assert.deepEqual([...result.slice(4, 8)], [255, 0, 0, 128]);
 assert.deepEqual([...result.slice(8)], [133, 10, 15, 255]);
 assert.equal(image[4], 10);
 assert.throws(() => recolorPixels(image, mask.slice(4), "#FF0000"));
+
+assert.equal(colorMaskWeight(new Uint8ClampedArray([0, 0, 0, 255]), 0), 0);
+assert.equal(colorMaskWeight(new Uint8ClampedArray([255, 255, 255, 255]), 0), 1);
+assert.equal(colorMaskWeight(new Uint8ClampedArray([128, 128, 128, 128]), 0), (128 / 255) ** 2);
+assert.equal(colorMaskWeight(new Uint8ClampedArray([255, 255, 255, 0]), 0), 0);

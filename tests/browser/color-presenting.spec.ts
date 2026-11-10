@@ -1,4 +1,4 @@
-import { test, expect, type Locator } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import { build } from "esbuild";
 import sharp from "sharp";
 
@@ -65,8 +65,7 @@ async function bundle(format: "raster" | "svg") {
   return result.outputFiles[0].text;
 }
 
-for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]) test(`live ${format} player, host and reveal at ${width}px`, async ({ page }, testInfo) => {
-  await page.setViewportSize({ width, height: 900 });
+async function mountColor(page: Page, format: "raster" | "svg") {
   await page.goto("/build");
   await expect(page.getByRole("button", { name: "Add round", exact: true })).toBeVisible();
   const stylesheets = await page.locator('link[rel="stylesheet"]').evaluateAll((links) => links.map((link) => (link as HTMLLinkElement).href));
@@ -74,7 +73,12 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
   await page.goto("/__color-fixture");
   const image = await sharp({ create: { width: 160, height: 64, channels: 4, background: "#4285F4" } }).png().toBuffer();
   const maskBytes = Buffer.alloc(160 * 64 * 4, 255);
-  for (let y = 0; y < 64; y++) for (let x = 0; x < 16; x++) maskBytes.fill(0, (y * 160 + x) * 4, (y * 160 + x) * 4 + 3);
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 160; x++) if (x < 16 || x >= 64 && x < 88) maskBytes.fill(0, (y * 160 + x) * 4, (y * 160 + x) * 4 + 3);
+  // A partially weighted strip verifies that the cue follows grayscale and mask alpha.
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 160; x++) if (x >= 32 && x < 48 || x >= 112 && x < 128) {
+    const pixel = (y * 160 + x) * 4;
+    maskBytes.fill(128, pixel, pixel + 4);
+  }
   const mask = await sharp(maskBytes, { raw: { width: 160, height: 64, channels: 4 } }).png().toBuffer();
   await page.evaluate(({ image, mask }) => {
     const root = document.createElement("div"); root.id = "color-test"; root.className = "flex h-[420px] flex-col bg-zinc-950";
@@ -148,8 +152,13 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
       } else setTeamLocked(body.teamId, body.locked);
       return new Response("{}", { status: 200 });
     };
-  }, { image: format === "svg" ? `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 64"><rect width="160" height="64" style="fill:#4285F4"/><rect id="left" x="16" width="64" height="64" fill="red" style="fill:#4285F4!important"/><rect id="right" x="80" width="80" height="64" style="fill:#4285F4"/></svg>')}` : `data:image/png;base64,${image.toString("base64")}`, mask: `data:image/png;base64,${mask.toString("base64")}` });
+  }, { image: format === "svg" ? `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 64"><rect width="160" height="64" style="fill:#4285F4"/><rect id="left" x="16" width="48" height="64" fill="red" style="fill:#4285F4!important"/><rect id="right" x="88" width="72" height="64" style="fill:#4285F4"/></svg>')}` : `data:image/png;base64,${image.toString("base64")}`, mask: `data:image/png;base64,${mask.toString("base64")}` });
   await page.addScriptTag({ content: await bundle(format) });
+}
+
+for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]) test(`live ${format} player, host and reveal at ${width}px`, async ({ page }, testInfo) => {
+  await page.setViewportSize({ width, height: 900 });
+  await mountColor(page, format);
   const assetReads = format === "svg" ? ["image"] : ["image", "mask"];
   const pixel = (label: string, x = 120, container?: Locator) => (container ?? page).getByRole("img", { name: label, exact: true }).evaluate(async (element, x) => {
     if (element instanceof HTMLCanvasElement) return [...element.getContext("2d")!.getImageData(x, 32, 1, 1).data];
@@ -594,4 +603,95 @@ for (const format of ["raster", "svg"] as const) for (const width of [1440, 390]
   await expect(primary.getByText("No other teams", { exact: true })).toBeVisible();
   await expect(primary.getByRole("button", { name: "Next opponent" })).toHaveCount(0);
   await expectImagesFitPanel();
+});
+
+for (const format of ["raster", "svg"] as const) for (const reducedMotion of [false, true]) test(`editable-area cue for ${format}, reduced motion ${reducedMotion}`, async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 800, height: 900 });
+  await page.emulateMedia({ reducedMotion: reducedMotion ? "reduce" : "no-preference" });
+  await mountColor(page, format);
+  const cue = page.locator(".color-editable-cue");
+  const band = cue.locator(".color-editable-cue-band");
+  await expect(cue).toHaveCount(1);
+  await expect(cue).toHaveAttribute("aria-hidden", "true");
+  await expect(cue).toHaveCSS("pointer-events", "none");
+  await expect(band).toHaveCSS("animation-play-state", "running");
+  await expect(page.getByRole("slider", { name: "Hue", exact: true })).toBeEnabled();
+  expect(await page.evaluate(() => (window as unknown as Harness).colorWrites)).toEqual([]);
+  expect(await page.evaluate(() => (window as unknown as Harness).colorReads.some((path) => path === "rooms/demo/rounds/r1/answers/q1"))).toBe(false);
+
+  // Pause at known progress to inspect real composited pixels without timing sleeps.
+  await band.evaluate((element) => {
+    const animation = element.getAnimations()[0];
+    animation.pause();
+    animation.currentTime = 650;
+    (window as unknown as { cueAnimation: Animation }).cueAnimation = animation;
+  });
+  const pixels = async (time: number, y = 32) => {
+    await band.evaluate((element, time) => { element.getAnimations()[0].currentTime = time; }, time);
+    const image = page.getByRole("img", { name: "Color question", exact: true });
+    const bounds = (await image.boundingBox())!;
+    const imageWidth = Math.min(bounds.width, bounds.height * 160 / 64);
+    const screenshot = await image.locator("..").screenshot({ animations: "allow" });
+    return Promise.all([8, 40, 76, 120].map(async (x) => [...await sharp(screenshot).extract({
+      left: Math.floor((bounds.width - imageWidth) / 2 + x / 160 * imageWidth), top: Math.floor((bounds.height - imageWidth * 64 / 160) / 2 + y / 160 * imageWidth), width: 1, height: 1,
+    }).removeAlpha().raw().toBuffer()]));
+  };
+  const base = await pixels(1300);
+  expect(base).toEqual([[66, 133, 244], [131, 197, 71], [66, 133, 244], [131, 197, 71]]);
+  if (reducedMotion) {
+    const during = await pixels(650);
+    expect(during[0]).toEqual(base[0]);
+    expect(during[2]).toEqual(base[2]);
+    expect(during[1][0]).toBeGreaterThan(base[1][0] + 50);
+    expect(during[3][0]).toBeGreaterThan(base[3][0] + 50);
+    await expect(band).toHaveCSS("transform", "none");
+  } else {
+    for (const [time, index] of [[487.5, 1], [812.5, 3]]) {
+      const during = await pixels(time);
+      expect(during[index][0]).toBeGreaterThan(base[index][0] + 50);
+      expect(during[0]).toEqual(base[0]);
+      expect(during[2]).toEqual(base[2]);
+    }
+  }
+  if (format === "raster") {
+    const partialBase = await pixels(1300, 8);
+    const partialCue = await pixels(reducedMotion ? 650 : 487.5, 8);
+    const fullCue = await pixels(reducedMotion ? 650 : 487.5);
+    const partialDelta = partialCue[1][0] - partialBase[1][0];
+    const fullDelta = fullCue[1][0] - base[1][0];
+    expect(partialDelta).toBeGreaterThan(10);
+    expect(partialDelta).toBeLessThan(fullDelta / 2);
+  }
+  await page.screenshot({ path: testInfo.outputPath("editable-cue.png") });
+  const assertSameAnimation = () => expect.poll(() => band.evaluate((element) => element.getAnimations()[0] === (window as unknown as { cueAnimation: Animation }).cueAnimation)).toBe(true);
+  await page.getByRole("slider", { name: "Hue", exact: true }).press("Home");
+  await assertSameAnimation();
+  await page.evaluate(() => (window as unknown as Harness).setTeamColor("red", "#00FF00"));
+  await assertSameAnimation();
+  await page.getByRole("button", { name: "Lock answer", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Unlock answer", exact: true })).toBeEnabled();
+  await assertSameAnimation();
+  await band.evaluate((element) => element.getAnimations()[0].finish());
+  await expect(band).toHaveCSS("opacity", "0");
+  await page.evaluate(() => (window as unknown as Harness).setTeamColor("red", "#FF0000"));
+  await assertSameAnimation();
+  await expect(band).toHaveCSS("opacity", "0");
+  expect((await pixels(1300))[3]).toEqual([255, 0, 0]);
+
+  for (const questionId of ["q2", "q1"]) {
+    await page.evaluate((id) => (window as unknown as Harness).renderColor(false, "active", false, id), questionId);
+    await expect.poll(() => band.evaluate((element) => element.getAnimations()[0] !== (window as unknown as { cueAnimation: Animation }).cueAnimation)).toBe(true);
+    await band.evaluate((element) => {
+      const animation = element.getAnimations()[0];
+      animation.pause();
+      animation.currentTime = 650;
+      (window as unknown as { cueAnimation: Animation }).cueAnimation = animation;
+    });
+    await expect(band).not.toHaveCSS("opacity", "0");
+  }
+  await page.evaluate(() => (window as unknown as Harness).renderColor(false, "closed", true));
+  await expect(cue).toHaveCount(0);
+  await expect(page.getByRole("img", { name: "Correct answer", exact: true })).toHaveCount(1);
+  await page.evaluate(() => (window as unknown as Harness).renderColor(true, "active"));
+  await expect(cue).toHaveCount(0);
 });

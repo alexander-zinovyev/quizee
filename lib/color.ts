@@ -25,12 +25,16 @@ export function hsvToHex({ h, s, v }: HSV): string {
   return "#" + channels.map((channel) => Math.round((channel + m) * 255).toString(16).padStart(2, "0")).join("").toUpperCase();
 }
 
+export function colorMaskWeight(mask: Uint8ClampedArray, pixel: number): number {
+  return (mask[pixel] + mask[pixel + 1] + mask[pixel + 2]) / (3 * 255) * mask[pixel + 3] / 255;
+}
+
 export function recolorPixels(image: Uint8ClampedArray, mask: Uint8ClampedArray, hex: string): Uint8ClampedArray<ArrayBuffer> {
   if (image.length !== mask.length || image.length % 4) throw new Error("Image and mask dimensions must match.");
   const rgb = hexToRgb(hex);
   const output = new Uint8ClampedArray(image);
   for (let pixel = 0; pixel < image.length; pixel += 4) {
-    const weight = (mask[pixel] + mask[pixel + 1] + mask[pixel + 2]) / (3 * 255) * mask[pixel + 3] / 255;
+    const weight = colorMaskWeight(mask, pixel);
     for (let channel = 0; channel < 3; channel++) output[pixel + channel] = image[pixel + channel] * (1 - weight) + rgb[channel] * weight;
   }
   return output;
