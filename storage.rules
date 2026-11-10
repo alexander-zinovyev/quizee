@@ -5,14 +5,10 @@ service firebase.storage {
     match /uploads/{uid}/{sessionId}/{path=**} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
-    // Ordinary presentation media retains room-member access.
+    // All quiz media, including paid clues, uses room-member access.
     match /rooms/{roomId}/media/{path=**} {
       allow read: if request.auth != null && firestore.exists(/databases/(default)/documents/rooms/$(roomId)/members/$(request.auth.uid));
       allow write: if false;
-    }
-    // Private paid-clue media are served exclusively by the authenticated clue API.
-    match /rooms/{roomId}/clue-media/{path=**} {
-      allow read, write: if false;
     }
   }
 }

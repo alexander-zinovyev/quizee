@@ -36,7 +36,9 @@ The host sees every clue while presenting a question, including during the activ
 
 Question documents contain the public general-clue stage and only the IDs, categories, and prices of paid clues. Complete definitions live in question subcollections readable by the host. Room members can read individual definitions only while those clues are publicly revealed on the currently presented question in a closed round; they cannot list definitions. Server-owned balances and purchased content live at `rooms/{room}/cluePurchases/{team}/rounds/{round}`, outside the writable team-round namespace. Teams can read their own purchase records; clients, including the host, cannot write them directly.
 
-The UI subscribes directly to Firestore for balances and purchased content, host definitions, and individual publicly revealed clues. Purchases use an authenticated server transaction; no content refresh endpoint is needed. Paid-clue media uses the private `rooms/{room}/clue-media/` Storage namespace. Assets are served through a targeted server authorization check for the host, purchasing team, or current public reveal with `Cache-Control: no-store`; clients cannot access that Storage namespace directly. Private media is saved without inherited Firebase download tokens. Buckets must not grant public object access through Google Cloud IAM or ACLs.
+The UI subscribes directly to Firestore for balances and purchased content, host definitions, and individual publicly revealed clues. Purchases use an authenticated server transaction; no content refresh endpoint is needed. All clue media uses the ordinary `rooms/{room}/media/` Storage path, uploader, and Firebase download flow. Room members can fetch an asset directly if they know its path, even without buying its clue. The UI still shows clue content only after purchase or host reveal. Clients cannot upload or overwrite room media.
+
+Deploy the complete repository rules files. The `cluePurchases` match belongs directly under `/rooms/{roomId}`, alongside `teams`, rather than inside `teams`. The public-reveal match belongs under `/rounds/{roundId}/questions/{questionId}/clues/{clueId}`. Incorrect nesting denies player reads even for text-only clues. Existing rooms in the stage-based format need no Firestore migration. Previously uploaded assets in the retired private clue namespace are not moved automatically; re-provision those packs to use the ordinary media path.
 
 Deploy both `firestore.rules` and `storage.rules` before enabling clues in production:
 
@@ -44,7 +46,7 @@ Deploy both `firestore.rules` and `storage.rules` before enabling clues in produ
 firebase deploy --only firestore:rules,storage
 ```
 
-Storage rules permit owners to stage pack uploads and room members to read ordinary presentation media. Storage membership checks use the default Firestore database and require the Firebase Storage rules service to have access to it. CI exercises these rules with local emulators; it does not deploy rules or validate production bucket IAM.
+Storage rules permit owners to stage pack uploads and room members to read ordinary presentation media. Storage membership checks use the default Firestore database and require the Firebase Storage rules service to have access to it. CI exercises these rules with local emulators; it does not deploy rules.
 
 Run the purchase/privacy integration tests against a built app:
 

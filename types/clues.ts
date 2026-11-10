@@ -5,7 +5,8 @@ export type Clue = { id: string; category: string; price: number; content: QuizS
 export type CluesQuestion = { generalClue: QuizStage; answer: QuizAnswer; clues: Clue[] };
 export type CluesPackRound = { type: "clues"; title: string; startingCoins: number; questions: CluesQuestion[] };
 export type ClueMetadata = Pick<Clue, "id" | "category" | "price">;
-export type VisibleClue = ClueMetadata & { content?: { text?: string; media?: { filename: string } }; purchased: boolean };
+export type StoredClueStage = { text?: string | null; media?: { storagePath: string; filename: string; contentType?: string | null } | null };
+export type VisibleClue = ClueMetadata & { content?: { text?: string; media?: { filename: string; storagePath: string } }; purchased: boolean };
 export type CluesView = { teamId: string | null; remainingCoins: number; clues: VisibleClue[] };
 export const CLUE_ID = /^(?!__.*__$)[A-Za-z0-9_-]{1,128}$/;
 export function cluesStages(round: CluesPackRound): QuizStage[] {
@@ -31,10 +32,10 @@ export function remainingCoins(raw: unknown, startingCoins: number): number {
 
 export function parseClueContent(raw: unknown): NonNullable<VisibleClue["content"]> {
   if (!raw || typeof raw !== "object") throw new Error("Missing clue definition stage.");
-  const { text, media } = raw as { text?: unknown; media?: { filename?: unknown } | null };
-  if ((text != null && typeof text !== "string") || (media != null && (typeof media !== "object" || typeof media.filename !== "string" || !media.filename))) throw new Error("Invalid clue definition stage.");
+  const { text, media } = raw as { text?: unknown; media?: { filename?: unknown; storagePath?: unknown } | null };
+  if ((text != null && typeof text !== "string") || (media != null && (typeof media !== "object" || typeof media.filename !== "string" || !media.filename || typeof media.storagePath !== "string" || !media.storagePath))) throw new Error("Invalid clue definition stage.");
   if (!text && !media) throw new Error("Missing clue definition stage.");
-  return { ...(text ? { text: text as string } : {}), ...(media ? { media: { filename: media.filename as string } } : {}) };
+  return { ...(text ? { text: text as string } : {}), ...(media ? { media: { filename: media.filename as string, storagePath: media.storagePath as string } } : {}) };
 }
 
 export function parseCluesRound(raw: unknown): CluesPackRound {

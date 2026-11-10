@@ -10,7 +10,6 @@ import { parseRoundMeta } from "@/lib/hooks/use-room-rounds";
 import { parsePresentation, samePresentation } from "./presentation";
 import { parseCluePurchase } from "./clues";
 import { writeCluesRound } from "./clues-manifest";
-import { clueMediaType } from "./clue-media";
 import type { WriteBatch } from "firebase-admin/firestore";
 import { database } from "./test-database";
 
@@ -46,9 +45,7 @@ for (const media of ["a.png", "a.gif", "a.svg", "a.mp3", "a.wav", "a.ogg", "a.m4
   const mediaOnly = { generalClue: { media }, answer: { hint: "Answer", stages: [{ media }] }, clues: [{ ...question.clues[0], content: { media } }] };
   assert.deepEqual(parseCluesRound({ ...round, questions: [mediaOnly] }).questions, [mediaOnly]);
   assert.deepEqual(validateAgainstQuizSchema([{ ...round, questions: [mediaOnly] }], schema), []);
-  assert.ok(clueMediaType(media));
 }
-assert.throws(() => clueMediaType("script.js"));
 assert.throws(() => parseQuizStage({ media: "/absolute.wav" }));
 assert.equal(getAwardShortcut({}, { type: "clues" }), 1);
 assert.equal(getIncorrectAwardShortcut({}, { type: "clues" }), 0);
@@ -68,20 +65,19 @@ async function manifest() {
   const { db } = database("text");
   const documents = new Map<string, Record<string, unknown>>();
   const batch = { set: (ref: { path: string }, data: Record<string, unknown>) => { documents.set(ref.path, data); } } as unknown as WriteBatch;
-  const publicMedia: string[] = [], privateMedia: string[] = [];
-  const resolve = (paths: string[], namespace: string) => async (stage: import("@/types/quiz-stage").QuizStage) => {
-    if (stage.media) paths.push(stage.media);
-    return { text: stage.text ?? null, media: stage.media ? { storagePath: `rooms/demo/${namespace}/${stage.media}`, filename: stage.media } : null };
+  const resolvedMedia: string[] = [];
+  const resolve = async (stage: import("@/types/quiz-stage").QuizStage) => {
+    if (stage.media) resolvedMedia.push(stage.media);
+    return { text: stage.text ?? null, media: stage.media ? { storagePath: `rooms/demo/media/${stage.media}`, filename: stage.media } : null };
   };
-  await writeCluesRound(batch, db.collection("rooms").doc("demo").collection("rounds").doc("r1"), parseCluesRound(round), resolve(publicMedia, "media"), resolve(privateMedia, "clue-media"));
+  await writeCluesRound(batch, db.collection("rooms").doc("demo").collection("rounds").doc("r1"), parseCluesRound(round), resolve);
   const stored = documents.get("rooms/demo/rounds/r1/questions/question-1")!;
   assert.deepEqual(stored.clues, question.clues.map(({ id, category, price }) => ({ id, category, price })));
   assert.ok(!JSON.stringify(stored).includes("clue.mp3"));
   assert.ok(!JSON.stringify(stored).includes("Paris"));
-  assert.deepEqual(publicMedia, ["intro.aac", "answer.webm"]);
-  assert.deepEqual(privateMedia, ["paris.png", "clue.mp3"]);
+  assert.deepEqual(resolvedMedia, ["intro.aac", "answer.webm", "paris.png", "clue.mp3"]);
   const definition = documents.get("rooms/demo/rounds/r1/questions/question-1/clues/music")!;
-  assert.deepEqual(definition.content, { text: "Listen", media: { storagePath: "rooms/demo/clue-media/clue.mp3", filename: "clue.mp3" } });
+  assert.deepEqual(definition.content, { text: "Listen", media: { storagePath: "rooms/demo/media/clue.mp3", filename: "clue.mp3" } });
   assert.deepEqual(documents.get("rooms/demo/rounds/r1/answers/question-1"), { hint: "Paris", stages: [{ text: "City on the Seine", media: { storagePath: "rooms/demo/media/answer.webm", filename: "answer.webm" } }] });
 }
 void manifest().catch((error) => { console.error(error); process.exitCode = 1; });

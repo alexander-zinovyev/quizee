@@ -1,7 +1,6 @@
 import type { Firestore } from "firebase-admin/firestore";
-import { CLUE_ID, clueKey, positiveCoins, type ClueMetadata, remainingCoins, parseClueContent } from "@/types/clues";
+import { CLUE_ID, clueKey, positiveCoins, type ClueMetadata, remainingCoins } from "@/types/clues";
 import { RoomOperationError } from "./operation-error";
-import type { StoredClueStage } from "./clue-media";
 import { parsePresentation } from "./presentation";
 
 export function clueLedgerPath(roomId: string, teamId: string, roundId: string) {
@@ -51,38 +50,5 @@ export async function purchaseClue(db: Firestore, roomId: string, roundId: strin
     tx.set(ledgerRef, { remainingCoins: next });
     tx.set(openedRef, { questionId, clueId, content: clue.data()!.content });
     return { remainingCoins: next };
-  });
-}
-
-/** Authorize just the requested asset; content and balances stream directly from Firestore. */
-export async function readClueMedia(db: Firestore, roomId: string, roundId: string, questionId: string, clueId: string, uid: string): Promise<string> {
-  const roomRef = db.collection("rooms").doc(roomId);
-  return db.runTransaction(async (tx) => {
-    const room = await tx.get(roomRef);
-    const member = await tx.get(roomRef.collection("members").doc(uid));
-    if (!room.exists) throw new RoomOperationError("Room not found.", 404);
-    if (!member.exists) throw new RoomOperationError("Join the room before reading clues.", 403);
-    const host = member.data()?.role === "host";
-    const teamId = member.data()?.team;
-    const roundRef = roomRef.collection("rounds").doc(roundId);
-    const round = await tx.get(roundRef);
-    const questionRef = roundRef.collection("questions").doc(questionId);
-    const question = await tx.get(questionRef);
-    if (!round.exists || !question.exists || round.data()?.type !== "clues") throw new RoomOperationError("Clues question not found.", 404);
-    if (!(question.data()!.clues as ClueMetadata[]).some((clue) => clue.id === clueId)) throw new RoomOperationError("Clue media is unavailable.", 403);
-    if (!host && round.data()?.state === "scheduled") throw new RoomOperationError("Round has not started.", 403);
-    const presentation = parsePresentation(room.data()?.presenting);
-    const shown = round.data()?.state === "closed" && presentation.round === roundId && presentation.question === questionId &&
-      presentation.revealedClueIds?.includes(clueId);
-    const opened = !host && teamId ? await tx.get(db.doc(clueLedgerPath(roomId, teamId, roundId)).collection("openedClues").doc(clueKey(questionId, clueId))) : null;
-    if (!host && !opened?.exists && !shown) throw new RoomOperationError("Clue media is unavailable.", 403);
-    // Purchased content is the immutable copy unlocked by the purchase transaction.
-    const definition = opened?.exists ? opened : await tx.get(questionRef.collection("clues").doc(clueId));
-    const content = definition.data()?.content as StoredClueStage | undefined;
-    parseClueContent(content);
-    const media = content?.media;
-    if (!media) throw new RoomOperationError("Clue media is unavailable.", 403);
-    if (typeof media.storagePath !== "string" || !media.storagePath.startsWith(`rooms/${roomId}/clue-media/`) || !media.filename) throw new Error("Invalid private clue media.");
-    return media.storagePath;
   });
 }

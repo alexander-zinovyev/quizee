@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-import { clueMediaType, type StoredClueStage } from "@/server/rooms/clue-media";
 import type { QuizStage } from "@/types/quiz-stage";
 import { writeCluesRound } from "@/server/rooms/clues-manifest";
 import { cookies } from "next/headers";
@@ -326,22 +324,6 @@ async function createRoom(request: NextRequest) {
       })
     );
 
-  const privateMedia = new Map<string, NonNullable<StoredClueStage["media"]>>();
-  const resolvePrivateStage = async (stage: QuizStage): Promise<StoredClueStage> => {
-    if (!stage.media) return { text: stage.text ?? null, media: null };
-    let media = privateMedia.get(stage.media);
-    if (!media) {
-      const source = mediaFiles.get(stage.media)!;
-      const [bytes] = await bucket.file(source.uploadPath).download();
-      const extension = posix.extname(stage.media);
-      const storagePath = `rooms/${roomId}/clue-media/${randomUUID()}${extension}`;
-      const contentType = clueMediaType(stage.media);
-      await bucket.file(storagePath).save(bytes, { metadata: { contentType, cacheControl: "no-store", metadata: {} } });
-      media = { storagePath, contentType, filename: source.filename };
-      privateMedia.set(stage.media, media);
-    }
-    return { text: stage.text ?? null, media };
-  };
   const resolvePackStage = async (stage: QuizStage) => {
     const [resolved] = await resolveStages([{ text: stage.text, ...(stage.media ? { media: { path: stage.media } } : {}) }]);
     return resolved;
@@ -380,7 +362,7 @@ async function createRoom(request: NextRequest) {
     batch.set(roundRef, createRoundDocumentData(round));
 
     if (round.type === "clues") {
-      await writeCluesRound(batch, roundRef, round, resolvePackStage, resolvePrivateStage);
+      await writeCluesRound(batch, roundRef, round, resolvePackStage);
     } else if (round.type === "sorting") {
       for (const question of round.questions) {
         const [stage] = await resolveStages([question]);
