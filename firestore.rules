@@ -130,12 +130,9 @@ service cloud.firestore {
           allow read: if isMember(roomId) && roundDoc().data.state != "scheduled";
 
           match /clues/{clueId} {
-            // Individual revealed documents only. Listing would expose hidden clues.
+            // After closure, members may read any individual clue; the host controls UI visibility.
             allow get: if isMember(roomId) && roundDoc().data.type == "clues"
-              && roundDoc().data.state == "closed"
-              && roomDoc(roomId).data.presenting.round == roundId
-              && roomDoc(roomId).data.presenting.question == questionId
-              && clueId in roomDoc(roomId).data.presenting.revealedClueIds;
+              && roundDoc().data.state == "closed";
           }
         }
 

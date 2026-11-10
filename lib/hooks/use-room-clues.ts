@@ -15,8 +15,8 @@ export function useRoomClues({ roomId, roundId, questionId, teamId, isHost, star
 }): { view: CluesView | null; error: string | null; key: string } {
   const key = JSON.stringify([roomId, roundId, questionId, teamId ?? null, isHost]);
   const [data, setData] = useState<ClueData | null>(null);
-  const [failure, setFailure] = useState<{ key: string; message: string; revealKey?: string } | null>(null);
-  const [publicData, setPublicData] = useState<{ key: string; revealKey: string; contents: Record<string, Content> } | null>(null);
+  const [failure, setFailure] = useState<{ key: string; message: string } | null>(null);
+  const [publicData, setPublicData] = useState<{ key: string; revealKey: string; contents: Record<string, Content>; errors: Record<string, string> } | null>(null);
   const revealKey = JSON.stringify(revealedClueIds);
 
   useEffect(() => {
@@ -49,26 +49,34 @@ export function useRoomClues({ roomId, roundId, questionId, teamId, isHost, star
     if (isHost) return;
     let active = true;
     const contents: Record<string, Content> = {};
+    const errors: Record<string, string> = {};
     const ids: string[] = JSON.parse(revealKey);
-    // Rules authorize individual documents against the current presentation, not a collection query.
+    const publish = () => setPublicData({ key, revealKey, contents: { ...contents }, errors: { ...errors } });
+    // Each listener attempt owns its errors, so a new successful subscription clears old failures.
+    // Read only the clues the host currently shows, even though all closed-round clues are readable.
     const stop = ids.map((id) => onSnapshot(doc(getClientFirestore(), "rooms", roomId, "rounds", roundId, "questions", questionId, "clues", id), (snapshot) => {
       if (!active) return;
       try {
         contents[id] = parseClueContent(snapshot.data()?.content);
-        setPublicData({ key, revealKey, contents: { ...contents } });
-      } catch (error) { setFailure({ key, revealKey, message: error instanceof Error ? error.message : "Unable to read revealed clue." }); }
+        delete errors[id];
+      } catch (error) {
+        delete contents[id];
+        errors[id] = error instanceof Error ? error.message : "Unable to read revealed clue.";
+      }
+      publish();
     }, (error) => {
       if (active) {
         delete contents[id];
-        setPublicData({ key, revealKey, contents: { ...contents } });
-        setFailure({ key, revealKey, message: error.message });
+        errors[id] = error.message;
+        publish();
       }
     }));
     return () => { active = false; stop.forEach((unsubscribe) => unsubscribe()); };
   }, [key, roomId, roundId, questionId, isHost, revealKey]);
 
   const ready = data?.key === key && data.balanceReady && data.contentReady;
-  return { key, error: failure?.key === key && (failure.revealKey === undefined || failure.revealKey === revealKey) ? failure.message : null, view: ready ? {
+  const publicError = publicData?.key === key && publicData.revealKey === revealKey ? Object.values(publicData.errors)[0] ?? null : null;
+  return { key, error: failure?.key === key ? failure.message : publicError, view: ready ? {
     teamId: isHost ? null : teamId ?? null, remainingCoins: data.balance,
     clues: metadata.map((clue) => {
       const storedContent = Object.hasOwn(data.contents, clue.id) ? data.contents[clue.id] : undefined;

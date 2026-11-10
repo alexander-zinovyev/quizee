@@ -124,29 +124,34 @@ async function main() {
     await transitionPresentation(db, roomId, users[0].uid, current, closed, { closeRound: "r1" }); current = closed;
     assert.equal((await buy("q2", "two")).status, 409);
     assert.equal((await buy("q1", "two")).status, 200, "Acknowledging an existing purchase after closure is free");
+    // Closed-round definition access is independent of presentation and purchase state.
+    for (const question of ["q1", "q2"]) {
+      assert.equal((await definition(question, "two", 3)).data()?.content.text, `secret-${question}-two`);
+      assert.equal((await definition(question, "three", 3)).data()?.content.text, `secret-${question}-three`);
+    }
     await present("q2");
     await denied(getDocFromServer(doc(clients[1].firestoreClient, answerPath)));
     await present("q2", ["two"]);
     assert.equal((await definition("q2", "two", 3)).data()?.content.text, "secret-q2-two");
-    await denied(definition("q2", "three"));
-    await denied(definition("q1", "two", 3));
+    assert.equal((await definition("q2", "three")).data()?.content.text, "secret-q2-three");
+    assert.equal((await definition("q1", "two", 3)).data()?.content.text, "secret-q1-two");
     await denied(definition("q2", "two", 4));
     await denied(getDocsFromServer(collection(clients[3].firestoreClient, `${round.path}/questions/q2/clues`)));
     await denied(setDoc(doc(clients[3].firestoreClient, `${round.path}/questions/q2/clues/two`), { content: { text: "forged" } }));
     assert.equal(await ledger(), 0);
     await present("q2");
-    await denied(definition("q2", "two", 3));
+    assert.equal((await definition("q2", "two", 3)).data()?.content.text, "secret-q2-two");
     assert.equal((await opened("q2"))[0].content.text, "secret-q2-three", "Hiding preserves purchased clues");
     await assert.rejects(present("q2", ["unknown"]), /Unknown clue/);
     await present("q2", ["audio", "video"]);
     for (const id of ["audio", "video"]) assert.ok((await definition("q2", id, 3)).data()?.content.media.storagePath.startsWith(`rooms/${roomId}/media/`));
     await present("q2");
-    for (const id of ["audio", "video"]) await denied(definition("q2", id, 3));
+    for (const id of ["audio", "video"]) assert.ok((await definition("q2", id, 3)).data()?.content.media);
     await present("q2", clues.map((clue) => clue.id), true);
     assert.equal((await getDocFromServer(doc(clients[1].firestoreClient, answerPath))).data()?.hint, "Paris");
     await present("q1");
     await denied(getDocFromServer(doc(clients[1].firestoreClient, answerPath)));
-    await denied(definition("q2", "two", 3)); // Navigation resets public reveals.
+    assert.equal((await definition("q2", "two", 3)).data()?.content.text, "secret-q2-two"); // Navigation resets the UI reveal, while closed-round definitions remain readable.
     for (const team of ["red", "blue"]) assert.equal((await round.collection("teamAnswers").doc(team).collection("answers").doc("q2").get()).data()?.answer, "Paris");
     // Navigation can overlap purchases on different questions; the round budget stays shared.
     const raceRound = room.collection("rounds").doc("race");
