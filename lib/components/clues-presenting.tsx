@@ -52,6 +52,7 @@ export function CluesQuestionView({ generalClue, startingCoins, view, mediaUrls 
         {view.clues.map((clue) => {
           const visible = clue.content !== undefined && (isHost || clue.purchased || (closed && revealedClueIds.includes(clue.id)));
           const shown = revealedClueIds.includes(clue.id);
+          const mediaUrl = Object.hasOwn(mediaUrls, clue.id) ? mediaUrls[clue.id] : undefined;
           return <article key={clue.id} aria-label={`${clue.category} clue`} className={`overflow-hidden rounded-lg border ${visible ? "border-emerald-400 bg-emerald-900/50" : "border-zinc-700 bg-zinc-900"}`}>
             <header className="flex flex-wrap items-center gap-2 border-b border-white/10 px-3 py-2">
               <h4 className="min-w-0 font-semibold">{clue.category}</h4><span aria-hidden="true" className="h-5 w-px bg-white/15" /><Coins /><span>{clue.price}</span>
@@ -65,7 +66,7 @@ export function CluesQuestionView({ generalClue, startingCoins, view, mediaUrls 
                 : !closed && view.teamId ? <button type="button" disabled={pending} onClick={() => onPurchase(clue.id)} className="rounded-full border border-emerald-400 bg-emerald-400/20 px-3 py-0.5 text-sm font-semibold text-emerald-300 disabled:opacity-50">Open for {clue.price}</button> : null}
               </div>
             </header>
-            {visible && clue.content ? <div className="p-2 text-sm leading-relaxed"><StageContent stage={{ ...clue.content, loading: loadingMedia && !!clue.content.media && !mediaUrls[clue.id] }} mediaUrl={mediaUrls[clue.id]} mediaVolume={mediaVolume} /></div>
+            {visible && clue.content ? <div className="p-2 text-sm leading-relaxed"><StageContent stage={{ ...clue.content, loading: loadingMedia && !!clue.content.media && !mediaUrl }} mediaUrl={mediaUrl} mediaVolume={mediaVolume} /></div>
               : <p className="px-3 py-2 text-xs text-zinc-500">Clue hidden</p>}
           </article>;
         })}
