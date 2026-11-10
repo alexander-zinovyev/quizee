@@ -28,6 +28,8 @@ The host builds a quiz or loads a prepared quiz pack. Each round has a theme of 
 | **Clues** | Teams spend a shared round coin budget to open text or media clues. Correct answers earn one point regardless of spending. After closure, the host can show/hide all or individual clues. |
 | **Sorting** | Teams arrange text or media items according to a criterion, with one point for each correct position. The list can stay open alongside other rounds. |
 
+Revealed answer stages use a shared overlay above the presented question across text, multi-step, image, and clues rounds. The question stays mounted beneath it, and the answer remains visible while the question content scrolls.
+
 See [clues pack authoring and access rules](docs/clues-rounds.md) for coin budgets, purchases, host reveal controls, and required rules deployment.
 
 Sorting packs use the existing stage format for item text and media. See [sorting pack authoring](docs/sorting-rounds.md) for the JSON format.

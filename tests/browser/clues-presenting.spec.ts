@@ -18,7 +18,7 @@ const hidden: Fixture = { teamId: "red", remainingCoins: 5, clues: [{ ...hint, p
 const bought: Fixture = { teamId: "red", remainingCoins: 3, clues: [{ ...hint, purchased: true, content: { text: "A capital" } }] };
 
 
-async function setup(page: import("@playwright/test").Page, mode: "standard" | "live" | "media" | "playback" | "live-media" = "standard", mediaKind: "audio" | "video" = "audio") {
+async function setup(page: import("@playwright/test").Page, mode: "standard" | "live" | "media" | "playback" | "live-media" | "answer" | "shared-answer" = "standard", mediaKind: "audio" | "video" = "audio", roundType: "text" | "multi-step" | "image" = "text") {
   await page.goto("/build");
   const styles = await page.locator('link[rel="stylesheet"]').evaluateAll((links) => links.map((link) => (link as HTMLLinkElement).href));
   await page.route("**/__clues-view", (route) => route.fulfill({ contentType: "text/html", body: `<html><head>${styles.map((href) => `<link rel="stylesheet" href="${href}">`).join("")}</head><body><main></main></body></html>` }));
@@ -29,6 +29,7 @@ async function setup(page: import("@playwright/test").Page, mode: "standard" | "
   const bundle = await build({ stdin: { contents: `
     import React,{useState} from 'react';import {createRoot} from 'react-dom/client';
     import {CluesQuestionView,CluesPresenting} from './lib/components/clues-presenting';
+    import {RoundStage} from './lib/components/room/round-stage';
     function LiveHarness(){const [generation,setGeneration]=useState(0);return <><button onClick={()=>setGeneration(generation+1)}>Reconnect</button><CluesPresenting key={generation} roomSlug="demo" round={{id:'r1',title:'Clues',type:'clues',state:'active',order:0,startingCoins:5}} question={{clues:window.clueState.clues,id:'q1',prompt:'Name the place',displayPrompt:'Name the place',order:0}} teamId="red" isHost={false} revealedClueIds={[]} pending={false} onReveal={()=>{}}/></>;}
 
     function PlaybackHarness(){const [answer,setAnswer]=useState(null);return <>
@@ -37,6 +38,30 @@ async function setup(page: import("@playwright/test").Page, mode: "standard" | "
       <button onClick={()=>setAnswer(null)}>Hide answer</button>
       <CluesQuestionView generalClue={{text:'Name the place',media:{filename:'general.${mediaKind === "audio" ? "wav" : "webm"}',url:window.playbackSource}}}
         answer={answer} startingCoins={5} view={{teamId:'red',remainingCoins:5,clues:[]}} isHost={false} closed={true} revealedClueIds={[]} pending={false} onReveal={()=>{}} onPurchase={()=>{}}/>
+    </>;}
+    function SharedAnswerHarness(){const [shown,setShown]=useState(false);const kind={isAudio:false,isVideo:false,isImage:true};return <>
+      <button onClick={()=>setShown(true)}>Reveal answer</button><button onClick={()=>setShown(false)}>Hide answer</button>
+      <section aria-label="Question stage" style={{height:400,width:850,maxWidth:'100%',display:'flex',flexDirection:'column'}}>
+        <RoundStage presentingRoundMeta={{id:'r1',type:'${roundType}',title:'Round',state:'closed',order:0}} displayRoundMeta={null}
+          presenting={{round:'r1',question:'q1',withAnswer:shown}} presentingQuestion={{id:'q1',prompt:'Name the place',displayPrompt:'Name the place',order:0}}
+          presentingAnswer="Paris" presentingAnswerMediaUrl="/clues/coins.svg" presentingAnswerMedia={{storagePath:'rooms/demo/media/answer.svg',filename:'answer.svg'}}
+          presentingMedia={null} presentingMediaUrl={null} mediaKind={kind} answerMediaKind={kind} mediaVolume={0.2}
+          isAnswerMediaLoading={false} isMediaLoading={false} answerMediaError={null} mediaError={null}
+          gradingMatrix={[]} gradingTeamIndex={0} setGradingTeamIndex={()=>{}} gradeAnswer={()=>{}} finalizeScores={()=>{}}/>
+      </section>
+    </>;}
+    function AnswerHarness(){const [answer,setAnswer]=useState(null);return <>
+      <button onClick={()=>setAnswer({text:'Paris'})}>Reveal text answer</button>
+      <button onClick={()=>setAnswer({media:{filename:'answer.svg',url:'/clues/coins.svg'}})}>Reveal image answer</button>
+      <button onClick={()=>setAnswer({text:'Paris',media:{filename:'answer.svg',url:'/clues/coins.svg'}})}>Reveal mixed answer</button>
+      <button onClick={()=>setAnswer({loading:true})}>Load answer</button>
+      <button onClick={()=>setAnswer({error:'Answer failed to load'})}>Fail answer</button>
+      <button onClick={()=>setAnswer(null)}>Hide answer</button>
+      <section aria-label="Question stage" style={{height:400,width:850,maxWidth:'100%',display:'flex',flexDirection:'column',background:'black'}}>
+        <CluesQuestionView generalClue={{text:'Name the place'}} answer={answer} startingCoins={16}
+          view={{teamId:null,remainingCoins:16,clues:Array.from({length:12},(_,index)=>({id:'clue'+index,category:'Clue '+index,price:1,purchased:false,content:{text:'A clue about the city'}}))}}
+          isHost={true} closed={true} revealedClueIds={[]} pending={false} onPurchase={()=>{}} onReveal={()=>{}}/>
+      </section>
     </>;}
     function LiveMediaHarness(){const [question,setQuestion]=useState('q1'),[team,setTeam]=useState('red'),[revealed,setRevealed]=useState([]),[closed,setClosed]=useState(false);return <>
       <button onClick={()=>setQuestion('q2')}>Change question</button><button onClick={()=>setTeam('blue')}>Change viewer</button>
@@ -58,7 +83,7 @@ async function setup(page: import("@playwright/test").Page, mode: "standard" | "
         <section className="w-[850px] max-w-full bg-black"><CluesQuestionView generalClue={{text:"Name the place"}} startingCoins={5} isHost={host} closed={closed} revealedClueIds={revealed} pending={false}
           mediaUrls={{photo:'/clues/coins.svg'}} view={{teamId:'red',remainingCoins:coins,clues:clues.map(clue=>{const visible=host||purchased.includes(clue.id)||revealed.includes(clue.id);return {id:clue.id,category:clue.category,price:clue.price,purchased:purchased.includes(clue.id),...(visible?{content:{text:clue.text,...(clue.image?{media:{filename:"photo.png"}}:{})}}:{})};})}}
           onReveal={setRevealed} onPurchase={id=>{const price=clues.find(clue=>clue.id===id).price;if(price<=coins){setPurchased([...purchased,id]);setCoins(coins-price);}}}/></section></>;
-    }createRoot(document.querySelector('main')).render(${mode === 'live' ? '<LiveHarness/>' : mode === 'media' ? '<MediaHarness/>' : mode === 'playback' ? '<PlaybackHarness/>' : mode === 'live-media' ? '<LiveMediaHarness/>' : '<Harness/>'});`, resolveDir: process.cwd(), loader: "tsx" },
+    }createRoot(document.querySelector('main')).render(${mode === 'live' ? '<LiveHarness/>' : mode === 'media' ? '<MediaHarness/>' : mode === 'playback' ? '<PlaybackHarness/>' : mode === 'live-media' ? '<LiveMediaHarness/>' : mode === 'answer' ? '<AnswerHarness/>' : mode === 'shared-answer' ? '<SharedAnswerHarness/>' : '<Harness/>'});`, resolveDir: process.cwd(), loader: "tsx" },
     bundle: true, write: false, jsx: "automatic", define: { "process.env": "{}", "process.env.NODE_ENV": '"development"' },
     plugins: [{ name: "clues-transport", setup(builder) {
       builder.onResolve({ filter: /^firebase\/storage$/ }, () => ({ path: "firebase/storage", namespace: "clues-storage" }));
@@ -348,4 +373,62 @@ test("a fresh public-clue subscription clears a previous permission failure", as
   await expect(page.getByText("Public clue", { exact: true })).toBeVisible();
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(page.getByText("A capital", { exact: true })).toBeVisible();
+});
+
+
+for (const width of [1440, 390]) test(`revealed clue answers overlay the question stage at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 900 });
+  await setup(page, "answer");
+  const stage = page.getByRole("region", { name: "Question stage", exact: true });
+  await page.getByRole("button", { name: "Reveal text answer", exact: true }).click();
+  const text = page.getByText("Paris", { exact: true });
+  await expect(text).toBeVisible();
+  const stageBounds = (await stage.boundingBox())!, answerBounds = (await text.boundingBox())!;
+  expect(answerBounds.y).toBeGreaterThan(stageBounds.y);
+  expect(answerBounds.y + answerBounds.height).toBeLessThan(stageBounds.y + stageBounds.height);
+  const overlay = stage.getByRole("region", { name: "Revealed answer", exact: true });
+  await expect(overlay).toBeVisible();
+  expect(await overlay.evaluate((element) => {
+    const bounds = element.getBoundingClientRect();
+    return element.contains(document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2));
+  })).toBe(true);
+  const scroll = stage.locator("div.overflow-auto").first();
+  const overlayY = (await overlay.boundingBox())!.y;
+  await scroll.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  expect(await scroll.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  expect((await overlay.boundingBox())!.y).toBe(overlayY);
+  await scroll.evaluate((element) => { element.scrollTop = 0; });
+  for (const label of ["Reveal image answer", "Reveal mixed answer"]) {
+    await page.getByRole("button", { name: label, exact: true }).click();
+    await expect(overlay.getByRole("img", { name: "Answer media", exact: true })).toBeVisible();
+    if (label === "Reveal mixed answer") await expect(overlay.getByText("Paris", { exact: true })).toBeVisible();
+  }
+  await page.getByRole("button", { name: "Load answer", exact: true }).click();
+  await expect(overlay.getByRole("status")).toHaveText("Loading answer…");
+  await page.getByRole("button", { name: "Fail answer", exact: true }).click();
+  await expect(overlay.getByRole("alert")).toHaveText("Answer failed to load");
+  await page.getByRole("button", { name: "Hide answer", exact: true }).click();
+  await expect(overlay).toHaveCount(0);
+  await expect(stage.getByRole("heading", { name: "Name the place", exact: true })).toBeVisible();
+});
+
+
+for (const type of ["text", "multi-step", "image"] as const) test(`${type} answers use the shared question overlay`, async ({ page }) => {
+  await setup(page, "shared-answer", "audio", type);
+  const stage = page.getByRole("region", { name: "Question stage", exact: true });
+  const overlay = stage.getByRole("region", { name: "Revealed answer", exact: true });
+  await expect(overlay).toHaveCount(0);
+  await page.getByRole("button", { name: "Reveal answer", exact: true }).click();
+  await expect(overlay.getByText("Paris", { exact: true })).toBeVisible();
+  await expect(overlay.getByRole("img", { name: "Answer media", exact: true })).toBeVisible();
+  const bounds = (await overlay.boundingBox())!, stageBounds = (await stage.boundingBox())!;
+  expect(bounds.y).toBeGreaterThan(stageBounds.y);
+  expect(bounds.y + bounds.height).toBeLessThan(stageBounds.y + stageBounds.height);
+  expect(await overlay.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    return element.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
+  })).toBe(true);
+  await page.getByRole("button", { name: "Hide answer", exact: true }).click();
+  await expect(overlay).toHaveCount(0);
+  await expect(stage.getByRole("heading", { name: "Name the place", exact: true })).toBeVisible();
 });

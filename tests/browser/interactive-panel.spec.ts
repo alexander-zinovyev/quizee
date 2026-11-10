@@ -36,7 +36,7 @@ async function bundle(withGate = false) {
         roots[2].render(<section aria-label="Standalone presentation" style={{height:240,width:600,display:'flex',flexDirection:'column',backgroundColor:'black'}}>
           <RoundStage displayRoundMeta={round} presentingRoundMeta={round} presenting={{round:'preview',question:'q1'}} presentingQuestion={question}
             gradingMatrix={[]} gradingTeamIndex={0} setGradingTeamIndex={()=>{}} gradeAnswer={()=>{}} finalizeScores={()=>{}}
-            answerMediaError={null} mediaError={null} isAnswerMediaLoading={false} isMediaLoading={false} isPresentingImageRound={false}
+            answerMediaError={null} mediaError={null} isAnswerMediaLoading={false} isMediaLoading={false}
             mediaKind={kind} answerMediaKind={kind} mediaVolume={0.2} presentingMedia={null} presentingMediaUrl={null}
             presentingAnswer={null} presentingAnswerMedia={null} presentingAnswerMediaUrl={null}/>
         </section>);

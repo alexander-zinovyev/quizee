@@ -1621,7 +1621,6 @@ export default function RoundBuilderPanel({
                 gradingTeamIndex={previewGradingTeamIndex}
                 isAnswerMediaLoading={false}
                 isMediaLoading={false}
-                isPresentingImageRound={previewRoundMeta.type === "image"}
                 mediaError={null}
                 answerMediaKind={previewAnswerMediaKind}
                 mediaKind={previewMediaKind}
