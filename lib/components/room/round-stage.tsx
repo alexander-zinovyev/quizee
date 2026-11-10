@@ -3,6 +3,7 @@
 import type { RoundMeta, RoundQuestion } from "@/lib/hooks/use-room-rounds";
 import { allowsNegativePoints, getAwardedPoints, getAwardShortcut, getIncorrectAwardShortcut } from "@/lib/components/room/grading";
 import { isQuestionMediaPlaybackActive } from "@/lib/media/presentation-playback";
+import { AnswerOverlay } from "./answer-overlay";
 import StageMedia from "@/lib/components/room/stage-media";
 
 type GradingAnswer = {
@@ -30,7 +31,6 @@ export function RoundStage({
   gradingTeamIndex,
   isAnswerMediaLoading,
   isMediaLoading,
-  isPresentingImageRound,
   mediaError,
   answerMediaKind,
   mediaKind,
@@ -53,7 +53,6 @@ export function RoundStage({
   gradingTeamIndex: number;
   isAnswerMediaLoading: boolean;
   isMediaLoading: boolean;
-  isPresentingImageRound: boolean;
   mediaError: string | null;
   answerMediaKind: { isAudio: boolean; isImage: boolean; isVideo: boolean };
   mediaKind: { isAudio: boolean; isImage: boolean; isVideo: boolean };
@@ -261,155 +260,82 @@ export function RoundStage({
                     : "flex flex-col gap-6 px-8 py-10"
               }
             >
-              {isPresentingImageRound && presenting?.withAnswer ? (
-                <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-                  <div className="space-y-6">
-                    {presentingQuestion.prompt ? (
-                      <h2 className="whitespace-pre-wrap text-3xl font-semibold leading-tight text-white">
-                        {presentingQuestion.prompt}
-                      </h2>
-                    ) : null}
-
-                    {presentingMedia ? (
-                      <>
-                        {isMediaLoading ? (
-                          <p className="text-sm text-zinc-300">Loading media…</p>
-                        ) : presentingMediaUrl ? (
-                          <StageMedia
-                            url={presentingMediaUrl}
-                            kind={mediaKind}
-                            fallbackName={presentingMedia.filename}
-                            alt={presentingMedia.filename ?? "Question media"}
-                            label={presentingQuestion.prompt ?? undefined}
-                            mediaVolume={mediaVolume}
-                            playbackActive={questionMediaPlaybackActive}
-                            imageWrapperClassName="w-full"
-                            imageClassName="max-h-[55vh] w-full rounded-2xl object-contain"
-                            zoomLabel="Zoom question image"
-                            mediaClassName="max-h-[55vh] w-full rounded-2xl bg-black object-contain"
-                            audioClassName="w-full"
-                          />
-                        ) : null}
-                        {mediaError ? (
-                          <p className="text-sm text-red-300">{mediaError}</p>
-                        ) : null}
-                      </>
-                    ) : null}
-                  </div>
-
-                  <div className="flex h-full flex-col items-center justify-center gap-3 rounded-2xl border border-emerald-200/40 bg-emerald-900/20 p-4 text-center">
-                    <p className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-200">
-                      Answer
-                    </p>
-                    {isAnswerMediaLoading ? (
-                      <p className="text-sm text-emerald-100">Loading answer…</p>
-                    ) : presentingAnswerMediaUrl ? (
-                      <StageMedia
-                        url={presentingAnswerMediaUrl}
-                        kind={answerMediaKind}
-                        fallbackName={
-                          presentingAnswerMedia?.filename ??
-                          presentingAnswerMedia?.originalPath ??
-                          null
-                        }
-                        alt="Correct answer"
-                        label={presentingQuestion.prompt ?? undefined}
-                        mediaVolume={mediaVolume}
-                        imageWrapperClassName="w-full"
-                        imageClassName="max-h-[65vh] h-auto w-full rounded-2xl object-contain"
-                        zoomLabel="Zoom answer image"
-                        mediaClassName="max-h-[65vh] w-full rounded-2xl object-contain"
-                        audioClassName="w-full"
-                      />
-                    ) : answerMediaError ? (
-                      <p className="text-sm text-red-300">{answerMediaError}</p>
+              {presentingMedia && mediaKind.isImage ? (
+                <>
+                  {isMediaLoading ? (
+                    <p className="text-sm text-zinc-300">Loading media…</p>
+                  ) : presentingMediaUrl ? (
+                    mediaKind.isImage && presentingQuestion.prompt ? (
+                      <div className="w-full">
+                        <StageMedia
+                          url={presentingMediaUrl}
+                          kind={mediaKind}
+                          fallbackName={presentingMedia.filename}
+                          alt={presentingMedia.filename ?? "Question media"}
+                          label={presentingQuestion.prompt ?? undefined}
+                          mediaVolume={mediaVolume}
+                          playbackActive={questionMediaPlaybackActive}
+                          imageWrapperClassName="mb-4 w-full md:float-right md:mb-3 md:ml-6 md:w-1/3 md:max-w-[33%]"
+                          imageClassName="max-h-[55vh] w-full rounded-2xl object-contain"
+                          zoomLabel="Zoom question image"
+                        />
+                        <h2 className="whitespace-pre-wrap text-3xl font-semibold leading-tight text-white">
+                          {presentingQuestion.prompt}
+                        </h2>
+                        <div className="clear-both" />
+                      </div>
                     ) : (
-                      <p className="text-sm text-emerald-100">
-                        Answer not available.
-                      </p>
-                    )}
-                  </div>
-                </div>
+                      <div className="flex h-full min-h-0 w-full items-center justify-center">
+                        <StageMedia
+                          url={presentingMediaUrl}
+                          kind={mediaKind}
+                          fallbackName={presentingMedia.filename}
+                          alt={presentingMedia.filename ?? "Question media"}
+                          mediaVolume={mediaVolume}
+                          playbackActive={questionMediaPlaybackActive}
+                          imageWrapperClassName="h-full max-h-full max-w-full"
+                          imageClassName="h-auto max-h-full w-auto max-w-full rounded-2xl object-contain"
+                          zoomLabel="Zoom question image"
+                        />
+                      </div>
+                    )
+                  ) : null}
+                  {mediaError ? (
+                    <p className="text-sm text-red-300">{mediaError}</p>
+                  ) : null}
+                </>
               ) : (
                 <>
-                  {presentingMedia && mediaKind.isImage ? (
+                  {presentingQuestion.prompt ? (
+                    <h2 className="whitespace-pre-wrap text-3xl font-semibold leading-tight text-white">
+                      {presentingQuestion.prompt}
+                    </h2>
+                  ) : null}
+                  {presentingMedia ? (
                     <>
                       {isMediaLoading ? (
                         <p className="text-sm text-zinc-300">Loading media…</p>
                       ) : presentingMediaUrl ? (
-                        mediaKind.isImage && presentingQuestion.prompt ? (
-                          <div className="w-full">
-                            <StageMedia
-                              url={presentingMediaUrl}
-                              kind={mediaKind}
-                              fallbackName={presentingMedia.filename}
-                              alt={presentingMedia.filename ?? "Question media"}
-                              label={presentingQuestion.prompt ?? undefined}
-                              mediaVolume={mediaVolume}
-                              playbackActive={questionMediaPlaybackActive}
-                              imageWrapperClassName="mb-4 w-full md:float-right md:mb-3 md:ml-6 md:w-1/3 md:max-w-[33%]"
-                              imageClassName="max-h-[55vh] w-full rounded-2xl object-contain"
-                              zoomLabel="Zoom question image"
-                            />
-                            <h2 className="whitespace-pre-wrap text-3xl font-semibold leading-tight text-white">
-                              {presentingQuestion.prompt}
-                            </h2>
-                            <div className="clear-both" />
-                          </div>
-                        ) : (
-                          <div className="flex h-full min-h-0 w-full items-center justify-center">
-                            <StageMedia
-                              url={presentingMediaUrl}
-                              kind={mediaKind}
-                              fallbackName={presentingMedia.filename}
-                              alt={presentingMedia.filename ?? "Question media"}
-                              mediaVolume={mediaVolume}
-                              playbackActive={questionMediaPlaybackActive}
-                              imageWrapperClassName="h-full max-h-full max-w-full"
-                              imageClassName="h-auto max-h-full w-auto max-w-full rounded-2xl object-contain"
-                              zoomLabel="Zoom question image"
-                            />
-                          </div>
-                        )
+                        <StageMedia
+                          url={presentingMediaUrl}
+                          kind={mediaKind}
+                          fallbackName={presentingMedia.filename}
+                          alt={presentingMedia.filename ?? "Question media"}
+                          mediaVolume={mediaVolume}
+                          playbackActive={questionMediaPlaybackActive}
+                          mediaClassName={
+                            isMediaOnlyStage
+                              ? "h-full w-full rounded-2xl bg-black object-contain"
+                              : "max-h-[55vh] w-full rounded-2xl bg-black object-contain"
+                          }
+                          audioClassName="w-full"
+                        />
                       ) : null}
                       {mediaError ? (
                         <p className="text-sm text-red-300">{mediaError}</p>
                       ) : null}
                     </>
-                  ) : (
-                    <>
-                      {presentingQuestion.prompt ? (
-                        <h2 className="whitespace-pre-wrap text-3xl font-semibold leading-tight text-white">
-                          {presentingQuestion.prompt}
-                        </h2>
-                      ) : null}
-                      {presentingMedia ? (
-                        <>
-                          {isMediaLoading ? (
-                            <p className="text-sm text-zinc-300">Loading media…</p>
-                          ) : presentingMediaUrl ? (
-                            <StageMedia
-                              url={presentingMediaUrl}
-                              kind={mediaKind}
-                              fallbackName={presentingMedia.filename}
-                              alt={presentingMedia.filename ?? "Question media"}
-                              mediaVolume={mediaVolume}
-                              playbackActive={questionMediaPlaybackActive}
-                              mediaClassName={
-                                isMediaOnlyStage
-                                  ? "h-full w-full rounded-2xl bg-black object-contain"
-                                  : "max-h-[55vh] w-full rounded-2xl bg-black object-contain"
-                              }
-                              audioClassName="w-full"
-                            />
-                          ) : null}
-                          {mediaError ? (
-                            <p className="text-sm text-red-300">{mediaError}</p>
-                          ) : null}
-                        </>
-                      ) : null}
-                    </>
-                  )}
+                  ) : null}
                 </>
               )}
 
@@ -418,55 +344,9 @@ export function RoundStage({
               ) : null}
             </div>
           </div>
-          {presenting?.withAnswer &&
-          !isPresentingImageRound &&
-          (presentingAnswer || presentingAnswerMediaUrl) ? (
-            <div
-              className="absolute inset-0 flex items-center justify-center"
-              style={{
-                top: "10%",
-                left: "10%",
-                right: "10%",
-                bottom: "10%",
-              }}
-            >
-              <div className="flex h-full w-full items-center justify-center rounded-2xl border border-emerald-200/80 bg-emerald-700/98 px-8 py-6 text-center text-3xl font-semibold leading-tight text-white shadow-2xl">
-                <div
-                  className={`grid h-full w-full min-h-0 grid-rows-[minmax(0,1fr)] items-stretch gap-6 ${
-                    presentingAnswer && presentingAnswerMediaUrl
-                      ? "md:grid-cols-2"
-                      : "grid-cols-1"
-                  }`}
-                >
-                  {presentingAnswer ? (
-                    <span className="block self-center whitespace-pre-wrap break-words">{presentingAnswer}</span>
-                  ) : null}
-                  {presentingAnswerMediaUrl ? (
-                    <div className="flex h-full min-h-0 w-full self-stretch items-center justify-center">
-                      <StageMedia
-                        url={presentingAnswerMediaUrl}
-                        kind={answerMediaKind}
-                        fallbackName={
-                          presentingAnswerMedia?.filename ??
-                          presentingAnswerMedia?.originalPath ??
-                          null
-                        }
-                        alt="Answer media"
-                        label={presentingAnswer ?? undefined}
-                        mediaVolume={mediaVolume}
-                        imageWrapperClassName="max-h-full max-w-full"
-                        imageClassName="rounded-2xl"
-                        fitImageToParent
-                        zoomLabel="Zoom answer image"
-                        mediaClassName="h-full max-h-full w-full rounded-2xl object-contain"
-                        audioClassName="w-full"
-                      />
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-          ) : null}
+          {presenting?.withAnswer ? <AnswerOverlay text={presentingAnswer} mediaUrl={presentingAnswerMediaUrl}
+            mediaName={presentingAnswerMedia?.filename ?? presentingAnswerMedia?.originalPath} mediaKind={answerMediaKind}
+            loading={isAnswerMediaLoading} error={answerMediaError} mediaVolume={mediaVolume} /> : null}
         </div>
       ) : (
         <div className="flex h-full w-full items-center justify-center px-8 text-center text-xl font-semibold text-white">

@@ -10,6 +10,7 @@ import { useRoomClues } from "@/lib/hooks/use-room-clues";
 import { useFirebaseAuth } from "@/app/providers/firebase-auth-provider";
 import { PanelIcon } from "./room/panel-icon";
 import { isQuestionMediaPlaybackActive } from "@/lib/media/presentation-playback";
+import { AnswerOverlay } from "./room/answer-overlay";
 import StageMedia from "./room/stage-media";
 
 function Coins() { return <Image src="/clues/coins.svg" alt="" width={21} height={16} className="shrink-0" />; }
@@ -39,42 +40,45 @@ export function CluesQuestionView({ generalClue, startingCoins, view, mediaUrls 
     withAnswer: Boolean(answer), hasQuestionMedia: Boolean(generalClue.media), hasAnswerMedia: Boolean(answer?.media),
   });
   const allShown = view.clues.every((clue) => revealedClueIds.includes(clue.id));
-  return <div className="space-y-6 p-4 text-white sm:p-5">
-    <StageContent stage={generalClue} mediaUrl={generalClue.media?.url} mediaVolume={mediaVolume} playbackActive={questionMediaPlaybackActive} prominent />
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/15 pb-2">
-        <h3 className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-300">Clues</h3>
-        {isHost && closed ? <button type="button" disabled={pending} onClick={() => onReveal(allShown ? [] : view.clues.map((clue) => clue.id))}
-          className="rounded-full border border-emerald-300 px-3 py-1 text-sm text-emerald-300 disabled:opacity-50">{allShown ? "Hide all clues" : "Show all clues"}</button> : null}
-        <p className="flex items-center gap-2 text-sm font-semibold tracking-widest text-emerald-300"><Coins />
-          {isHost ? `${startingCoins} starting coins` : <><span className="text-pink-500">{view.remainingCoins}</span> / {startingCoins} coins</>}
-        </p>
-      </div>
-      <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2">
-        {view.clues.map((clue) => {
-          const visible = clue.content !== undefined && (isHost || clue.purchased || (closed && revealedClueIds.includes(clue.id)));
-          const shown = revealedClueIds.includes(clue.id);
-          const mediaUrl = Object.hasOwn(mediaUrls, clue.id) ? mediaUrls[clue.id] : undefined;
-          return <article key={clue.id} aria-label={`${clue.category} clue`} className={`overflow-hidden rounded-lg border ${visible ? "border-emerald-400 bg-emerald-900/50" : "border-zinc-700 bg-zinc-900"}`}>
-            <header className="flex flex-wrap items-center gap-2 border-b border-white/10 px-3 py-2">
-              <h4 className="min-w-0 font-semibold">{clue.category}</h4><span aria-hidden="true" className="h-5 w-px bg-white/15" /><Coins /><span>{clue.price}</span>
-              <div className="ml-auto">
-                {isHost ? closed ? <button type="button" disabled={pending} aria-pressed={shown} aria-label={`${shown ? "Hide" : "Show"} ${clue.category} clue`}
-                  onClick={() => onReveal(shown ? revealedClueIds.filter((id) => id !== clue.id) : [...revealedClueIds, clue.id])}
-                  className="rounded-full border border-emerald-300 px-3 py-0.5 text-sm text-emerald-300 disabled:opacity-50">{shown ? "Hide" : "Show"}</button>
-                  : <span className="text-xs text-emerald-200">Host view</span>
-                : clue.purchased ? <span className="inline-flex items-center gap-2 rounded-full bg-emerald-400 px-3 py-0.5 text-sm font-semibold text-black"><PanelIcon name="check" />Opened</span>
-                : visible ? <span className="text-xs text-emerald-200">Shown by host</span>
-                : !closed && view.teamId ? <button type="button" disabled={pending} onClick={() => onPurchase(clue.id)} className="rounded-full border border-emerald-400 bg-emerald-400/20 px-3 py-0.5 text-sm font-semibold text-emerald-300 disabled:opacity-50">Open for {clue.price}</button> : null}
-              </div>
-            </header>
-            {visible && clue.content ? <div className="px-3 py-2 text-sm leading-relaxed"><StageContent stage={{ ...clue.content, loading: loadingMedia && !!clue.content.media && !mediaUrl }} mediaUrl={mediaUrl} mediaVolume={mediaVolume} /></div>
-              : <p className="px-3 py-2 text-xs text-zinc-500">Clue hidden</p>}
-          </article>;
-        })}
+  return <div className="relative min-h-0 flex-1 text-white">
+    <div className="h-full space-y-6 overflow-auto p-4 sm:p-5">
+      <StageContent stage={generalClue} mediaUrl={generalClue.media?.url} mediaVolume={mediaVolume} playbackActive={questionMediaPlaybackActive} prominent />
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/15 pb-2">
+          <h3 className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-300">Clues</h3>
+          {isHost && closed ? <button type="button" disabled={pending} onClick={() => onReveal(allShown ? [] : view.clues.map((clue) => clue.id))}
+            className="rounded-full border border-emerald-300 px-3 py-1 text-sm text-emerald-300 disabled:opacity-50">{allShown ? "Hide all clues" : "Show all clues"}</button> : null}
+          <p className="flex items-center gap-2 text-sm font-semibold tracking-widest text-emerald-300"><Coins />
+            {isHost ? `${startingCoins} starting coins` : <><span className="text-pink-500">{view.remainingCoins}</span> / {startingCoins} coins</>}
+          </p>
+        </div>
+        <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2">
+          {view.clues.map((clue) => {
+            const visible = clue.content !== undefined && (isHost || clue.purchased || (closed && revealedClueIds.includes(clue.id)));
+            const shown = revealedClueIds.includes(clue.id);
+            const mediaUrl = Object.hasOwn(mediaUrls, clue.id) ? mediaUrls[clue.id] : undefined;
+            return <article key={clue.id} aria-label={`${clue.category} clue`} className={`overflow-hidden rounded-lg border ${visible ? "border-emerald-400 bg-emerald-900/50" : "border-zinc-700 bg-zinc-900"}`}>
+              <header className="flex flex-wrap items-center gap-2 border-b border-white/10 px-3 py-2">
+                <h4 className="min-w-0 font-semibold">{clue.category}</h4><span aria-hidden="true" className="h-5 w-px bg-white/15" /><Coins /><span>{clue.price}</span>
+                <div className="ml-auto">
+                  {isHost ? closed ? <button type="button" disabled={pending} aria-pressed={shown} aria-label={`${shown ? "Hide" : "Show"} ${clue.category} clue`}
+                    onClick={() => onReveal(shown ? revealedClueIds.filter((id) => id !== clue.id) : [...revealedClueIds, clue.id])}
+                    className="rounded-full border border-emerald-300 px-3 py-0.5 text-sm text-emerald-300 disabled:opacity-50">{shown ? "Hide" : "Show"}</button>
+                    : <span className="text-xs text-emerald-200">Host view</span>
+                  : clue.purchased ? <span className="inline-flex items-center gap-2 rounded-full bg-emerald-400 px-3 py-0.5 text-sm font-semibold text-black"><PanelIcon name="check" />Opened</span>
+                  : visible ? <span className="text-xs text-emerald-200">Shown by host</span>
+                  : !closed && view.teamId ? <button type="button" disabled={pending} onClick={() => onPurchase(clue.id)} className="rounded-full border border-emerald-400 bg-emerald-400/20 px-3 py-0.5 text-sm font-semibold text-emerald-300 disabled:opacity-50">Open for {clue.price}</button> : null}
+                </div>
+              </header>
+              {visible && clue.content ? <div className="px-3 py-2 text-sm leading-relaxed"><StageContent stage={{ ...clue.content, loading: loadingMedia && !!clue.content.media && !mediaUrl }} mediaUrl={mediaUrl} mediaVolume={mediaVolume} /></div>
+                : <p className="px-3 py-2 text-xs text-zinc-500">Clue hidden</p>}
+            </article>;
+          })}
+        </div>
       </div>
     </div>
-    {answer && (answer.text || answer.media || answer.loading || answer.error) ? <div className="rounded-xl border border-emerald-300/40 bg-emerald-900/30 p-4"><h3 className="text-xs uppercase tracking-widest text-emerald-300">Answer</h3><div className="mt-2"><StageContent stage={answer} mediaUrl={answer.media?.url} mediaVolume={mediaVolume} playbackActive prominent /></div></div> : null}
+    {answer ? <AnswerOverlay text={answer.text} mediaUrl={answer.media?.url} mediaName={answer.media?.filename}
+      loading={answer.loading} error={answer.error} mediaVolume={mediaVolume} /> : null}
   </div>;
 }
 
@@ -137,7 +141,7 @@ export function CluesPresenting({ roomSlug, round, question, teamId, isHost, rev
     } catch (failure) { setError(failure instanceof Error ? failure.message : "Unable to purchase clue."); }
     finally { setBuying(false); }
   }
-  return <div className="min-h-0 flex-1 overflow-auto bg-black">
+  return <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-black">
     {error || readError ? <p role="alert" className="px-5 pt-3 text-sm text-red-300">{error ?? readError}</p> : null}
     {view ? <CluesQuestionView key={key} generalClue={{ text: question.prompt, media: generalMedia, loading: generalMediaLoading, error: generalMediaError }} startingCoins={round.startingCoins!} view={view} mediaUrls={loaded?.key === key ? loaded.mediaUrls : {}}
       isHost={isHost} closed={round.state === "closed"} revealedClueIds={revealedClueIds} pending={pending || buying}

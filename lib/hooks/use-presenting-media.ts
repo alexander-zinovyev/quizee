@@ -120,8 +120,6 @@ export function usePresentingMedia({
 
   const shouldShowMedia = !!presentingMedia;
 
-  const isPresentingImageRound = presentingRoundMeta?.type === "image";
-
   const mediaKind = useMemo(() => getMediaKind(presentingMedia), [presentingMedia]);
   const presentingMediaResetKey = `${presentingQuestion?.id ?? ""}:${presentingQuestion?.media?.storagePath ?? ""}`;
 
@@ -483,7 +481,6 @@ export function usePresentingMedia({
     getCachedMediaUrl,
     isAnswerMediaLoading,
     isMediaLoading,
-    isPresentingImageRound,
     mediaCacheVersion,
     mediaError,
     answerMediaKind,

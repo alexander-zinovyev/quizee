@@ -212,7 +212,6 @@ export default function RoomContent({
     getCachedMediaUrl,
     isAnswerMediaLoading,
     isMediaLoading,
-    isPresentingImageRound,
     mediaCacheVersion,
     mediaError,
     answerMediaKind,
@@ -1379,7 +1378,6 @@ export default function RoomContent({
               gradingTeamIndex={gradingTeamIndex}
               isAnswerMediaLoading={isAnswerMediaLoading}
               isMediaLoading={isMediaLoading}
-              isPresentingImageRound={isPresentingImageRound}
               mediaError={mediaError}
               answerMediaKind={answerMediaKind}
               mediaKind={mediaKind}
