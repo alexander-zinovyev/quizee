@@ -82,6 +82,7 @@ async function setup(page: import("@playwright/test").Page, mode: "standard" | "
           else callback(item(parts.at(-1),{content:view.clues.find(clue=>clue.id===parts.at(-1))?.content}));
         }
         window.emitClues=(fail=false)=>{for(const listener of listeners)emit(listener,fail);};
+        window.failPublicClues=()=>{for(const listener of listeners)if(listener.ref.path.includes('/questions/')){listeners.delete(listener);listener.error(new Error('Missing or insufficient permissions.'));}};
         export const onSnapshot=(ref,callback,error)=>{const listener={ref,callback,error};listeners.add(listener);emit(listener);return ()=>listeners.delete(listener);};
       ` }));
       builder.onResolve({ filter: /^(@\/lib\/firebase\/client|@\/app\/providers\/firebase-auth-provider)$/ }, (args) => ({ path: args.path, namespace: "clues-mock" }));
@@ -331,4 +332,20 @@ test("paid clues sharing a room media path download the asset once", async ({ pa
   const sources = await page.locator("audio").evaluateAll((elements) => elements.map((element) => (element as HTMLAudioElement).src));
   expect(sources[0]).toBe(sources[1]);
   expect(downloads).toBe(1);
+});
+
+
+test("a fresh public-clue subscription clears a previous permission failure", async ({ page }) => {
+  await seed(page, { ...bought, clues: [...bought.clues, { id: "public", category: "Public", price: 2, purchased: false, content: { text: "Public clue" } }] });
+  await setup(page, "live-media");
+  await page.getByRole("button", { name: "Show public clues", exact: true }).click();
+  await expect(page.getByText("Public clue", { exact: true })).toBeVisible();
+  await page.evaluate(() => (window as unknown as { failPublicClues: () => void }).failPublicClues());
+  await expect(page.getByRole("alert")).toHaveText("Missing or insufficient permissions.");
+  await page.getByRole("button", { name: "Hide public clues", exact: true }).click();
+  await expect(page.getByText("Public clue", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Show public clues", exact: true }).click();
+  await expect(page.getByText("Public clue", { exact: true })).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.getByText("A capital", { exact: true })).toBeVisible();
 });
