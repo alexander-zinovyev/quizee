@@ -40,7 +40,7 @@ async function setup(page: import("@playwright/test").Page, mode: "standard" | "
     </>;}
     function LiveMediaHarness(){const [question,setQuestion]=useState('q1'),[team,setTeam]=useState('red'),[revealed,setRevealed]=useState([]),[closed,setClosed]=useState(false);return <>
       <button onClick={()=>setQuestion('q2')}>Change question</button><button onClick={()=>setTeam('blue')}>Change viewer</button>
-      <button onClick={()=>{setClosed(true);setRevealed(['public']);}}>Show public clues</button><button onClick={()=>setRevealed([])}>Hide public clues</button>
+      <button onClick={()=>{setClosed(true);setRevealed(window.clueState.clues.filter(clue=>!clue.purchased).map(clue=>clue.id));}}>Show public clues</button><button onClick={()=>setRevealed([])}>Hide public clues</button>
       <CluesPresenting roomSlug="demo" round={{id:'r1',title:'Clues',type:'clues',state:closed?'closed':'active',order:0,startingCoins:5}}
         question={{clues:window.clueState.clues,id:question,prompt:'Name the place',displayPrompt:'Name the place',order:0}} teamId={team} isHost={false}
         generalMedia={{filename:'general.${mediaKind === "audio" ? "wav" : "webm"}',url:window.playbackSource}} revealedClueIds={revealed} pending={false} onReveal={setRevealed}/>
@@ -271,3 +271,45 @@ test("teammate purchases preserve already purchased media without downloading it
   expect(await paid.evaluate((element) => (element as HTMLMediaElement).paused)).toBe(false);
   expect(downloads).toBe(1);
 });
+
+for (const id of ["constructor", "toString", "valueOf"] as const) {
+  test(`prototype-named clue ${id} stays locked until purchased and loads its media`, async ({ page }) => {
+    const clue = { id, category: "Named clue", price: 2 };
+    await seed(page, { teamId: "red", remainingCoins: 5, clues: [{ ...clue, purchased: false }] });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    await page.route(`**/api/rooms/demo/rounds/r1/answers/q1/clues/${id}`, async (route) => {
+      await route.fulfill({ json: { remainingCoins: 3 } });
+      await publish(page, { teamId: "red", remainingCoins: 3, clues: [{ ...clue, purchased: true, content: { text: "Purchased content", media: { filename: "clue.wav" } } }] });
+    });
+    await page.route(`**/clues/${id}/media`, async (route) => { await gate; await route.fulfill({ contentType: "audio/wav", body: silentWave() }); });
+    await setup(page, "live");
+    try {
+      await expect(page.getByText("Opened", { exact: true })).toHaveCount(0);
+      await expect(page.getByText("Clue hidden", { exact: true })).toBeVisible();
+      await page.getByRole("button", { name: "Open for 2", exact: true }).click();
+      await expect(page.getByText("Opened", { exact: true })).toBeVisible();
+      await expect(page.getByText("Purchased content", { exact: true })).toBeVisible();
+      await expect(page.getByText("3", { exact: true })).toBeVisible();
+      await expect(page.getByText("Loading media…", { exact: true })).toBeVisible();
+      await expect(page.locator("audio")).toHaveCount(0);
+      release();
+      await expect(page.locator('audio[src^="blob:"]')).toBeVisible();
+    } finally { release(); }
+  });
+
+  test(`prototype-named clue ${id} supports public reveal and hide without a purchase`, async ({ page }) => {
+    await seed(page, { teamId: "red", remainingCoins: 5, clues: [{ id, category: "Named clue", price: 2, purchased: false, content: { text: "Public content" } }] });
+    await setup(page, "live-media");
+    await expect(page.getByText("Opened", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("Public content", { exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "Show public clues", exact: true }).click();
+    await expect(page.getByText("Public content", { exact: true })).toBeVisible();
+    await expect(page.getByText("Shown by host", { exact: true })).toBeVisible();
+    await expect(page.getByText("Opened", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("5", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Hide public clues", exact: true }).click();
+    await expect(page.getByText("Public content", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("Clue hidden", { exact: true })).toBeVisible();
+  });
+}

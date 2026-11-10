@@ -71,8 +71,9 @@ export function useRoomClues({ roomId, roundId, questionId, teamId, isHost, star
   return { key, error: failure?.key === key && (failure.revealKey === undefined || failure.revealKey === revealKey) ? failure.message : null, view: ready ? {
     teamId: isHost ? null : teamId ?? null, remainingCoins: data.balance,
     clues: metadata.map((clue) => {
-      const purchased = !isHost && !!data.contents[clue.id];
-      const content = data.contents[clue.id] ?? (revealedClueIds.includes(clue.id) && publicData?.key === key && publicData.revealKey === revealKey ? publicData.contents[clue.id] : undefined);
+      const storedContent = Object.hasOwn(data.contents, clue.id) ? data.contents[clue.id] : undefined;
+      const purchased = !isHost && storedContent !== undefined;
+      const content = storedContent ?? (revealedClueIds.includes(clue.id) && publicData?.key === key && publicData.revealKey === revealKey && Object.hasOwn(publicData.contents, clue.id) ? publicData.contents[clue.id] : undefined);
       return { ...clue, purchased, ...(content ? { content } : {}) };
     }),
   } : null };
