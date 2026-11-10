@@ -2,10 +2,9 @@
 
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
-import { doc, onSnapshot } from "firebase/firestore";
 import type { CluesView } from "@/types/clues";
 import type { RoundMeta, RoundQuestion } from "@/lib/hooks/use-room-rounds";
-import { getClientFirestore } from "@/lib/firebase/client";
+import { useRoomClues } from "@/lib/hooks/use-room-clues";
 import { useFirebaseAuth } from "@/app/providers/firebase-auth-provider";
 import { PanelIcon } from "./room/panel-icon";
 import { isQuestionMediaPlaybackActive } from "@/lib/media/presentation-playback";
@@ -81,12 +80,12 @@ export function CluesPresenting({ roomSlug, round, question, teamId, isHost, rev
   revealedClueIds: string[]; pending: boolean; onReveal: (ids: string[]) => void; answer?: PresentedStage; generalMedia?: PresentedStage["media"]; generalMediaLoading?: boolean; generalMediaError?: string | null; mediaVolume?: number;
 }) {
   const { getToken } = useFirebaseAuth();
-  const [revision, setRevision] = useState(0);
-  const [loaded, setLoaded] = useState<{ view: CluesView; mediaUrls: Record<string, string>; key: string; loadingMedia: boolean } | null>(null);
+  const { view, error: readError, key } = useRoomClues({ roomId: roomSlug, roundId: round.id, questionId: question.id, teamId, isHost,
+    startingCoins: round.startingCoins!, metadata: question.clues ?? [], revealedClueIds: round.state === "closed" ? revealedClueIds : [] });
+  const [loaded, setLoaded] = useState<{ mediaUrls: Record<string, string>; key: string; loadingMedia: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [buying, setBuying] = useState(false);
-  const revealKey = JSON.stringify(revealedClueIds);
-  const key = JSON.stringify([roomSlug, round.id, question.id, teamId ?? null, isHost]);
+  const mediaKey = JSON.stringify(view?.clues.filter((clue) => clue.content?.media).map((clue) => clue.id) ?? []);
   const mediaCache = useRef(new Map<string, string>());
   useEffect(() => {
     const cache = mediaCache.current;
@@ -94,35 +93,28 @@ export function CluesPresenting({ roomSlug, round, question, teamId, isHost, rev
   }, [key]);
   const endpoint = `/api/rooms/${roomSlug}/rounds/${round.id}/answers/${question.id}/clues`;
   useEffect(() => {
-    if (!teamId || isHost) return;
-    return onSnapshot(doc(getClientFirestore(), "rooms", roomSlug, "cluePurchases", teamId, "rounds", round.id),
-      () => setRevision((value) => value + 1), (failure) => setError(failure.message));
-  }, [roomSlug, round.id, teamId, isHost]);
-  useEffect(() => {
     const controller = new AbortController();
     const cache = mediaCache.current;
     async function load() {
-      const token = await getToken();
-      const headers = { Authorization: `Bearer ${token}` };
-      const response = await fetch(endpoint, { headers, signal: controller.signal, cache: "no-store" });
-      const view = await response.json();
-      if (!response.ok) throw new Error(view.message ?? "Unable to load clues.");
-      if (!isHost && view.teamId !== (teamId ?? null)) throw new Error("Team changed. Reload the room.");
-      if (controller.signal.aborted) return;
-      const authorizedMedia = new Set((view as CluesView).clues.filter((clue) => clue.content?.media).map((clue) => clue.id));
+      const ids: string[] = JSON.parse(mediaKey);
+      const authorizedMedia = new Set(ids);
       for (const [id, url] of cache) if (!authorizedMedia.has(id)) { URL.revokeObjectURL(url); cache.delete(id); }
       const mediaUrls = Object.fromEntries(cache);
-      const missing = (view as CluesView).clues.filter((clue) => clue.content?.media && !cache.has(clue.id));
-      setLoaded({ view, mediaUrls, key, loadingMedia: missing.length > 0 }); setError(null);
-      await Promise.all(missing.map(async (clue) => {
-        const media = await fetch(`${endpoint}/${clue.id}/media`, { headers, signal: controller.signal, cache: "no-store" });
+      const missing = ids.filter((id) => !cache.has(id));
+      setLoaded({ mediaUrls, key, loadingMedia: missing.length > 0 }); setError(null);
+      if (!missing.length) return;
+      const token = await getToken();
+      const headers = { Authorization: `Bearer ${token}` };
+      if (controller.signal.aborted) return;
+      await Promise.all(missing.map(async (id) => {
+        const media = await fetch(`${endpoint}/${id}/media`, { headers, signal: controller.signal, cache: "no-store" });
         if (!media.ok) throw new Error("Unable to load clue media.");
         if (controller.signal.aborted) return;
         const blob = await media.blob();
         if (controller.signal.aborted) return;
-        const url = URL.createObjectURL(blob); cache.set(clue.id, url); mediaUrls[clue.id] = url;
+        const url = URL.createObjectURL(blob); cache.set(id, url); mediaUrls[id] = url;
       }));
-      if (!controller.signal.aborted) { setLoaded({ view, mediaUrls, key, loadingMedia: false }); setError(null); }
+      if (!controller.signal.aborted) { setLoaded({ mediaUrls, key, loadingMedia: false }); setError(null); }
     }
     void load().catch((failure) => {
       if (!controller.signal.aborted) {
@@ -131,7 +123,7 @@ export function CluesPresenting({ roomSlug, round, question, teamId, isHost, rev
       }
     });
     return () => controller.abort();
-  }, [endpoint, getToken, key, revision, teamId, isHost, round.state, revealKey]);
+  }, [endpoint, getToken, key, mediaKey]);
   async function purchase(id: string) {
     setBuying(true); setError(null);
     try {
@@ -139,14 +131,13 @@ export function CluesPresenting({ roomSlug, round, question, teamId, isHost, rev
       const response = await fetch(`${endpoint}/${id}`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ teamId }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.message ?? "Unable to purchase clue.");
-      setRevision((value) => value + 1);
     } catch (failure) { setError(failure instanceof Error ? failure.message : "Unable to purchase clue."); }
     finally { setBuying(false); }
   }
   return <div className="min-h-0 flex-1 overflow-auto bg-black">
-    {error ? <p role="alert" className="px-5 pt-3 text-sm text-red-300">{error}</p> : null}
-    {loaded?.key === key ? <CluesQuestionView key={key} generalClue={{ text: question.prompt, media: generalMedia, loading: generalMediaLoading, error: generalMediaError }} startingCoins={round.startingCoins!} view={loaded.view} mediaUrls={loaded.mediaUrls}
+    {error || readError ? <p role="alert" className="px-5 pt-3 text-sm text-red-300">{error ?? readError}</p> : null}
+    {view ? <CluesQuestionView key={key} generalClue={{ text: question.prompt, media: generalMedia, loading: generalMediaLoading, error: generalMediaError }} startingCoins={round.startingCoins!} view={view} mediaUrls={loaded?.key === key ? loaded.mediaUrls : {}}
       isHost={isHost} closed={round.state === "closed"} revealedClueIds={revealedClueIds} pending={pending || buying}
-      onPurchase={(id) => void purchase(id)} onReveal={onReveal} answer={answer} mediaVolume={mediaVolume} loadingMedia={loaded.loadingMedia} /> : !error ? <p role="status" className="p-5 text-white">Loading clues…</p> : null}
+      onPurchase={(id) => void purchase(id)} onReveal={onReveal} answer={answer} mediaVolume={mediaVolume} loadingMedia={loaded?.key !== key || loaded.loadingMedia} /> : !error && !readError ? <p role="status" className="p-5 text-white">Loading clues…</p> : null}
   </div>;
 }
