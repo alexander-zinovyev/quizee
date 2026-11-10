@@ -3,6 +3,7 @@ import { doc, onSnapshot, type Unsubscribe } from "firebase/firestore";
 import { getDownloadURL, getStorage, ref } from "firebase/storage";
 
 import { getClientFirestore, getFirebaseClientApp } from "@/lib/firebase/client";
+import { loadMediaResource, releaseMediaResource } from "@/lib/media/media-resource";
 import { roomColorArtwork } from "@/lib/media/color-artwork";
 import type {
   RoundImage,
@@ -302,29 +303,12 @@ export function usePresentingMedia({
       .then(async (url) => {
         if (cancelled) return;
         try {
-          const response = await fetch(url);
-          const blob = await response.blob();
-          const objectUrl = URL.createObjectURL(blob);
-          cacheMediaUrl(
-            mediaUrlCacheRef.current,
-            storagePath,
-            objectUrl,
-            true,
-            () => setMediaCacheVersion((v) => v + 1)
-          );
-          setPresentingAnswerMediaUrl(objectUrl);
-        } catch (fetchError) {
-          console.error("[room-content] answer media fetch error", fetchError);
-          cacheMediaUrl(
-            mediaUrlCacheRef.current,
-            storagePath,
-            url,
-            false,
-            () => setMediaCacheVersion((v) => v + 1)
-          );
-          setPresentingAnswerMediaUrl(url);
+          const resource = await loadMediaResource(url);
+          if (cancelled) { releaseMediaResource(resource); return; }
+          cacheMediaUrl(mediaUrlCacheRef.current, storagePath, resource.url, resource.isBlob, () => setMediaCacheVersion((v) => v + 1));
+          setPresentingAnswerMediaUrl(resource.url);
         } finally {
-          setIsAnswerMediaLoading(false);
+          if (!cancelled) setIsAnswerMediaLoading(false);
         }
       })
       .catch((error) => {
@@ -353,29 +337,12 @@ export function usePresentingMedia({
       .then(async (url) => {
         if (cancelled) return;
         try {
-          const response = await fetch(url);
-          const blob = await response.blob();
-          const objectUrl = URL.createObjectURL(blob);
-          cacheMediaUrl(
-            mediaUrlCacheRef.current,
-            presentingMedia.storagePath,
-            objectUrl,
-            true,
-            () => setMediaCacheVersion((v) => v + 1)
-          );
-          setPresentingMediaUrl(objectUrl);
-        } catch (fetchError) {
-          console.error("[room-content] media blob fetch error", fetchError);
-          cacheMediaUrl(
-            mediaUrlCacheRef.current,
-            presentingMedia.storagePath,
-            url,
-            false,
-            () => setMediaCacheVersion((v) => v + 1)
-          );
-          setPresentingMediaUrl(url);
+          const resource = await loadMediaResource(url);
+          if (cancelled) { releaseMediaResource(resource); return; }
+          cacheMediaUrl(mediaUrlCacheRef.current, presentingMedia.storagePath, resource.url, resource.isBlob, () => setMediaCacheVersion((v) => v + 1));
+          setPresentingMediaUrl(resource.url);
         } finally {
-          setIsMediaLoading(false);
+          if (!cancelled) setIsMediaLoading(false);
         }
       })
       .catch((error) => {
@@ -420,26 +387,8 @@ export function usePresentingMedia({
         mediaPreloadInFlightRef.current.add(media.storagePath);
         getDownloadURL(ref(storage, media.storagePath))
           .then(async (url) => {
-            try {
-              const response = await fetch(url);
-              const blob = await response.blob();
-              const objectUrl = URL.createObjectURL(blob);
-              cacheMediaUrl(
-                mediaUrlCacheRef.current,
-                media.storagePath,
-                objectUrl,
-                true,
-                () => setMediaCacheVersion((v) => v + 1)
-              );
-            } catch {
-              cacheMediaUrl(
-                mediaUrlCacheRef.current,
-                media.storagePath,
-                url,
-                false,
-                () => setMediaCacheVersion((v) => v + 1)
-              );
-            }
+            const resource = await loadMediaResource(url);
+            cacheMediaUrl(mediaUrlCacheRef.current, media.storagePath, resource.url, resource.isBlob, () => setMediaCacheVersion((v) => v + 1));
 
             const kind = getMediaKind(media);
             if (kind.isImage) {

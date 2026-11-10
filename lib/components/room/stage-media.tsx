@@ -10,7 +10,7 @@ type MediaKind = {
   isVideo: boolean;
 };
 
-function inferMediaKindFromName(name: string | null | undefined): MediaKind {
+export function inferMediaKindFromName(name: string | null | undefined): MediaKind {
   const lower = (name ?? "").toLowerCase();
   const ext = lower.includes(".") ? lower.slice(lower.lastIndexOf(".")) : "";
   return {
