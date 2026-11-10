@@ -68,7 +68,7 @@ export function CluesQuestionView({ generalClue, startingCoins, view, mediaUrls 
                 : !closed && view.teamId ? <button type="button" disabled={pending} onClick={() => onPurchase(clue.id)} className="rounded-full border border-emerald-400 bg-emerald-400/20 px-3 py-0.5 text-sm font-semibold text-emerald-300 disabled:opacity-50">Open for {clue.price}</button> : null}
               </div>
             </header>
-            {visible && clue.content ? <div className="p-2 text-sm leading-relaxed"><StageContent stage={{ ...clue.content, loading: loadingMedia && !!clue.content.media && !mediaUrl }} mediaUrl={mediaUrl} mediaVolume={mediaVolume} /></div>
+            {visible && clue.content ? <div className="px-3 py-2 text-sm leading-relaxed"><StageContent stage={{ ...clue.content, loading: loadingMedia && !!clue.content.media && !mediaUrl }} mediaUrl={mediaUrl} mediaVolume={mediaVolume} /></div>
               : <p className="px-3 py-2 text-xs text-zinc-500">Clue hidden</p>}
           </article>;
         })}
