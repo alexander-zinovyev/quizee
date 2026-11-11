@@ -10,9 +10,11 @@ import { useFirebaseAuth } from "@/app/providers/firebase-auth-provider";
 type Channel = {
   id: string;
   label: string;
-  path: string[];
+  path: string;
   canSend: boolean;
 };
+
+type StoredChatMessage = ChatMessage & { uid: string };
 
 type RoomChatPanelProps = {
   roomSlug: string;
@@ -39,7 +41,7 @@ export default function RoomChatPanel({
   active = true,
 }: RoomChatPanelProps) {
   const { user } = useFirebaseAuth();
-  const [history, setHistory] = useState<{ channelId: string; messages: ChatMessage[]; error?: string } | null>(null);
+  const [history, setHistory] = useState<{ path: string; messages: StoredChatMessage[]; error?: string } | null>(null);
   const [activeChannelId, setActiveChannelId] = useState<string>("room");
 
   const channels: Channel[] = useMemo(() => {
@@ -47,7 +49,7 @@ export default function RoomChatPanel({
       {
         id: "room",
         label: "All",
-        path: ["rooms", roomSlug, "messages"],
+        path: `rooms/${roomSlug}/messages`,
         canSend: true,
       },
     ];
@@ -57,7 +59,7 @@ export default function RoomChatPanel({
         base.push({
           id: `team-${team.id}`,
           label: team.name,
-          path: ["rooms", roomSlug, "teams", team.id, "messages"],
+          path: `rooms/${roomSlug}/teams/${team.id}/messages`,
           canSend: true,
         });
       });
@@ -67,7 +69,7 @@ export default function RoomChatPanel({
         base.push({
           id: `team-${team.id}`,
           label: "Team",
-          path: ["rooms", roomSlug, "teams", team.id, "messages"],
+          path: `rooms/${roomSlug}/teams/${team.id}/messages`,
           canSend: true,
         });
       }
@@ -77,42 +79,43 @@ export default function RoomChatPanel({
   }, [isHost, roomSlug, teams, viewerTeamId]);
 
   const activeChannel = channels.find((ch) => ch.id === activeChannelId) ?? channels[0];
+  const channelPath = activeChannel.path;
 
   useEffect(() => {
-    if (!activeChannel) return;
     const db = getClientFirestore();
-    const messagesRef = collection(
-      db,
-      ...(activeChannel.path as [string, ...string[]])
-    );
+    const messagesRef = collection(db, channelPath);
     const messagesQuery = query(messagesRef, orderBy("createdAt", "asc"));
 
     const unsubscribe = onSnapshot(messagesQuery, (snapshot) => {
-      const nextMessages: ChatMessage[] = snapshot.docs.map((docSnap, index) => {
+      const nextMessages: StoredChatMessage[] = snapshot.docs.map((docSnap) => {
         const data = docSnap.data();
         const created = data.createdAt?.toDate?.() as Date | undefined;
         const timestamp =
           created?.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) ?? "";
         const uid = (data.uid as string | undefined) ?? "";
-        const author =
-          (uid && memberNames?.[uid]) ||
-          (data.author as string | undefined) ||
-          "Player";
+        const author = (data.author as string | undefined) || "Player";
         const content = (data.content as string | undefined) ?? "";
 
         return {
-          id: docSnap.id ?? index,
+          id: docSnap.id,
+          uid,
           author,
           content,
           timestamp,
-          isSelf: uid && user?.uid ? uid === user.uid : false,
         };
       });
-      setHistory({ channelId: activeChannel.id, messages: nextMessages });
-    }, () => setHistory({ channelId: activeChannel.id, messages: [], error: "Unable to load chat messages." }));
+      setHistory({ path: channelPath, messages: nextMessages });
+    }, () => setHistory({ path: channelPath, messages: [], error: "Unable to load chat messages." }));
 
     return () => unsubscribe();
-  }, [activeChannel, memberNames, user?.uid]);
+  }, [channelPath]);
+
+  // Roster/name updates change presentation, not the Firestore subscription.
+  const messages = useMemo(() => history?.path === channelPath ? history.messages.map((message) => ({
+    ...message,
+    author: memberNames[message.uid] || message.author,
+    isSelf: Boolean(message.uid && message.uid === user?.uid),
+  })) : [], [channelPath, history, memberNames, user?.uid]);
 
   async function handleSend(text: string) {
     if (!activeChannel?.canSend) return;
@@ -121,10 +124,7 @@ export default function RoomChatPanel({
       throw new Error("A player name is required to send a message.");
     }
     const db = getClientFirestore();
-    const messagesRef = collection(
-      db,
-      ...(activeChannel.path as [string, ...string[]])
-    );
+    const messagesRef = collection(db, channelPath);
     await addDoc(messagesRef, {
       author,
       content: text,
@@ -156,11 +156,11 @@ export default function RoomChatPanel({
         })}
       </nav>
 
-      {history?.channelId === activeChannel.id && history.error ? <p role="alert" className="px-3 pt-3 text-sm text-red-600">{history.error}</p> : null}
+      {history?.path === channelPath && history.error ? <p role="alert" className="px-3 pt-3 text-sm text-red-600">{history.error}</p> : null}
 
       <Chat
         title={activeChannel?.label ?? "Chat"}
-        messages={history?.channelId === activeChannel.id ? history.messages : []}
+        messages={messages}
         onSend={handleSend}
         placeholder="Send a message…"
         className="flex-1 min-h-0"
