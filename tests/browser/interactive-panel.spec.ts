@@ -371,6 +371,93 @@ test("clues navigation reports rejected writes and malformed or unknown stored s
   }
 });
 
+// Let layout effects, scheduled scrolling and native scroll events finish.
+const settleChatLayout = (page: Page) => page.evaluate(() => new Promise<void>((resolve) =>
+  requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+
+async function setupChatHistory(page: Page) {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await setup(page, true);
+  await page.evaluate(() => {
+    const transport = (window as unknown as Fixture).roomTransport;
+    for (let index = 0; index < 80; index++) transport.add("rooms/demo/messages", {
+      author: "Host", uid: "host", content: `History message ${index + 1}`, createdAt: true,
+    });
+  });
+  for (const id of ["first", "teammate", "host"]) {
+    const log = panel(page, id).getByRole("log");
+    await expect(log.locator("article")).toHaveCount(80);
+    await expect.poll(() => log.evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop)).toBeLessThan(2);
+  }
+}
+
+test("chat preserves older messages on room updates and new messages while following readers at the bottom", async ({ page }) => {
+  await setupChatHistory(page);
+  const reader = panel(page, "first").getByRole("log");
+  const follower = panel(page, "teammate").getByRole("log");
+  await reader.evaluate((element) => { element.scrollTop = 180; });
+  await settleChatLayout(page);
+  const subscriptions = () => page.evaluate(() => (window as unknown as Fixture).roomTransport.reads.filter((path) => path === "rooms/demo/messages").length);
+  const initialSubscriptions = await subscriptions();
+
+  await page.evaluate(() => (window as unknown as Fixture).roomTransport.set("rooms/demo", {
+    presenting: { round: "text", question: "q1", withAnswer: false, promptPage: 1, answerPage: 0 },
+  }));
+  await settleChatLayout(page);
+  expect(await reader.evaluate((element) => element.scrollTop)).toBe(180);
+  expect(await subscriptions()).toBe(initialSubscriptions);
+
+  await page.evaluate(() => {
+    const transport = (window as unknown as Fixture).roomTransport;
+    transport.set("rooms/demo/teams/red", { scoreTotal: 15 });
+    transport.set("rooms/demo/members/host", { name: "Renamed host" });
+  });
+  await expect(reader.locator("article").first()).toContainText("Renamed host");
+  await settleChatLayout(page);
+  expect(await reader.evaluate((element) => element.scrollTop)).toBe(180);
+  expect(await subscriptions()).toBe(initialSubscriptions);
+
+  await panel(page, "host").getByRole("textbox", { name: "Message input" }).fill("New host message");
+  await panel(page, "host").getByRole("textbox", { name: "Message input" }).press("Enter");
+  await expect(reader.locator("article")).toHaveCount(81);
+  await settleChatLayout(page);
+  expect(await reader.evaluate((element) => element.scrollTop)).toBe(180);
+  await expect.poll(() => follower.evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop)).toBeLessThan(2);
+
+  // A repeated snapshot (for example after reconnecting) is not a new message.
+  await page.evaluate(() => (window as unknown as Fixture).roomTransport.set("rooms/demo/messages/message-1", { createdAt: true }));
+  await settleChatLayout(page);
+  expect(await reader.evaluate((element) => element.scrollTop)).toBe(180);
+
+  await reader.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  await settleChatLayout(page);
+  await page.evaluate(() => (window as unknown as Fixture).roomTransport.add("rooms/demo/messages", {
+    author: "Teammate", uid: "teammate", content: "Follow after scrolling down", createdAt: true,
+  }));
+  await expect(reader.locator("article")).toHaveCount(82);
+  await expect.poll(() => reader.evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop)).toBeLessThan(2);
+});
+
+test("returning to chat preserves older reading positions and drafts but follows messages for readers at the bottom", async ({ page }) => {
+  await setupChatHistory(page);
+  const readerPanel = panel(page, "first");
+  const reader = readerPanel.getByRole("log", { includeHidden: true });
+  const follower = panel(page, "teammate").getByRole("log", { includeHidden: true });
+  await readerPanel.getByRole("textbox", { name: "Message input" }).fill("Keep this draft");
+  await reader.evaluate((element) => { element.scrollTop = 180; });
+  await settleChatLayout(page);
+  for (const id of ["first", "teammate"]) await view(page, id, "Round 1: Capital cities").click();
+  await page.evaluate(() => (window as unknown as Fixture).roomTransport.add("rooms/demo/messages", {
+    author: "Host", uid: "host", content: "Message while chat is hidden", createdAt: true,
+  }));
+  await expect(reader.locator("article")).toHaveCount(81);
+  for (const id of ["first", "teammate"]) await view(page, id, "Chat").click();
+  await settleChatLayout(page);
+  expect(await reader.evaluate((element) => element.scrollTop)).toBe(180);
+  await expect(readerPanel.getByRole("textbox", { name: "Message input" })).toHaveValue("Keep this draft");
+  await expect.poll(() => follower.evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop)).toBeLessThan(2);
+});
+
 for (const width of [1440, 390]) test(`two teammates retain answers, wagers, sorting and independent views at ${width}px`, async ({ page }, testInfo) => {
   await page.setViewportSize({ width, height: 900 });
   const errors: string[] = [];

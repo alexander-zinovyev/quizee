@@ -122,13 +122,16 @@ export default function Chat({
   const [composerActive, setComposerActive] = useState(false);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const hasAutoScrolledRef = useRef(false);
+  const followingBottomRef = useRef(true);
+  const readingPositionRef = useRef(0);
   const canSend = value.trim().length > 0 && !disabled;
 
   const orderedMessages = useMemo(
     () => messages.map((message, index) => ({ ...message, key: message.id ?? index })),
     [messages],
   );
+  const messageCount = orderedMessages.length;
+  const lastMessageKey = orderedMessages[messageCount - 1]?.key;
 
   useEffect(() => {
     if (!autoSize) {
@@ -166,27 +169,38 @@ export default function Chat({
     return () => window.removeEventListener("resize", updateChatSize);
   }, [autoSize]);
 
-  const scrollToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
+  const scrollToBottom = useCallback(() => {
     const container = messagesContainerRef.current;
     if (!container) {
       return;
     }
     container.scrollTo({
       top: container.scrollHeight,
-      behavior,
+      behavior: "instant",
     });
   }, []);
 
   useLayoutEffect(() => {
+    // An empty history also marks the start of a newly selected channel.
+    if (!messageCount) followingBottomRef.current = true;
     if (!active) return;
-    const frame = requestAnimationFrame(() => {
-      const behavior = hasAutoScrolledRef.current ? "smooth" : "auto";
-      scrollToBottom(behavior);
-      hasAutoScrolledRef.current = true;
-    });
+    if (followingBottomRef.current) {
+      scrollToBottom();
+    } else if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = readingPositionRef.current;
+    }
+  }, [active, messageCount, lastMessageKey, scrollToBottom]);
 
-    return () => cancelAnimationFrame(frame);
-  }, [active, orderedMessages, scrollToBottom]);
+  useLayoutEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!active || !container) return;
+    // Keep followers at the bottom when the composer or viewport changes size.
+    const observer = new ResizeObserver(() => {
+      if (followingBottomRef.current) scrollToBottom();
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [active, scrollToBottom]);
 
   function renderContent(content: string | ReactNode) {
     if (typeof content !== "string") {
@@ -255,10 +269,11 @@ export default function Chat({
     }
 
     const trimmed = value.trim();
+    followingBottomRef.current = true;
     onSend?.(trimmed);
     setValue("");
     setShowEmojis(false);
-    requestAnimationFrame(() => scrollToBottom("smooth"));
+    scrollToBottom();
   }
 
   const containerClasses = [
@@ -285,6 +300,13 @@ export default function Chat({
       <div className="flex flex-1 flex-col gap-3 overflow-hidden">
         <div
           ref={messagesContainerRef}
+          onScroll={(event) => {
+            const container = event.currentTarget;
+            // Hidden panels report zero dimensions; retain their reading state.
+            if (!active || !container.clientHeight) return;
+            readingPositionRef.current = container.scrollTop;
+            followingBottomRef.current = container.scrollHeight - container.clientHeight - container.scrollTop <= 2;
+          }}
           className="flex-1 space-y-2 overflow-y-auto pr-1 pb-4 text-sm leading-relaxed text-zinc-900 dark:text-zinc-100"
           role="log"
           aria-live="polite"
