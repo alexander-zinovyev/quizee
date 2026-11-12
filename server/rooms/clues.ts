@@ -1,7 +1,6 @@
 import type { Firestore } from "firebase-admin/firestore";
 import { CLUE_ID, clueKey, positiveCoins, type ClueMetadata, remainingCoins } from "@/types/clues";
 import { RoomOperationError } from "./operation-error";
-import { parsePresentation } from "./presentation";
 
 export function clueLedgerPath(roomId: string, teamId: string, roundId: string) {
   return `rooms/${roomId}/cluePurchases/${teamId}/rounds/${roundId}`;
@@ -39,9 +38,7 @@ export async function purchaseClue(db: Firestore, roomId: string, roundId: strin
     const balance = remainingCoins(ledger.exists ? ledger.data()!.remainingCoins : round.data()!.startingCoins, round.data()!.startingCoins);
     // Acknowledging an existing purchase never charges again, including after navigation/closure.
     if (opened.exists) return { remainingCoins: balance };
-    const presentation = parsePresentation(room.data()?.presenting);
-    if (room.data()?.state !== "playing" || round.data()?.state !== "active" || presentation.round !== roundId ||
-        presentation.question !== questionId || presentation.withAnswer) throw new RoomOperationError("Question is not accepting clue purchases.");
+    if (room.data()?.state !== "playing" || round.data()?.state !== "active") throw new RoomOperationError("Question is not accepting clue purchases.");
     const metadata = (question.data()!.clues as ClueMetadata[]).find((item) => item.id === clueId);
     if (!metadata || metadata.price !== clue.data()?.price) throw new Error("Invalid clue configuration.");
     const price = positiveCoins(metadata.price);

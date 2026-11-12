@@ -4,7 +4,7 @@ import { build } from "esbuild";
 // Keep native scrollbars visible for the presentation appearance regressions.
 test.use({ colorScheme: "light", launchOptions: { ignoreDefaultArgs: ["--hide-scrollbars"] } });
 
-async function bundle(withGate = false) {
+async function bundle(withGate = false, withBlue = false) {
   const result = await build({
     stdin: { contents: `
       import React from 'react';
@@ -16,16 +16,17 @@ async function bundle(withGate = false) {
       import {HarnessAuthProvider} from '@/app/providers/firebase-auth-provider';
       import {applySortingEdit} from './types/sorting';
       window.applySortingEdit=applySortingEdit;
-      const roots=['first','teammate','host'].map(id=>createRoot(document.getElementById(id)));
+      const viewers=${JSON.stringify(["first", "teammate", "host", ...(withBlue ? ["blue"] : [])])};
+      const roots=viewers.map(id=>createRoot(document.getElementById(id)));
       const teams=[{id:'red',name:'Team Red',members:[]},{id:'blue',name:'Team Blue',members:[]}];
       const names={first:'First',teammate:'Teammate',host:'Host'};
       let generation=0;
       window.renderRoom=(reconnect=false)=>{
         if(reconnect) generation++;
-        flushSync(()=>['first','teammate','host'].forEach((uid,index)=>roots[index].render(
+        flushSync(()=>viewers.forEach((uid,index)=>roots[index].render(
           <HarnessAuthProvider key={generation} uid={uid}>
             ${withGate ? '<RoomGate roomSlug="demo"/>' : `<RoomContent roomSlug="demo" teams={teams} hostMember={{id:'host',name:'Host'}}
-              isHost={uid==='host'} viewerTeamId={uid==='host'?null:'red'} viewerName={names[uid]}
+              isHost={uid==='host'} viewerTeamId={uid==='host'?null:uid==='blue'?'blue':'red'} viewerName={names[uid]}
               memberNames={names} presenting={window.roomTransport.presentation()}/>`}
           </HarnessAuthProvider>)));
       };
@@ -54,14 +55,26 @@ async function bundle(withGate = false) {
         });` };
         if (args.path === "firebase/firestore") return { contents: `
           const path=(base,...parts)=>[...(typeof base==='string'?[base]:[]),...parts].join('/');
-          export const doc=path;export const collection=path;export const query=value=>value;export const orderBy=()=>null;export const where=()=>null;
-          export const onSnapshot=(key,options,callback)=>window.roomTransport.subscribe(key,typeof options==='function'?options:callback);
+          export const doc=path;export const collection=path;export const orderBy=()=>null;export const where=(field,_,value)=>({field,value});
+          export const query=(key,...filters)=>filters.some(Boolean)?{key,filters:filters.filter(Boolean)}:key;
+          export const onSnapshot=(ref,options,callback)=>window.roomTransport.subscribe(ref.key??ref,snapshot=>{
+            const receive=typeof options==='function'?options:callback;
+            if(!ref.filters)return receive(snapshot);
+            const docs=snapshot.docs.filter(doc=>ref.filters.every(filter=>doc.data()[filter.field]===filter.value));
+            receive({...snapshot,docs,forEach:callback=>docs.forEach(callback),docChanges:()=>docs.map(doc=>({doc,type:'modified'}))});
+          });
           export const getDoc=async key=>window.roomTransport.snapshot(key);
           export const getDocFromServer=getDoc;export const getDocs=getDoc;
           export const serverTimestamp=()=>({fixtureTimestamp:true});
           export const Timestamp={fromDate:date=>date};
           export const addDoc=async(key,data)=>window.roomTransport.add(key,data);
-          export const setDoc=async(key,data)=>window.roomTransport.set(key,data);
+          export const setDoc=async(key,data,options)=>{
+            if('selectedQuestionId' in data){
+              window.roomTransport.navigationWrites.push({key,data,merge:options?.merge===true});
+              if(window.roomTransport.navigationError)throw new Error(window.roomTransport.navigationError);
+            }
+            window.roomTransport.set(key,data);
+          };
           export const updateDoc=setDoc;
           export const writeBatch=()=>{const writes=[];return {set:(key,data)=>writes.push([key,data]),commit:async()=>{writes.forEach(([key,data])=>window.roomTransport.set(key,data));}};};
           export const runTransaction=()=>{throw new Error('Image matching is covered in image-matching.spec.ts');};
@@ -91,7 +104,7 @@ type Fixture = {
     add: (key: string, data: Record<string, unknown>) => void;
     set: (key: string, data: Record<string, unknown>) => void;
     presentation: () => Record<string, unknown>;
-    setPresentation: (round: string, question: string | null, withAnswer?: boolean) => void;
+    setPresentation: (round: string | null, question: string | null, withAnswer?: boolean, revealedClueIds?: string[]) => void;
     holdAnswers: boolean;
     releaseAnswers: () => void;
     holdGrading: boolean;
@@ -100,15 +113,17 @@ type Fixture = {
     writes: Array<{ url: string; body: Record<string, unknown>; actor: string }>;
     reads: string[];
     mediaReads: string[];
+    navigationWrites: Array<{ key: string; data: Record<string, unknown>; merge: boolean }>;
+    navigationError?: string;
     image: string;
   };
 };
 
-async function setup(page: Page, withGate = false) {
+async function setup(page: Page, withGate = false, withBlue = false) {
   await page.goto("/build");
   await expect(page.getByRole("button", { name: "Add round", exact: true })).toBeVisible();
   const css = await page.locator('link[rel="stylesheet"]').evaluateAll((links) => links.map((link) => (link as HTMLLinkElement).href));
-  await page.route("**/__interactive-room", (route) => route.fulfill({ contentType: "text/html", body: `<html><head>${css.map((href) => `<link rel="stylesheet" href="${href}">`).join("")}</head><body style="margin:0">${["first", "teammate", "host"].map((id) => `<section id="${id}" aria-label="${id} room"></section>`).join("")}</body></html>` }));
+  await page.route("**/__interactive-room", (route) => route.fulfill({ contentType: "text/html", body: `<html><head>${css.map((href) => `<link rel="stylesheet" href="${href}">`).join("")}</head><body style="margin:0">${["first", "teammate", "host", ...(withBlue ? ["blue"] : [])].map((id) => `<section id="${id}" aria-label="${id} room"></section>`).join("")}</body></html>` }));
   await page.goto("/__interactive-room");
   await page.evaluate(() => {
     const w = window as unknown as Fixture;
@@ -163,7 +178,7 @@ async function setup(page: Page, withGate = false) {
     const heldGrades: Array<() => void> = [];
     const image = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="150" height="75"><rect width="150" height="75" fill="teal"/></svg>');
     w.roomTransport = {
-      image, holdAnswers: false, holdGrading: false, writes: [], reads: [], mediaReads: [], snapshot, set,
+      image, holdAnswers: false, holdGrading: false, writes: [], reads: [], mediaReads: [], navigationWrites: [], snapshot, set,
       add: (key, data) => set(`${key}/message-${++messageId}`, data),
       subscribe: (key, callback) => {
         w.roomTransport.reads.push(key);
@@ -179,8 +194,8 @@ async function setup(page: Page, withGate = false) {
         return () => watchers.get(key)!.delete(callback);
       },
       presentation: () => structuredClone(presenting),
-      setPresentation: (id, question, withAnswer = false) => {
-        presenting = { round: id, question, withAnswer, promptPage: 0, answerPage: 0 };
+      setPresentation: (id, question, withAnswer = false, revealedClueIds) => {
+        presenting = { round: id, question, withAnswer, promptPage: 0, answerPage: 0, ...(revealedClueIds ? { revealedClueIds } : {}) };
         if (id === "next") { set(round("text"), { state: "closed" }); set(round("next"), { state: "active" }); }
         docs[room].presenting = presenting;
         w.renderRoom();
@@ -218,23 +233,143 @@ async function setup(page: Page, withGate = false) {
         set(key, { order: w.applySortingEdit(current.order as string[], edit), revision });
         return new Response(JSON.stringify({ editId: edit.id, revision }), { status: 200 });
       }
+      const purchase = url.match(/\/rounds\/clues\/answers\/([^/]+)\/clues\/([^/]+)$/);
+      if (purchase) {
+        const team = body.teamId as string;
+        const ledger = `${room}/cluePurchases/${team}/rounds/clues`;
+        const key = `${ledger}/openedClues/${purchase[1]}:${purchase[2]}`;
+        const balance = Number(docs[ledger]?.remainingCoins ?? 5) - (docs[key] ? 0 : 2);
+        set(ledger, { remainingCoins: balance });
+        set(key, { questionId: purchase[1], clueId: purchase[2], content: docs[`${round("clues")}/questions/${purchase[1]}/clues/${purchase[2]}`].content });
+        return new Response(JSON.stringify({ remainingCoins: balance }), { status: 200 });
+      }
       const match = url.match(/\/rounds\/([^/]+)\/answers\/([^/]+)$/);
       if (!match) throw new Error(`Unexpected room request: ${url}`);
       if (w.roomTransport.holdAnswers) await new Promise<void>((resolve) => held.push(resolve));
-      const key = answer(match[1], match[2]);
+      const key = body.teamId === "blue" ? `${room}/teams/blue/rounds/${match[1]}/answers/${match[2]}` : answer(match[1], match[2]);
       const mutation = { ...body };
       delete mutation.teamId; delete mutation.expectedStep;
       set(key, { answer: "", locked: false, wagered: false, user: actor, attempts: [], ...docs[key], ...mutation });
       return new Response(JSON.stringify(docs[key]), { status: 200 });
     };
   });
-  await page.addScriptTag({ content: await bundle(withGate) });
+  await page.addScriptTag({ content: await bundle(withGate, withBlue) });
   await expect(page.locator("#first").getByRole("button", { name: "Round 1: Capital cities", exact: true })).toBeVisible();
 }
 
 const room = (page: Page, id: string) => page.getByRole("region", { name: `${id} room`, exact: true });
 const panel = (page: Page, id: string) => room(page, id).getByRole("region", { name: "Interactive panel", exact: true });
 const view = (page: Page, id: string, name: string) => panel(page, id).getByRole("button", { name, exact: true });
+
+async function setupClues(page: Page) {
+  await setup(page, false, true);
+  await page.evaluate(() => {
+    const transport = (window as unknown as Fixture).roomTransport;
+    const round = "rooms/demo/rounds/clues";
+    for (let index = 0; index < 3; index++) {
+      const id = `q${index + 1}`;
+      transport.set(`${round}/questions/${id}`, { order: index, stages: [{ text: `Mystery ${index + 1}`,
+        ...(index === 1 ? { media: { storagePath: "clues/general.svg", filename: "general.svg", contentType: "image/svg+xml" } } : {}) }],
+        clues: [{ id: "hint", category: "History", price: 2 }] });
+      transport.set(`${round}/questions/${id}/clues/hint`, { price: 2, content: { text: `Secret ${id}` } });
+      transport.set(`${round}/answers/${id}`, { hint: `Answer to ${id}`, stages: [{ text: `Answer to ${id}` }] });
+    }
+    transport.set("rooms/demo/teams/red/rounds/clues", { existing: "preserved" });
+    transport.set(round, { type: "clues", title: "Mysteries", order: 6, state: "active", startingCoins: 5, gradingRequired: false });
+    transport.setPresentation("clues", "q3");
+  });
+  await expect(room(page, "first").getByRole("heading", { name: "Mystery 1", exact: true })).toBeVisible();
+}
+
+for (const width of [1440, 390]) test(`clues navigation shares team selection, preserves purchases and answers, and returns to host reveals at ${width}px`, async ({ page }, testInfo) => {
+  await page.setViewportSize({ width, height: 900 });
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await setupClues(page);
+  const stage = (id: string) => room(page, id).locator("article").first();
+  const first = stage("first"), teammate = stage("teammate"), blue = stage("blue"), host = stage("host");
+  await expect(host.getByRole("heading", { name: "Mystery 3", exact: true })).toBeVisible();
+  await expect(first.getByRole("button", { name: "Previous question", exact: true })).toBeDisabled();
+  expect(await first.getByRole("button", { name: "Next question", exact: true }).getAttribute("class"))
+    .toBe(await host.getByRole("button", { name: "First question", exact: true }).getAttribute("class"));
+  expect(await first.locator("footer").getAttribute("class")).toBe(await host.locator("footer").getAttribute("class"));
+  await first.getByRole("button", { name: "Open for 2", exact: true }).click();
+  await expect(teammate.getByText("Secret q1", { exact: true })).toBeVisible();
+  await first.getByRole("button", { name: "Next question", exact: true }).click();
+  await expect(teammate.getByRole("heading", { name: "Mystery 2", exact: true })).toBeVisible();
+  await expect(first.getByText("Secret q1", { exact: true })).toHaveCount(0);
+  await expect(first.getByRole("img", { name: "general.svg", exact: true })).toBeVisible();
+  await expect(blue.getByRole("heading", { name: "Mystery 1", exact: true })).toBeVisible();
+  await view(page, "first", "Round 7: Mysteries").click();
+  const answers = panel(page, "first");
+  await expect(answers.getByRole("textbox")).toHaveCount(3);
+  await answers.getByRole("textbox", { name: "Answer 2", exact: true }).fill("Paris");
+  await expect.poll(() => page.evaluate(() => (window as unknown as Fixture).roomTransport.writes.some((write) => write.url.endsWith("/clues/answers/q2") && write.body.answer === "Paris"))).toBe(true);
+  await teammate.getByRole("button", { name: "Next question", exact: true }).click();
+  await expect(first.getByRole("heading", { name: "Mystery 3", exact: true })).toBeVisible();
+  await blue.getByRole("button", { name: "Next question", exact: true }).click();
+  await page.evaluate(() => (window as unknown as Fixture).roomTransport.setPresentation(null, null));
+  await expect(first.getByRole("heading", { name: "Mystery 3", exact: true })).toBeVisible();
+  await expect(blue.getByRole("heading", { name: "Mystery 2", exact: true })).toBeVisible();
+  await first.getByRole("button", { name: "First question", exact: true }).click();
+  await expect(teammate.getByText("Secret q1", { exact: true })).toBeVisible();
+  await expect(first.getByText("3", { exact: true })).toBeVisible();
+  await expect(blue.getByText("Opened", { exact: true })).toHaveCount(0);
+  await first.getByRole("button", { name: "Next question", exact: true }).click();
+  await page.evaluate(() => (window as unknown as Fixture).renderRoom(true));
+  await expect(first.getByRole("heading", { name: "Mystery 2", exact: true })).toBeVisible();
+  await expect(teammate.getByRole("heading", { name: "Mystery 2", exact: true })).toBeVisible();
+  await view(page, "teammate", "Round 7: Mysteries").click();
+  await expect(panel(page, "teammate").getByRole("textbox", { name: "Answer 2", exact: true })).toHaveValue("Paris");
+  await first.getByRole("button", { name: "Previous question", exact: true }).click();
+  await expect(first.getByText("Opened", { exact: true })).toBeVisible();
+  await expect(first.getByText("3", { exact: true })).toBeVisible();
+  const navigationWrites = await page.evaluate(() => (window as unknown as Fixture).roomTransport.navigationWrites);
+  expect(navigationWrites.every((write) => write.merge && Object.keys(write.data).join() === "selectedQuestionId")).toBe(true);
+  expect(await page.evaluate(() => (window as unknown as Fixture).roomTransport.writes.filter((write) => write.url.includes("/clues/hint")).length)).toBe(1);
+  await first.screenshot({ path: testInfo.outputPath(`clues-navigation-${width}.png`), animations: "disabled" });
+  await page.evaluate(() => {
+    const transport = (window as unknown as Fixture).roomTransport;
+    transport.set("rooms/demo/rounds/clues", { state: "closed" });
+    transport.setPresentation("clues", "q2", true, ["hint"]);
+  });
+  for (const id of ["first", "teammate", "blue"]) {
+    await expect(stage(id).getByRole("heading", { name: "Mystery 2", exact: true })).toBeVisible();
+    await expect(stage(id).getByRole("region", { name: "Revealed answer", exact: true })).toHaveText("Answer to q2");
+    await expect(stage(id).getByText("Secret q2", { exact: true })).toBeVisible();
+    await expect(stage(id).getByRole("button", { name: /^(Previous|Next|First) question$/ })).toHaveCount(0);
+    await expect(stage(id).getByRole("button", { name: /Open for/ })).toHaveCount(0);
+  }
+  // Later navigation writes are ignored after closure; everyone keeps following the host.
+  await page.evaluate(() => {
+    const transport = (window as unknown as Fixture).roomTransport;
+    transport.set("rooms/demo/teams/red/rounds/clues", { selectedQuestionId: "q3" });
+    transport.setPresentation("clues", "q1", true);
+  });
+  for (const id of ["first", "teammate", "blue"]) {
+    await expect(stage(id).getByRole("heading", { name: "Mystery 1", exact: true })).toBeVisible();
+    await expect(stage(id).getByRole("region", { name: "Revealed answer", exact: true })).toHaveText("Answer to q1");
+  }
+  expect(errors).toEqual([]);
+});
+
+test("clues navigation reports rejected writes and malformed or unknown stored selections", async ({ page }) => {
+  await setupClues(page);
+  const first = room(page, "first").locator("article").first();
+  await page.evaluate(() => { (window as unknown as Fixture).roomTransport.navigationError = "Navigation write denied"; });
+  await first.getByRole("button", { name: "Next question", exact: true }).click();
+  await expect(first.getByRole("alert")).toHaveText("Navigation write denied");
+  await expect(first.getByRole("heading", { name: "Mystery 1", exact: true })).toBeVisible();
+  await page.evaluate(() => { delete (window as unknown as Fixture).roomTransport.navigationError; });
+  await first.getByRole("button", { name: "Next question", exact: true }).click();
+  await expect(first.getByRole("heading", { name: "Mystery 2", exact: true })).toBeVisible();
+  await expect(first.getByRole("alert")).toHaveCount(0);
+  for (const [selectedQuestionId, message] of [[42, "Invalid selected clues question."], ["missing", "Selected clues question does not exist in this round."]] as const) {
+    await page.evaluate((selectedQuestionId) => (window as unknown as Fixture).roomTransport.set("rooms/demo/teams/red/rounds/clues", { selectedQuestionId }), selectedQuestionId);
+    await expect(first.getByRole("alert")).toHaveText(message);
+    await expect(first.getByRole("heading", { name: "Mystery 2", exact: true })).toHaveCount(0);
+  }
+});
 
 for (const width of [1440, 390]) test(`two teammates retain answers, wagers, sorting and independent views at ${width}px`, async ({ page }, testInfo) => {
   await page.setViewportSize({ width, height: 900 });

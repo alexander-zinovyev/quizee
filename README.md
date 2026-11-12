@@ -25,7 +25,7 @@ The host builds a quiz or loads a prepared quiz pack. Each round has a theme of 
 | **Image matching** | Teams match pictures to prompts, such as pairing film stills with movie titles. |
 | **Multi-step** | Teams get one clue at a time. An early guess can be worth more points, so teams have to weigh answering now against waiting for another clue. |
 | **Color matching** | Teams adjust part of an image to match a color from memory, such as the red in a familiar logo. The closer the match, the better the score. After closure, players see their submission beside a locally selected opponent's submission for each presented question. Show answer enables comparison with the original. |
-| **Clues** | Teams spend a shared round coin budget to open text or media clues. Correct answers earn one point regardless of spending. After closure, the host can show/hide all or individual clues. |
+| **Clues** | Teams browse questions together, independently of other teams and the host, and spend a shared round coin budget to open text or media clues. Correct answers earn one point regardless of spending. After closure, everyone follows the host's questions and reveals. |
 | **Sorting** | Teams arrange text or media items according to a criterion, with one point for each correct position. The list can stay open alongside other rounds. |
 
 Revealed answer stages use a shared overlay above the presented question across text, multi-step, image, and clues rounds. The question stays mounted beneath it, and the answer remains visible while the question content scrolls.
