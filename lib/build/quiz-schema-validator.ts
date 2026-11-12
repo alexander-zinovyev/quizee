@@ -19,6 +19,8 @@ type JsonSchema = {
   minimum?: number;
   maximum?: number;
   exclusiveMinimum?: number;
+  if?: JsonSchema;
+  then?: JsonSchema;
 };
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -127,6 +129,12 @@ function validateNode(
       return [validationError(path, `unsupported schema ref ${schema.$ref}.`)];
     }
     return validateNode(value, resolved, path, root);
+  }
+
+  if (schema.if) {
+    const { if: condition, then: consequence, ...base } = schema;
+    return [...validateNode(value, base, path, root),
+      ...(consequence && validateNode(value, condition, path, root).length === 0 ? validateNode(value, consequence, path, root) : [])];
   }
 
   if (schema.oneOf?.length) {

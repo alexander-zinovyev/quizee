@@ -126,10 +126,10 @@ export function buildQuizFromBuilderState(rounds: BuildRound[], mediaFiles: Medi
 
     if (round.type === "clues") {
       try {
-        const parsed = parseCluesRound({ type: "clues", title, startingCoins: round.startingCoins,
+        const parsed = parseCluesRound({ type: "clues", title, startingCoins: round.startingCoins, ...(round.pricing ? { pricing: round.pricing } : {}),
           questions: (round.cluesQuestions ?? []).map(({ generalClue, answerHint, answerStages, clues }) => ({
             generalClue: normalizeBuilderStage(generalClue), answer: { hint: answerHint, stages: answerStages.map(normalizeBuilderStage) },
-            clues: clues.map(({ id, category, price, content }) => ({ id, category, price, content: normalizeBuilderStage(content) })),
+            clues: clues.map(({ id, category, price, content }) => ({ id, category, ...(price !== undefined ? { price } : {}), content: normalizeBuilderStage(content) })),
           })) });
         cluesStages(parsed).forEach((stage) => {
           if (stage.media && !mediaByPath.has(stage.media)) errors.push(`Round ${roundNo}: media file not found (${stage.media}).`);
@@ -402,7 +402,7 @@ function mapQuizRoundsToBuildRounds(rounds: QuizRound[]): BuildRound[] {
   return rounds.map((round) => {
     if (round.type === "clues") return {
       id: makeId(), collapsed: false, name: round.title, type: "clues", textQuestions: [], imageItems: [], multiStepQuestions: [], pointsPerStep: [1], allowAnswerChanges: false,
-      startingCoins: round.startingCoins, cluesQuestions: round.questions.map((question) => ({
+      startingCoins: round.startingCoins, pricing: round.pricing, cluesQuestions: round.questions.map((question) => ({
         id: makeId(), collapsed: false, generalClue: toStage(question.generalClue), answerHint: question.answer.hint,
         answerStages: question.answer.stages.map(toStage), clues: question.clues.map((clue) => ({ ...clue, content: toStage(clue.content) })),
       })),

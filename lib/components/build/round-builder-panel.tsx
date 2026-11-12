@@ -28,7 +28,7 @@ import type { ColorScoring } from "@/types/color";
 import { StageEditor, createStage, type Stage } from "./stage-editor";
 export type { Stage } from "./stage-editor";
 import { SortableQuestionCard } from "./sortable-question-card";
-import { DEFAULT_STARTING_COINS } from "@/types/clues";
+import { DEFAULT_STARTING_COINS, type CluePricing } from "@/types/clues";
 import { CluesRoundEditor, createCluesQuestion, type BuildCluesQuestion } from "./clues-round-editor";
 import { SortingRoundEditor, type BuildSortingQuestion } from "./sorting-round-editor";
 import type {
@@ -75,6 +75,7 @@ export type BuildRound = {
   allowAnswerChanges: boolean;
   allowWager?: boolean;
   startingCoins?: number;
+  pricing?: CluePricing;
   cluesQuestions?: BuildCluesQuestion[];
   sortingCriterion?: string;
   sortingQuestions?: BuildSortingQuestion[];
@@ -390,7 +391,7 @@ export default function RoundBuilderPanel({
 
   function resetRoundByType(round: BuildRound, type: RoundType): BuildRound {
     round = { ...round, allowWager: false };
-    if (type === "clues") return { ...round, type, textQuestions: [], imageItems: [], multiStepQuestions: [], startingCoins: DEFAULT_STARTING_COINS, cluesQuestions: [createCluesQuestion()] };
+    if (type === "clues") return { ...round, type, textQuestions: [], imageItems: [], multiStepQuestions: [], startingCoins: DEFAULT_STARTING_COINS, pricing: undefined, cluesQuestions: [createCluesQuestion()] };
     if (type === "sorting") {
       const sortingQuestions = Array.from({ length: 2 }, createStage);
       return { ...round, type, textQuestions: [], imageItems: [], multiStepQuestions: [], sortingCriterion: "", sortingQuestions, sortingCorrectOrder: sortingQuestions.map((item) => item.id) };
@@ -829,8 +830,8 @@ export default function RoundBuilderPanel({
                 </div>
 
                 {round.type === "clues" ? (
-                  <CluesRoundEditor startingCoins={round.startingCoins ?? DEFAULT_STARTING_COINS} questions={round.cluesQuestions ?? []} mediaFiles={mediaFiles}
-                    onChange={(startingCoins, cluesQuestions) => updateRound(round.id, (prev) => ({ ...prev, startingCoins, cluesQuestions }))} />
+                  <CluesRoundEditor startingCoins={round.startingCoins ?? DEFAULT_STARTING_COINS} pricing={round.pricing} questions={round.cluesQuestions ?? []} mediaFiles={mediaFiles}
+                    onChange={(startingCoins, cluesQuestions, pricing) => updateRound(round.id, (prev) => ({ ...prev, startingCoins, cluesQuestions, pricing }))} />
                 ) : round.type === "sorting" ? (
                   <SortingRoundEditor value={{ criterion: round.sortingCriterion ?? "", questions: round.sortingQuestions ?? [], correctOrder: round.sortingCorrectOrder ?? [] }}
                     mediaFiles={mediaFiles} createStage={createStage} StageEditor={StageEditor}

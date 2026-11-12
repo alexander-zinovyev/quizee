@@ -202,7 +202,74 @@ async function main() {
     for (const result of [race[0], race[2]]) if (result.status === "rejected") assert.equal(result.reason.status, 409);
     const raceBalance = (await db.doc(clueLedgerPath(roomId, "race-team", "race")).get()).data()?.remainingCoins ?? 5;
     assert.equal(raceBalance, 5 - successes * 4);
-    console.log("Verified shared team navigation, independent purchases and answers, last-coin spending, concurrent transactions, team isolation, Firestore/Storage rules, closure, and host reveals.");
+    for (const [index, [pricing, prices]] of ([
+      [{ mode: "arithmetic" }, [1, 2, 3, 4]],
+      [{ mode: "geometric" }, [1, 2, 4, 8]],
+      [{ mode: "arithmetic", basePrice: 2, progression: 3 }, [2, 5, 8, 11]],
+      [{ mode: "geometric", basePrice: 2, progression: 3 }, [2, 6, 18, 54]],
+      [{ mode: "geometric", basePrice: 2, progression: 1 }, [2, 2, 2, 2]],
+    ] as const).entries()) {
+      const progressiveId = `progressive-${index}`, progressiveRef = room.collection("rounds").doc(progressiveId);
+      const startingCoins = 100;
+      const setup = db.batch();
+      setup.set(progressiveRef, { type: "clues", state: "active", startingCoins, pricing });
+      for (const questionId of ["q1", "q2"]) {
+        setup.set(progressiveRef.collection("questions").doc(questionId), { stages: [{ text: questionId }],
+          clues: ["a", "b", "c", "d"].map((id) => ({ id, category: id })) });
+        for (const clueId of ["a", "b", "c", "d"]) setup.set(progressiveRef.collection("questions").doc(questionId).collection("clues").doc(clueId), { content: { text: `${questionId}-${clueId}` } });
+      }
+      await setup.commit();
+      const purchase = async (questionId: string, clueId: string, member = 1, teamId = "race-team") => {
+        const response = await fetch(`http://127.0.0.1:${port}/api/rooms/${roomId}/rounds/${progressiveId}/answers/${questionId}/clues/${clueId}`, {
+          method: "POST", headers: { Authorization: `Bearer ${tokens[member]}`, "Content-Type": "application/json" }, body: JSON.stringify({ teamId }),
+        });
+        return { status: response.status, data: await response.json() };
+      };
+      const teamLedgerPath = clueLedgerPath(roomId, "race-team", progressiveId);
+      const purchasedQuery = query(collection(clients[2].firestoreClient, `${teamLedgerPath}/openedClues`), where("questionId", "==", "q1"));
+      let stopUnlock = () => {};
+      const teammateSnapshot = new Promise<void>((resolve, reject) => {
+        stopUnlock = onSnapshot(purchasedQuery, (snapshot) => { if (snapshot.docs.length === 1) resolve(); }, reject);
+      });
+      try {
+        const duplicate = await Promise.all([purchase("q1", "d"), purchase("q1", "d", 2)]);
+        for (const response of duplicate) assert.deepEqual(response, { status: 200, data: { remainingCoins: startingCoins - prices[0] } });
+        await teammateSnapshot;
+      } finally { stopUnlock(); }
+      const concurrent = await Promise.all([purchase("q1", "b"), purchase("q1", "a", 2)]);
+      assert.ok(concurrent.every((response) => response.status === 200), JSON.stringify(concurrent));
+      assert.deepEqual(concurrent.map((response) => response.data.remainingCoins).sort((a, b) => b - a),
+        [startingCoins - prices[0] - prices[1], startingCoins - prices[0] - prices[1] - prices[2]], "Concurrent different clues use successive prices");
+      const spent = prices[0] + prices[1] + prices[2];
+      assert.deepEqual(await purchase("q2", "a"), { status: 200, data: { remainingCoins: startingCoins - spent - prices[0] } }, "Another question starts at B from the shared budget");
+      assert.deepEqual(await purchase("q1", "a", 3, "blue"), { status: 200, data: { remainingCoins: startingCoins - prices[0] } }, "Another team starts at B");
+      // Re-read through the teammate client, then buy the next clue at its progressed price.
+      assert.equal((await getDocsFromServer(purchasedQuery)).size, 3);
+      assert.equal((await getDocFromServer(doc(clients[2].firestoreClient, teamLedgerPath))).data()?.remainingCoins, startingCoins - spent - prices[0]);
+      assert.deepEqual(await purchase("q1", "c", 2), { status: 200, data: { remainingCoins: startingCoins - spent - prices[0] - prices[3] } });
+      assert.deepEqual(await purchase("q1", "d"), { status: 200, data: { remainingCoins: startingCoins - spent - prices[0] - prices[3] } });
+
+      // Start a fresh team ledger with enough for only the first price. The second
+      // concurrent purchase must fail even if its caller saw the initial price.
+      const tightTeam = `tight-${index}`, budget = prices[0] + prices[1] - 1;
+      await room.collection("teams").doc(tightTeam).set({ name: "Tight budget" });
+      await db.doc(clueLedgerPath(roomId, tightTeam, progressiveId)).set({ remainingCoins: budget });
+      for (const member of [1, 2]) await room.collection("members").doc(users[member].uid).update({ team: tightTeam });
+      const limited = await Promise.all([purchase("q1", "a", 1, tightTeam), purchase("q1", "b", 2, tightTeam)]);
+      assert.deepEqual(limited.map((response) => response.status).sort(), [200, 409]);
+      assert.equal((await db.doc(clueLedgerPath(roomId, tightTeam, progressiveId)).get()).data()?.remainingCoins, budget - prices[0]);
+      assert.equal((await db.doc(clueLedgerPath(roomId, tightTeam, progressiveId)).collection("openedClues").get()).size, 1);
+      const crossTeam = `cross-${index}`;
+      await room.collection("teams").doc(crossTeam).set({ name: "Cross-question budget" });
+      await db.doc(clueLedgerPath(roomId, crossTeam, progressiveId)).set({ remainingCoins: prices[0] });
+      for (const member of [1, 2]) await room.collection("members").doc(users[member].uid).update({ team: crossTeam });
+      const acrossQuestions = await Promise.all([purchase("q1", "a", 1, crossTeam), purchase("q2", "a", 2, crossTeam)]);
+      assert.deepEqual(acrossQuestions.map((response) => response.status).sort(), [200, 409], "Concurrent questions share the round budget");
+      const lastPurchase = acrossQuestions[0].status === 200 ? "q1" : "q2";
+      assert.deepEqual(await purchase(lastPurchase, "a", 1, crossTeam), { status: 200, data: { remainingCoins: 0 } }, "Last-coin purchases stay free to reopen");
+      for (const member of [1, 2]) await room.collection("members").doc(users[member].uid).update({ team: "race-team" });
+    }
+    console.log("Verified manual, arithmetic, and geometric pricing, custom settings, duplicate and concurrent purchases, shared budgets, last-coin spending, teammate snapshots, team isolation, Firestore/Storage rules, closure, and host reveals.");
   } finally {
     if (server && server.exitCode === null) { const stopped = new Promise<void>((resolve) => server!.once("exit", () => resolve())); server.kill("SIGTERM"); await stopped; }
     await Promise.all(clients.map(async (client) => { await terminate(client.firestoreClient); await deleteClient(client.app); }));

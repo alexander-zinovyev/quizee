@@ -118,3 +118,54 @@ test("clues import refuses missing stage media, empty stages, and invalid budget
   await importPack(page, [{ ...round, questions: [{ ...round.questions[0], generalClue: {} }] }], media);
   await expect(page.getByText(/Stage needs text and\/or media/)).toBeVisible();
 });
+
+for (const mode of ["arithmetic", "geometric"] as const) test(`${mode} pricing defaults, custom settings, drafts, and packs round-trip`, async ({ page }) => {
+  await importPack(page, [round], media);
+  const selector = page.getByRole("combobox", { name: "Pricing mode", exact: true });
+  await expect(selector).toHaveValue("manual");
+  await selector.selectOption(mode);
+  const base = page.getByRole("spinbutton", { name: "Base price", exact: true });
+  const progression = page.getByRole("spinbutton", { name: "Progression", exact: true });
+  await expect(base).toHaveValue("1");
+  await expect(progression).toHaveValue(mode === "arithmetic" ? "1" : "2");
+  await expect(page.getByRole("spinbutton", { name: "Coin price", exact: true })).toHaveCount(0);
+  await base.fill("2"); await progression.fill("3");
+  const configured = { ...round, pricing: { mode, basePrice: 2, progression: 3 } };
+  expect((await exportPack(page)).rounds).toEqual([configured]);
+  // Wait for persistence itself, then verify a fresh builder instance restores the configuration.
+  await expect.poll(() => page.evaluate(() => new Promise<unknown>((resolve, reject) => {
+    const opening = indexedDB.open("quizee-build");
+    opening.onerror = () => reject(opening.error);
+    opening.onsuccess = () => {
+      const database = opening.result, transaction = database.transaction("snapshots", "readonly");
+      const reading = transaction.objectStore("snapshots").get("build-page");
+      reading.onsuccess = () => resolve(reading.result?.rounds?.[0]?.pricing);
+      reading.onerror = () => reject(reading.error);
+      transaction.oncomplete = () => database.close();
+    };
+  }))).toEqual(configured.pricing);
+  await page.reload();
+  await expect(selector).toHaveValue(mode);
+  expect((await exportPack(page)).rounds).toEqual([configured]);
+  // Progressive packs can omit per-clue prices; importing does not invent them.
+  const noPrices = { ...configured, questions: configured.questions.map((question) => ({ ...question,
+    clues: question.clues.map(({ id, category, content }) => ({ id, category, content })) })) };
+  await importPack(page, [noPrices], media);
+  expect((await exportPack(page)).rounds).toEqual([noPrices]);
+  await selector.selectOption("manual");
+  await expect(page.getByRole("spinbutton", { name: "Coin price", exact: true })).toHaveCount(3);
+  expect((await exportPack(page)).rounds[0]).toEqual({ ...round, pricing: { mode: "manual" },
+    questions: round.questions.map((question) => ({ ...question, clues: question.clues.map((clue) => ({ ...clue, price: 1 })) })) });
+});
+
+test("progressive imports apply defaults and reject fractional or unsafe prices", async ({ page }) => {
+  await importPack(page, [{ ...round, pricing: { mode: "geometric", progression: 1 } }], media);
+  expect((await exportPack(page)).rounds[0].pricing).toEqual({ mode: "geometric", basePrice: 1, progression: 1 });
+  for (const pricing of [
+    { mode: "arithmetic", basePrice: 1.5 }, { mode: "geometric", progression: 0 },
+    { mode: "geometric", basePrice: Number.MAX_SAFE_INTEGER, progression: 2 },
+  ]) {
+    await importPack(page, [{ ...round, pricing }], media);
+    await expect(page.getByText(/expected safe whole number|number outside allowed range|Clue prices must stay/).first()).toBeVisible();
+  }
+});

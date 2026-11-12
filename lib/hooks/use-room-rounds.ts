@@ -11,7 +11,7 @@ import { parseHostRoundAnswers } from "@/lib/room-round-answers";
 import { closeSortingRound } from "./use-sorting-order";
 import { getClientFirestore } from "@/lib/firebase/client";
 import type { SortingQuestion } from "@/types/quiz";
-import { positiveCoins, type ClueMetadata } from "@/types/clues";
+import { positiveCoins, parseCluePricing, type ClueMetadata, type CluePricing } from "@/types/clues";
 import { parseRegionIds } from "@/types/color";
 
 export type RoundMeta = {
@@ -27,6 +27,7 @@ export type RoundMeta = {
   allowAnswerChanges?: boolean;
   allowWager?: boolean;
   startingCoins?: number;
+  pricing?: CluePricing;
 };
 
 export type RoundQuestionMedia = {
@@ -167,7 +168,10 @@ export function parseRoundMeta(id: string, data: Record<string, unknown>, index:
     if (!Array.isArray(data.startingOrder) || !data.startingOrder.every((id) => typeof id === "string") || new Set(data.startingOrder).size !== data.startingOrder.length) throw new Error("Invalid starting order.");
     meta.startingOrder = data.startingOrder;
   }
-  if (type === "clues") meta.startingCoins = positiveCoins(data.startingCoins);
+  if (type === "clues") {
+    meta.startingCoins = positiveCoins(data.startingCoins);
+    meta.pricing = parseCluePricing(data.pricing);
+  }
   if (type === "text") meta.allowWager = data.allowWager === true;
 
   if (type === "multi-step") {
