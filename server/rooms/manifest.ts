@@ -1,4 +1,4 @@
-import { cluesStages } from "@/types/clues";
+import { cluesStages, type CluePricing } from "@/types/clues";
 import type { ValidatedRound } from "./validation";
 import type { ColorScoring } from "@/types/color";
 
@@ -14,6 +14,7 @@ export type RoundDocumentData = {
   allowAnswerChanges?: boolean;
   allowWager?: boolean;
   startingCoins?: number;
+  pricing?: CluePricing;
   scoring?: ColorScoring;
   criterion?: string;
 };
@@ -80,7 +81,7 @@ export function createRoundDocumentData(round: ValidatedRound): RoundDocumentDat
     gradingRequired: false,
   };
 
-  if (round.type === "clues") return { ...base, startingCoins: round.startingCoins };
+  if (round.type === "clues") return { ...base, startingCoins: round.startingCoins, ...(round.pricing ? { pricing: round.pricing } : {}) };
   if (round.type === "sorting") return { ...base, criterion: round.criterion };
   if (round.type === "text" && round.allowWager !== undefined) return { ...base, allowWager: round.allowWager };
   if (round.type === "color") return { ...base, scoring: round.scoring };

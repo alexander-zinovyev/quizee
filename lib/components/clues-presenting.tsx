@@ -62,7 +62,7 @@ export function CluesQuestionView({ generalClue, startingCoins, view, mediaUrls 
             const mediaUrl = Object.hasOwn(mediaUrls, clue.id) ? mediaUrls[clue.id] : undefined;
             return <article key={clue.id} aria-label={`${clue.category} clue`} className={`overflow-hidden rounded-lg border ${visible ? "border-emerald-400 bg-emerald-900/50" : "border-zinc-700 bg-zinc-900"}`}>
               <header className="flex flex-wrap items-center gap-2 border-b border-white/10 px-3 py-2">
-                <h4 className="min-w-0 font-semibold">{clue.category}</h4><span aria-hidden="true" className="h-5 w-px bg-white/15" /><Coins /><span>{clue.price}</span>
+                <h4 className="min-w-0 font-semibold">{clue.category}</h4>{clue.price > 0 ? <><span aria-hidden="true" className="h-5 w-px bg-white/15" /><Coins /><span>{clue.price}</span></> : null}
                 <div className="ml-auto">
                   {isHost ? closed ? <button type="button" disabled={pending} aria-pressed={shown} aria-label={`${shown ? "Hide" : "Show"} ${clue.category} clue`}
                     onClick={() => onReveal(shown ? revealedClueIds.filter((id) => id !== clue.id) : [...revealedClueIds, clue.id])}
@@ -91,7 +91,7 @@ export function CluesPresenting({ roomSlug, round, question, teamId, isHost, rev
 }) {
   const { getToken } = useFirebaseAuth();
   const { view, error: readError, key } = useRoomClues({ roomId: roomSlug, roundId: round.id, questionId: question.id, teamId, isHost,
-    startingCoins: round.startingCoins!, metadata: question.clues ?? [], revealedClueIds: round.state === "closed" ? revealedClueIds : [] });
+    startingCoins: round.startingCoins!, pricing: round.pricing, metadata: question.clues ?? [], revealedClueIds: round.state === "closed" ? revealedClueIds : [] });
   const [loaded, setLoaded] = useState<{ mediaUrls: Record<string, string>; key: string; loadingMedia: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [buying, setBuying] = useState(false);

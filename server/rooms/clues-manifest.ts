@@ -7,10 +7,10 @@ export async function writeCluesRound(batch: WriteBatch, roundRef: DocumentRefer
   for (const [index, question] of round.questions.entries()) {
     const questionRef = roundRef.collection("questions").doc(`question-${index + 1}`);
     batch.set(questionRef, { order: index, stages: [await resolveStage(question.generalClue)],
-      clues: question.clues.map(({ id, category, price }) => ({ id, category, price })) });
+      clues: question.clues.map(({ id, category, price }) => ({ id, category, ...(price !== undefined ? { price } : {}) })) });
     batch.set(roundRef.collection("answers").doc(questionRef.id), { hint: question.answer.hint, stages: await Promise.all(question.answer.stages.map(resolveStage)) });
     for (const clue of question.clues) {
-      batch.set(questionRef.collection("clues").doc(clue.id), { price: clue.price, content: await resolveStage(clue.content) });
+      batch.set(questionRef.collection("clues").doc(clue.id), { ...(clue.price !== undefined ? { price: clue.price } : {}), content: await resolveStage(clue.content) });
     }
   }
 }

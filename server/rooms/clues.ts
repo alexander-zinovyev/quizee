@@ -1,5 +1,5 @@
 import type { Firestore } from "firebase-admin/firestore";
-import { CLUE_ID, clueKey, positiveCoins, type ClueMetadata, remainingCoins } from "@/types/clues";
+import { CLUE_ID, clueKey, cluePrice, parseCluePricing, parsePurchasedClueCounts, type ClueMetadata, remainingCoins } from "@/types/clues";
 import { RoomOperationError } from "./operation-error";
 
 export function clueLedgerPath(roomId: string, teamId: string, roundId: string) {
@@ -32,6 +32,7 @@ export async function purchaseClue(db: Firestore, roomId: string, roundId: strin
     if (!team.exists || !round.exists || !question.exists || !clue.exists) throw new RoomOperationError("Clue not found.", 404);
     if (round.data()?.type !== "clues") throw new RoomOperationError("Not a clues round.", 400);
     const ledgerRef = db.doc(clueLedgerPath(roomId, teamId, roundId));
+    const pricing = parseCluePricing(round.data()!.pricing);
     const ledger = await tx.get(ledgerRef);
     const openedRef = ledgerRef.collection("openedClues").doc(clueKey(questionId, clueId));
     const opened = await tx.get(openedRef);
@@ -39,12 +40,17 @@ export async function purchaseClue(db: Firestore, roomId: string, roundId: strin
     // Acknowledging an existing purchase never charges again, including after navigation/closure.
     if (opened.exists) return { remainingCoins: balance };
     if (room.data()?.state !== "playing" || round.data()?.state !== "active") throw new RoomOperationError("Question is not accepting clue purchases.");
-    const metadata = (question.data()!.clues as ClueMetadata[]).find((item) => item.id === clueId);
+    const clues = question.data()!.clues as ClueMetadata[];
+    const metadata = clues.find((item) => item.id === clueId);
     if (!metadata || metadata.price !== clue.data()?.price) throw new Error("Invalid clue configuration.");
-    const price = positiveCoins(metadata.price);
+    const purchasedCounts = parsePurchasedClueCounts(ledger.data()?.purchasedCounts);
+    const purchasedCount = Object.hasOwn(purchasedCounts, questionId) ? purchasedCounts[questionId] : 0;
+    if (purchasedCount >= clues.length) throw new Error("Invalid purchased clue count.");
+    const price = cluePrice(pricing, metadata, purchasedCount);
     if (price > balance) throw new RoomOperationError("Not enough coins.", 409, "insufficient-coins");
     const next = balance - price;
-    tx.set(ledgerRef, { remainingCoins: next });
+    tx.set(ledgerRef, { remainingCoins: next,
+      ...(pricing.mode !== "manual" ? { purchasedCounts: { ...purchasedCounts, [questionId]: purchasedCount + 1 } } : {}) });
     tx.set(openedRef, { questionId, clueId, content: clue.data()!.content });
     return { remainingCoins: next };
   });

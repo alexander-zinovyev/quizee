@@ -2,8 +2,8 @@ import { test, expect } from "@playwright/test";
 import { build } from "esbuild";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import type { CluesView } from "../../types/clues";
-type Fixture = CluesView & { questionId?: string };
+import type { CluePricing, CluesView } from "../../types/clues";
+type Fixture = CluesView & { questionId?: string; pricing?: CluePricing };
 async function seed(page: import("@playwright/test").Page, view: Fixture) {
   await page.addInitScript((value) => { (window as unknown as { clueState: Fixture }).clueState = value; }, view);
   await page.route("**/api/rooms/demo/rounds/*/answers/*/clues", (route) => route.fulfill({ status: 500, json: { message: "Content must come from Firestore" } }));
@@ -19,6 +19,68 @@ const hint = { id: "hint", category: "History", price: 2 };
 const hidden: Fixture = { teamId: "red", remainingCoins: 5, clues: [{ ...hint, purchased: false }] };
 const bought: Fixture = { teamId: "red", remainingCoins: 3, clues: [{ ...hint, purchased: true, content: { text: "A capital" } }] };
 
+for (const mode of ["arithmetic", "geometric"] as const) test(`${mode} unopened prices update after teammate and own purchases and survive reconnects`, async ({ page }) => {
+  const pricing: CluePricing = { mode, basePrice: 1, progression: mode === "arithmetic" ? 1 : 2 };
+  const clues = ["first", "second", "third", "fourth"].map((id) => ({ id, category: id, price: 99, purchased: false }));
+  const initial = { teamId: "red", remainingCoins: 5, pricing, clues };
+  await seed(page, initial); await setup(page, "live");
+  await expect(page.getByRole("button", { name: "Open for 1", exact: true })).toHaveCount(4);
+  const teammatePurchase: Fixture = { ...initial, remainingCoins: 4, clues: clues.map((clue) => clue.id === "fourth"
+    ? { ...clue, purchased: true, content: { text: "Bought by teammate" } } : clue) };
+  await publish(page, teammatePurchase);
+  await expect(page.getByText("Bought by teammate", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open for 2", exact: true })).toHaveCount(3);
+  const ownPurchase: Fixture = { ...teammatePurchase, remainingCoins: 2, clues: teammatePurchase.clues.map((clue) => clue.id === "second"
+    ? { ...clue, purchased: true, content: { text: "Bought by me" } } : clue) };
+  await page.route("**/clues/second", async (route) => {
+    await route.fulfill({ json: { remainingCoins: 2 } });
+    await publish(page, ownPurchase);
+  });
+  await page.getByRole("article", { name: "second clue", exact: true }).getByRole("button", { name: "Open for 2", exact: true }).click();
+  const next = mode === "arithmetic" ? 3 : 4;
+  await expect(page.getByRole("button", { name: `Open for ${next}`, exact: true })).toHaveCount(2);
+  await page.getByRole("button", { name: "Reconnect", exact: true }).click();
+  await expect(page.getByText("Bought by me", { exact: true })).toBeVisible();
+  await expect(page.getByText("Bought by teammate", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: `Open for ${next}`, exact: true })).toHaveCount(2);
+  await page.route("**/clues/first", (route) => route.fulfill({ status: 409, json: { message: "Not enough coins." } }));
+  await page.getByRole("article", { name: "first clue", exact: true }).getByRole("button").click();
+  await expect(page.getByRole("alert")).toContainText("Not enough coins");
+  await expect(page.getByText("Opened", { exact: true })).toHaveCount(2);
+  await expect(page.getByRole("button", { name: `Open for ${next}`, exact: true })).toHaveCount(2);
+});
+
+test("progressive prices reset per question and team", async ({ page }) => {
+  const pricing: CluePricing = { mode: "arithmetic", basePrice: 1, progression: 2 };
+  const state: Fixture = { ...bought, pricing, clues: [...bought.clues, { id: "other", category: "Other", price: 99, purchased: false }] };
+  await seed(page, state); await setup(page, "live-media");
+  await expect(page.getByRole("button", { name: "Open for 3", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Change question", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Open for 1", exact: true })).toHaveCount(2);
+  await publish(page, { ...state, questionId: "q2" });
+  await expect(page.getByRole("button", { name: "Open for 3", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Change viewer", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Open for 1", exact: true })).toHaveCount(2);
+});
+
+for (const first of ["ledger", "opened"] as const) test(`${first} snapshot arriving first preserves the last coherent clue view and playback`, async ({ page }) => {
+  const initial: Fixture = { teamId: "red", remainingCoins: 5, pricing: { mode: "arithmetic", basePrice: 1, progression: Number.MAX_SAFE_INTEGER },
+    clues: [{ id: "only", category: "Only", price: 1, purchased: false }] };
+  await seed(page, initial); await setup(page, "live-media"); await preparePlayback(page, "audio");
+  await page.evaluate(({ state, first }) => {
+    const fixture = window as unknown as { clueState: Fixture; emitCluesPart: (part: string) => void };
+    fixture.clueState = { ...state, remainingCoins: 4, clues: state.clues.map((clue) => ({ ...clue, purchased: true, content: { text: "Final clue" } })) };
+    fixture.emitCluesPart(first);
+  }, { state: initial, first });
+  await expect(page.getByRole("button", { name: "Open for 1", exact: true })).toBeVisible();
+  await expect(page.getByText("Final clue", { exact: true })).toHaveCount(0);
+  await page.evaluate((part) => (window as unknown as { emitCluesPart: (part: string) => void }).emitCluesPart(part), first === "ledger" ? "opened" : "ledger");
+  await expect(page.getByText("Opened", { exact: true })).toBeVisible();
+  await expect(page.getByText("Final clue", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => (window as unknown as { savedGeneral: HTMLMediaElement }).savedGeneral.isConnected)).toBe(true);
+  expect(await page.locator("audio").evaluate((element) => (element as HTMLMediaElement).paused)).toBe(false);
+});
+
 
 async function setup(page: import("@playwright/test").Page, mode: "standard" | "live" | "live-host" | "media" | "playback" | "live-media" | "answer" | "shared-answer" = "standard", mediaKind: "audio" | "video" = "audio", roundType: "text" | "multi-step" | "image" = "text") {
   await page.goto("/build");
@@ -32,7 +94,7 @@ async function setup(page: import("@playwright/test").Page, mode: "standard" | "
     import React,{useState} from 'react';import {createRoot} from 'react-dom/client';
     import {CluesQuestionView,CluesPresenting} from './lib/components/clues-presenting';
     import {RoundStage} from './lib/components/room/round-stage';
-    function LiveHarness(){const [generation,setGeneration]=useState(0);return <><button onClick={()=>setGeneration(generation+1)}>Reconnect</button><CluesPresenting key={generation} roomSlug="demo" round={{id:'r1',title:'Clues',type:'clues',state:'active',order:0,startingCoins:5}} question={{clues:window.clueState.clues,id:'q1',prompt:'Name the place',displayPrompt:'Name the place',order:0}} teamId="red" isHost={${mode === "live-host"}} revealedClueIds={[]} pending={false} onReveal={()=>{}}/></>;}
+    function LiveHarness(){const [generation,setGeneration]=useState(0);return <><button onClick={()=>setGeneration(generation+1)}>Reconnect</button><CluesPresenting key={generation} roomSlug="demo" round={{id:'r1',title:'Clues',type:'clues',state:'active',order:0,startingCoins:5,pricing:window.clueState.pricing}} question={{clues:window.clueState.clues,id:'q1',prompt:'Name the place',displayPrompt:'Name the place',order:0}} teamId="red" isHost={${mode === "live-host"}} revealedClueIds={[]} pending={false} onReveal={()=>{}}/></>;}
 
     function PlaybackHarness(){const [answer,setAnswer]=useState(null);return <>
       <button onClick={()=>setAnswer({text:'Paris',media:{filename:'answer.${mediaKind === "audio" ? "wav" : "webm"}',url:window.playbackSource}})}>Reveal media answer</button>
@@ -68,7 +130,7 @@ async function setup(page: import("@playwright/test").Page, mode: "standard" | "
     function LiveMediaHarness(){const [question,setQuestion]=useState('q1'),[team,setTeam]=useState('red'),[revealed,setRevealed]=useState([]),[closed,setClosed]=useState(false);return <>
       <button onClick={()=>setQuestion('q2')}>Change question</button><button onClick={()=>setTeam('blue')}>Change viewer</button>
       <button onClick={()=>{setClosed(true);setRevealed(window.clueState.clues.filter(clue=>!clue.purchased).map(clue=>clue.id));}}>Show public clues</button><button onClick={()=>setRevealed([])}>Hide public clues</button>
-      <CluesPresenting roomSlug="demo" round={{id:'r1',title:'Clues',type:'clues',state:closed?'closed':'active',order:0,startingCoins:5}}
+      <CluesPresenting roomSlug="demo" round={{id:'r1',title:'Clues',type:'clues',state:closed?'closed':'active',order:0,startingCoins:5,pricing:window.clueState.pricing}}
         question={{clues:window.clueState.clues,id:question,prompt:'Name the place',displayPrompt:'Name the place',order:0}} teamId={team} isHost={false}
         generalMedia={{filename:'general.${mediaKind === "audio" ? "wav" : "webm"}',url:window.playbackSource}} revealedClueIds={revealed} pending={false} onReveal={setRevealed}/>
     </>;}
@@ -105,11 +167,12 @@ async function setup(page: import("@playwright/test").Page, mode: "standard" | "
           if(parts.at(-1)==='openedClues'){
             const opened=team===view.teamId && ref.questionId===(view.questionId??'q1') ? view.clues.filter(clue=>clue.purchased) : [];
             callback({docs:opened.map(clue=>item(clue.id,{clueId:clue.id,questionId:ref.questionId,content:clue.content}))});
-          }else if(parts.includes('cluePurchases')) callback(item('r1',team===view.teamId?{remainingCoins:view.remainingCoins}:null));
+          }else if(parts.includes('cluePurchases')) callback(item('r1',team===view.teamId?{remainingCoins:view.remainingCoins,purchasedCounts:{[view.questionId??'q1']:view.clues.filter(clue=>clue.purchased).length}}:null));
           else if(parts.at(-1)==='clues') callback({docs:view.clues.map(clue=>item(clue.id,{content:clue.content}))});
           else callback(item(parts.at(-1),{content:view.clues.find(clue=>clue.id===parts.at(-1))?.content}));
         }
         window.emitClues=(fail=false)=>{for(const listener of listeners)emit(listener,fail);};
+        window.emitCluesPart=part=>{for(const listener of listeners)if(listener.ref.path.includes('/cluePurchases/') && (listener.ref.path.endsWith('/openedClues') === (part==='opened')))emit(listener);};
         window.failPublicClues=()=>{for(const listener of listeners)if(listener.ref.path.includes('/questions/')){listeners.delete(listener);listener.error(new Error('Missing or insufficient permissions.'));}};
         export const onSnapshot=(ref,callback,error)=>{const listener={ref,callback,error};listeners.add(listener);emit(listener);return ()=>listeners.delete(listener);};
       ` }));

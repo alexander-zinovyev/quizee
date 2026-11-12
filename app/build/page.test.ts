@@ -150,3 +150,12 @@ assert.deepEqual(upgraded.cluesQuestions![0].clues.map(({ id, category, price, c
   [{ id: "photo", category: "Photo", price: 2, text: "A skyline", media: "photo.png" }]);
 assert.deepEqual(upgradeCluesDrafts([upgraded]), [upgraded]);
 assert.equal(upgradeCluesDrafts([round])[0], round);
+
+for (const pricing of [{ mode: "manual" }, { mode: "arithmetic", basePrice: 2, progression: 3 }, { mode: "geometric", basePrice: 2, progression: 1 }] as const) {
+  const built = buildQuizFromBuilderState([{ ...upgraded, pricing, cluesQuestions: upgraded.cluesQuestions!.map((question) => ({ ...question,
+    clues: question.clues.map((clue) => ({ ...clue, content: { ...clue.content, mediaPath: null }, ...(pricing.mode !== "manual" ? { price: undefined } : {}) })) })) }], []);
+  assert.deepEqual(built.errors, []);
+  assert.deepEqual(validateAgainstQuizSchema(built.quizRounds, quizSchema), []);
+  assert.equal(built.quizRounds[0].type, "clues");
+  if (built.quizRounds[0].type === "clues") assert.deepEqual(built.quizRounds[0].pricing, pricing);
+}
