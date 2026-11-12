@@ -23,6 +23,8 @@ import { SortingRound } from "@/lib/components/sorting-round";
 import { CluesPresenting } from "@/lib/components/clues-presenting";
 import { ColorPresenting } from "@/lib/components/color-presenting";
 import { PromptNavigation } from "@/lib/components/room/prompt-navigation";
+import { QuestionNavigation } from "@/lib/components/room/question-navigation";
+import { useCluesNavigation } from "@/lib/hooks/use-clues-navigation";
 import { canRetryAutoGrade, getAwardedPoints } from "@/lib/components/room/grading";
 import { recordedAnswer } from "@/lib/answers";
 import { usePresentingMedia } from "@/lib/hooks/use-presenting-media";
@@ -116,7 +118,7 @@ export default function RoomContent({
   teams,
   hostMember,
   isHost,
-  presenting,
+  presenting: hostPresentation,
   viewerTeamId,
   viewerName,
   memberNames,
@@ -168,6 +170,14 @@ export default function RoomContent({
     roundsMeta,
     setRoundsError,
   } = useRoomRounds(roomSlug, isHost);
+
+  const browsingRound = !isHost && viewerTeamId ? roundsMeta.find((round) => round.type === "clues" && round.state === "active") : undefined;
+  const browsingQuestions = browsingRound ? roundQuestions[browsingRound.id] ?? [] : [];
+  const cluesNavigation = useCluesNavigation({ roomSlug, teamId: viewerTeamId, roundId: browsingRound?.id, questions: browsingQuestions });
+  const presenting = useMemo(() => browsingRound ? {
+    round: browsingRound.id, question: cluesNavigation.questionId, withAnswer: false, promptPage: 0, answerPage: 0,
+  } : hostPresentation, [browsingRound, cluesNavigation.questionId, hostPresentation]);
+  const browsingQuestionIndex = browsingQuestions.findIndex((question) => question.id === cluesNavigation.questionId);
 
   const presentingRoundMeta = useMemo(() => {
     if (!presenting?.round) return null;
@@ -1347,6 +1357,7 @@ export default function RoomContent({
                 </div>
               </div>
             </header>
+            {browsingRound && cluesNavigation.error ? <p role="alert" className="px-5 pt-3 text-sm text-red-300">{cluesNavigation.error}</p> : null}
             {presentingRoundMeta?.type === "clues" && presentingQuestion ? (
               <CluesPresenting key={`${presentingRoundMeta.id}:${presentingQuestion.id}:${viewerTeamId ?? "host"}`}
                 roomSlug={roomSlug} round={presentingRoundMeta} question={presentingQuestion} teamId={viewerTeamId} isHost={!!isHost}
@@ -1398,6 +1409,14 @@ export default function RoomContent({
               onPresent={(withAnswer) => void updatePresenting({ round: activeRoundForControls.id, question: null, withAnswer, promptPage: 0, answerPage: 0 })}
               onHide={() => void updatePresenting({ round: null, question: null, withAnswer: false, promptPage: 0, answerPage: 0 })}
               onEnd={() => void handleEndRound()} onScore={() => void autoGradeRound(activeRoundForControls.id)} /> : null}
+            {browsingRound ? <footer className="border-t border-white/10 bg-black/40 px-5 py-3 text-white">
+              <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em]">
+                <span className="text-zinc-300">Question:</span>
+                <QuestionNavigation index={browsingQuestionIndex} count={browsingQuestions.length} pending={cluesNavigation.pending}
+                  onPrevious={() => { const previous = browsingQuestions[browsingQuestionIndex - 1]; if (previous) void cluesNavigation.selectQuestion(previous.id); }}
+                  onNext={() => { const next = browsingQuestions[(browsingQuestionIndex + 1) % browsingQuestions.length]; if (next) void cluesNavigation.selectQuestion(next.id); }} />
+              </div>
+            </footer> : null}
             {isHost && activeRoundForControls && activeRoundForControls.type !== "sorting" ? (
               <footer className="border-t border-white/10 bg-black/40 px-5 py-3 text-white">
                 <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em]">
@@ -1424,27 +1443,8 @@ export default function RoomContent({
                         <EyeOffIcon />
                       </button>
 
-                      <button
-                        type="button"
-                        onClick={handlePrevQuestion}
-                        disabled={isPresentingUpdatePending || currentQuestionIndex <= 0}
-                        className="rounded-lg bg-zinc-700 px-2 py-2 text-white transition hover:bg-zinc-600 focus:outline-none focus:ring-2 focus:ring-white/30 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
-                      >
-                        {"<"}
-                      </button>
-                      <span className="min-w-3 text-center text-zinc-100">
-                        {currentQuestionIndex >= 0 ? currentQuestionIndex + 1 : 1}
-                      </span>
-                      {currentQuestionIndex >= 0 ? (
-                        <button
-                          type="button"
-                          onClick={handleNextQuestion}
-                          disabled={isPresentingUpdatePending}
-                          className="rounded-lg bg-zinc-700 px-2 py-2 text-white transition hover:bg-zinc-600 focus:outline-none focus:ring-2 focus:ring-white/30 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-70"
-                        >
-                          {currentQuestionIndex < controlQuestions.length - 1 ? ">" : "↺"}
-                        </button>
-                      ) : null}
+                      <QuestionNavigation index={currentQuestionIndex} count={controlQuestions.length} pending={isPresentingUpdatePending}
+                        onPrevious={handlePrevQuestion} onNext={handleNextQuestion} />
 
                       <PromptNavigation
                         type={presentingRoundMeta?.type ?? activeRoundForControls.type}

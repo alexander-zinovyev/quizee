@@ -8,7 +8,7 @@ import { parseQuizStage } from "@/types/quiz-stage";
 import { getAwardShortcut, getIncorrectAwardShortcut, getAwardedPoints } from "@/lib/components/room/grading";
 import { parseRoundMeta } from "@/lib/hooks/use-room-rounds";
 import { parsePresentation, samePresentation } from "./presentation";
-import { parseCluePurchase } from "./clues";
+import { clueLedgerPath, parseCluePurchase, purchaseClue } from "./clues";
 import { writeCluesRound } from "./clues-manifest";
 import type { WriteBatch } from "firebase-admin/firestore";
 import { database } from "./test-database";
@@ -80,4 +80,25 @@ async function manifest() {
   assert.deepEqual(definition.content, { text: "Listen", media: { storagePath: "rooms/demo/media/clue.mp3", filename: "clue.mp3" } });
   assert.deepEqual(documents.get("rooms/demo/rounds/r1/answers/question-1"), { hint: "Paris", stages: [{ text: "City on the Seine", media: { storagePath: "rooms/demo/media/answer.webm", filename: "answer.webm" } }] });
 }
-void manifest().catch((error) => { console.error(error); process.exitCode = 1; });
+async function independentPurchases() {
+  const { db, docs } = database("clues");
+  const roomPath = "rooms/demo";
+  const roundPath = `${roomPath}/rounds/r1`;
+  docs.set(roundPath, { type: "clues", state: "active", startingCoins: 5 });
+  for (const id of ["q1", "q2"]) {
+    docs.set(`${roundPath}/questions/${id}`, { clues: [{ id: "hint", category: "Hint", price: 2 }] });
+    docs.set(`${roundPath}/questions/${id}/clues/hint`, { price: 2, content: { text: `Secret ${id}` } });
+  }
+  const buy = (questionId: string, uid = "player", teamId = "red") => purchaseClue(db, "demo", "r1", questionId, "hint", uid, teamId);
+  // The host is presenting q1; players can buy on q2 without changing that presentation.
+  assert.deepEqual(await buy("q2"), { remainingCoins: 3 });
+  assert.deepEqual(await buy("q2", "teammate"), { remainingCoins: 3 });
+  assert.deepEqual(await buy("q2", "outsider", "blue"), { remainingCoins: 3 });
+  assert.equal(docs.get(clueLedgerPath("demo", "red", "r1"))?.remainingCoins, 3);
+  docs.set(roomPath, { state: "playing", presenting: { round: null, question: null, withAnswer: false } });
+  assert.deepEqual(await buy("q1"), { remainingCoins: 1 });
+  docs.set(roundPath, { type: "clues", state: "closed", startingCoins: 5 });
+  await assert.rejects(buy("q1", "outsider", "blue"), /not accepting/);
+  assert.deepEqual(await buy("q2"), { remainingCoins: 1 }, "Existing purchases remain free after closure");
+}
+void Promise.all([manifest(), independentPurchases()]).catch((error) => { console.error(error); process.exitCode = 1; });

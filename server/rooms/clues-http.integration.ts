@@ -64,6 +64,28 @@ async function main() {
     const ledger = async (index = 1) => (await getDocFromServer(doc(clients[index].firestoreClient, clueLedgerPath(roomId, index === 3 ? "blue" : "red", "r1")))).data()?.remainingCoins ?? 5;
     const opened = async (question: string, index = 1) => (await getDocsFromServer(query(collection(clients[index].firestoreClient, `${clueLedgerPath(roomId, index === 3 ? "blue" : "red", "r1")}/openedClues`), where("questionId", "==", question)))).docs.map((item) => item.data());
     const definition = (question: string, clue: string, index = 1) => getDocFromServer(doc(clients[index].firestoreClient, `${round.path}/questions/${question}/clues/${clue}`));
+    const teamRound = (index: number, team = index === 3 ? "blue" : "red") => doc(clients[index].firestoreClient, `${room.path}/teams/${team}/rounds/r1`);
+    const saveAnswer = async (question: string, index = 1) => fetch(`${base}/${question}`, {
+      method: "POST", headers: { Authorization: `Bearer ${tokens[index]}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ teamId: index === 3 ? "blue" : "red", answer: "Paris" }),
+    });
+    // Navigation uses existing team-round permissions and merges with other team-round data.
+    await setDoc(teamRound(1), { existing: "preserved" });
+    let stopNavigation = () => {};
+    const teammateNavigation = new Promise<void>((resolve, reject) => {
+      stopNavigation = onSnapshot(teamRound(2), (snapshot) => {
+        if (snapshot.data()?.selectedQuestionId === "q2") resolve();
+      }, reject);
+    });
+    await setDoc(teamRound(1), { selectedQuestionId: "q2" }, { merge: true });
+    await teammateNavigation; stopNavigation();
+    await setDoc(teamRound(3), { selectedQuestionId: "q1" }, { merge: true });
+    assert.equal((await getDocFromServer(teamRound(2))).data()?.selectedQuestionId, "q2");
+    assert.equal((await getDocFromServer(teamRound(2))).data()?.existing, "preserved");
+    assert.equal((await getDocFromServer(teamRound(3))).data()?.selectedQuestionId, "q1");
+    await denied(getDocFromServer(teamRound(3, "red")));
+    await denied(setDoc(teamRound(3, "red"), { selectedQuestionId: "q1" }, { merge: true }));
+    assert.equal((await saveAnswer("q2")).status, 200, "Answers do not depend on the host's question");
     await denied(getDocFromServer(doc(clients[4].firestoreClient, ledgerPath)));
     assert.equal(await ledger(), 5);
     assert.deepEqual(await opened("q1"), []);
@@ -79,23 +101,26 @@ async function main() {
         if (snapshot.docs.some((item) => item.data().content.text === "secret-q1-two")) resolve();
       }, reject);
     });
-    assert.equal((await buy("q2", "two")).status, 409, "Only the presented question can sell clues");
     assert.equal((await buy("q1", "two", 3)).status, 409, "Stale team identity cannot charge another team");
     const duplicate = await Promise.all([buy("q1", "two"), buy("q1", "two", 2)]);
     assert.ok(duplicate.every((result) => result.status === 200 && result.data.remainingCoins === 3));
     await teammateUnlock; stopOpened();
     assert.equal((await opened("q1", 2))[0].content.text, "secret-q1-two");
     async function present(question: string, revealedClueIds: string[] = [], withAnswer = false) {
-      const next = { ...current, question, revealedClueIds, withAnswer };
+      const next = { ...current, round: "r1", question, revealedClueIds, withAnswer };
       await transitionPresentation(db, roomId, users[0].uid, current, next); current = next;
     }
-    await present("q2");
+    const hidden = { ...current, round: null, question: null };
+    await transitionPresentation(db, roomId, users[0].uid, current, hidden); current = hidden;
     assert.equal(await ledger(), 3);
     assert.equal(await ledger(3), 5);
     assert.equal((await buy("q2", "four")).status, 409);
     assert.equal(await ledger(), 3);
     assert.deepEqual(await opened("q2"), []);
     assert.equal((await buy("q2", "three")).data.remainingCoins, 0, "Last coins open a clue on the first request");
+    await setDoc(teamRound(2), { selectedQuestionId: "q1" }, { merge: true });
+    assert.equal((await getDocFromServer(teamRound(1))).data()?.selectedQuestionId, "q1");
+    assert.equal((await getDocFromServer(doc(clients[2].firestoreClient, `${room.path}/teams/red/rounds/r1/answers/q2`))).data()?.answer, "Paris");
     assert.equal((await opened("q1"))[0].content.text, "secret-q1-two", "Reconnecting/returning preserves purchases");
     assert.deepEqual(await opened("q1", 3), []);
     // Different purchases contend on a single team/round balance.
@@ -119,10 +144,11 @@ async function main() {
     const answerPath = `${round.path}/answers/q2`;
     await denied(getDocFromServer(doc(clients[1].firestoreClient, answerPath)));
     // Freeze submissions and verify purchases/reveals do not alter frozen answers or charge coins.
-    for (const team of ["red", "blue"]) await room.collection("teams").doc(team).collection("rounds").doc("r1").collection("answers").doc("q2").set({ answer: "Paris", locked: true, user: users[1].uid });
-    const closed = { ...current, question: null, revealedClueIds: [] };
+    assert.equal((await saveAnswer("q2", 3)).status, 200);
+    const closed = { ...current, round: "r1", question: null, revealedClueIds: [] };
     await transitionPresentation(db, roomId, users[0].uid, current, closed, { closeRound: "r1" }); current = closed;
     assert.equal((await buy("q2", "two")).status, 409);
+    assert.equal((await saveAnswer("q2")).status, 409, "Closed rounds reject answer submissions");
     assert.equal((await buy("q1", "two")).status, 200, "Acknowledging an existing purchase after closure is free");
     // Closed-round definition access is independent of presentation and purchase state.
     for (const question of ["q1", "q2"]) {
@@ -172,11 +198,11 @@ async function main() {
     ]);
     assert.equal(race[1].status, "fulfilled");
     const successes = [race[0], race[2]].filter((result) => result.status === "fulfilled").length;
-    assert.ok(successes <= 1, "Concurrent purchases across questions cannot overspend");
+    assert.equal(successes, 1, "One concurrent purchase succeeds across questions without overspending");
     for (const result of [race[0], race[2]]) if (result.status === "rejected") assert.equal(result.reason.status, 409);
     const raceBalance = (await db.doc(clueLedgerPath(roomId, "race-team", "race")).get()).data()?.remainingCoins ?? 5;
     assert.equal(raceBalance, 5 - successes * 4);
-    console.log("Verified clue HTTP purchases, last-coin spending, concurrent transactions, team isolation, Firestore/Storage rules, normal room media access, closure, and host reveals.");
+    console.log("Verified shared team navigation, independent purchases and answers, last-coin spending, concurrent transactions, team isolation, Firestore/Storage rules, closure, and host reveals.");
   } finally {
     if (server && server.exitCode === null) { const stopped = new Promise<void>((resolve) => server!.once("exit", () => resolve())); server.kill("SIGTERM"); await stopped; }
     await Promise.all(clients.map(async (client) => { await terminate(client.firestoreClient); await deleteClient(client.app); }));
