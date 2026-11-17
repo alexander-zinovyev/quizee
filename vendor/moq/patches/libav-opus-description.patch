@@ -1,0 +1,17 @@
+--- a/js/hang/src/util/libav.ts
++++ b/js/hang/src/util/libav.ts
+@@ -42,7 +42,13 @@
+ 	// libav's own AAC decoder through the polyfill's libav.js codec escape hatch instead.
+ 	const aac = (config: Config) => typeof config.codec === "string" && objectType(config.codec) !== undefined;
+ 	const route = (config: Config): Config =>
+-		aac(config) ? { ...config, codec: { libavjs: { codec: "aac" } } } : config;
++		// The polyfill consumes raw Opus packets and refuses an OpusHead. The owner
++		// already handles pre-skip, so preserve that path and omit the decoder header.
++		config.codec === "opus"
++			? { ...config, description: undefined }
++			: aac(config)
++				? { ...config, codec: { libavjs: { codec: "aac" } } }
++				: config;
+ 
+ 	class AudioDecoder extends libav.AudioDecoder {
+ 		override configure(config: Config): void {

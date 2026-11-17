@@ -40,3 +40,31 @@ test("the traced hosting deployment can load sharp and process a raster image", 
     rmSync(deployment, { recursive: true, force: true });
   }
 });
+
+test("the production Next server serves every pinned MoQ asset intact", async () => {
+  const { createServer } = await import("node:http");
+  const { createHash } = await import("node:crypto");
+  const { once } = await import("node:events");
+  const { default: next } = await import("next");
+  const manifest = JSON.parse(readFileSync(resolve("vendor/moq/manifest.json"), "utf8"));
+  const app = next({ dev: false });
+  await app.prepare();
+  const handle = app.getRequestHandler();
+  const server = createServer((request, response) => handle(request, response));
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  try {
+    const port = server.address().port;
+    for (const [file, expected] of Object.entries(manifest.files)) {
+      const response = await fetch(`http://127.0.0.1:${port}/moq/${manifest.commit}/${file}`);
+      assert.equal(response.status, 200, file);
+      if (file.endsWith(".wasm")) assert.match(response.headers.get("content-type"), /application\/wasm/);
+      const bytes = Buffer.from(await response.arrayBuffer());
+      assert.equal(createHash("sha256").update(bytes).digest("hex"), expected, file);
+    }
+  } finally {
+    server.closeAllConnections();
+    await new Promise((resolveClose, reject) => server.close((error) => error ? reject(error) : resolveClose()));
+    await app.close();
+  }
+});

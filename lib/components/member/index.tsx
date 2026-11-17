@@ -3,23 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 
+import { ensureMoqElementsLoaded } from "@/lib/media/moq-elements";
 import type { MediaRenderSource } from "@/lib/media/transport";
-
-const MOQ_ELEMENT_LOADER_ID = "quizee-moq-elements";
-
-function ensureMoqElementsLoaded() {
-  if (typeof document === "undefined") return;
-  if (document.getElementById(MOQ_ELEMENT_LOADER_ID)) return;
-
-  const script = document.createElement("script");
-  script.id = MOQ_ELEMENT_LOADER_ID;
-  script.type = "module";
-  script.textContent = `
-    import "https://esm.sh/@moq/publish@0.4.7/element";
-    import "https://esm.sh/@moq/watch@0.5.4/element";
-  `;
-  document.head.appendChild(script);
-}
 
 type MemberProps = {
   /**
@@ -103,6 +88,7 @@ export default function Member({
   const [isPlaybackMuted, setIsPlaybackMuted] = useState(playbackMuted);
   const [volume, setVolume] = useState(1);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [moqError, setMoqError] = useState<string | null>(null);
   const resolvedVideoTrack =
     videoTrack ?? stream?.getVideoTracks?.()[0] ?? undefined;
   const resolvedAudioTrack =
@@ -127,7 +113,11 @@ export default function Member({
 
   useEffect(() => {
     if (mediaSource?.type !== "moq") return;
-    ensureMoqElementsLoaded();
+    let active = true;
+    void ensureMoqElementsLoaded().catch((error: Error) => {
+      if (active) setMoqError(error.message);
+    });
+    return () => { active = false; };
   }, [mediaSource?.type]);
 
   useEffect(() => {
@@ -323,6 +313,10 @@ export default function Member({
               <canvas className="h-full w-full object-cover" />
             </moq-watch>
           )
+        ) : null}
+
+        {hasMoqMedia && moqError ? (
+          <p role="alert" className="absolute inset-0 z-30 flex items-center justify-center bg-zinc-950 p-4 text-sm text-red-300">{moqError}</p>
         ) : null}
 
         {showHand ? (

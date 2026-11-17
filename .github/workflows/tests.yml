@@ -27,6 +27,13 @@ jobs:
       - run: npm run test:deployment
       - run: npx playwright install --with-deps chromium
       - run: npx playwright test
+      - run: npm run test:moq
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: moq-regression-results
+          path: test-results/moq-results.json
+          if-no-files-found: ignore
       - run: npx next typegen
       - run: npx tsc --noEmit
       - run: npx --yes firebase-tools@14.12.0 emulators:exec --only firestore,auth,storage --project demo-quizee-drafts "npm run test:rules && npm run test:image:http && npm run test:sorting:http && npm run test:clues:http && npm run test:stats:firestore && npm run test:stats:auth && npm run test:stats:browser"
