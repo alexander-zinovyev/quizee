@@ -10,12 +10,12 @@ type MoqElementProps = React.DetailedHTMLProps<
   muted?: boolean;
   invisible?: boolean;
   preview?: "none" | "source" | "encoded";
-  announce?: "always" | "source" | "never";
+  announce?: "always" | "source";
   paused?: boolean;
   volume?: number | string;
   visible?: "never" | "always" | string;
-  reload?: boolean;
-  latency?: number | string;
+  follow?: boolean;
+  delay?: "auto" | "instant" | string;
 };
 
 declare module "react" {

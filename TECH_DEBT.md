@@ -140,11 +140,9 @@ Proper fix:
 
 ### Several installed dependencies appear unused in source imports
 
-Some packages in `package.json` were not found in source imports during the scan. A few may be planned for MoQ work or external tooling, but they currently add dependency surface without obvious runtime use.
+Some packages in `package.json` were not found in source imports during the scan. A few may be planned for external tooling, but they currently add dependency surface without obvious runtime use.
 
 Potential candidates:
-- `@kixelated/hang`
-- `@moq/net`
 - `@opentelemetry/api`
 - `dotenv`
 - `drizzle-orm`

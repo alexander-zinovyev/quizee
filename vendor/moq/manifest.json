@@ -1,0 +1,47 @@
+{
+  "repository": "https://github.com/moq-dev/moq",
+  "commit": "960a32f23148a16242e3512747fee45f1dd64f12",
+  "sourceSha256": "d75aa3494bb3706f7c9c7060ead9fe3b533e51a2967f2fb502299189f649c81e",
+  "patches": {
+    "libav-opus-description.patch": "781d7b2db4274343b1f4be1040afc01f5cfc5b2628639c3f9660d8edaa63541d"
+  },
+  "entry": "/moq/960a32f23148a16242e3512747fee45f1dd64f12/elements.js",
+  "libav": {
+    "recipe": "https://github.com/moq-dev/moq/blob/960a32f23148a16242e3512747fee45f1dd64f12/js/libav/package.nix"
+  },
+  "notices": [
+    "moq-LICENSE-APACHE",
+    "moq-LICENSE-MIT"
+  ],
+  "files": {
+    "capture-worker.js": "e3f1ef69945ba6e448ad6580781bbcc042b52674e07ef06b1ffb4e428ee740bf",
+    "capture-worklet.js": "0b95178e6b62c7db04d557aca1c3ed48998afd821aee7ca9cedcd0876cf3a417",
+    "chunks/captions-QLWP5DL7.js": "1559a228e0bf199e56267d66d429c2d2f104b0ed20a53ce0a629def21d27f004",
+    "chunks/chunk-2XSWK62W.js": "fb4a0670acae27789844f1b06eb919c0cbc85ee44d5eb5b57640d0b24662f512",
+    "chunks/chunk-4VOANGNY.js": "56b7b3badb53c4685819ff85f65ff63885033c2ca2ab290e6b014501b4de9774",
+    "chunks/chunk-EMBIDUMY.js": "71e9c1cf64534cc04a517255e6ee77a7f5aaebbd098e56621761fe103d514dbd",
+    "chunks/chunk-GANORFZ4.js": "1a674ea56378a1d67e3319bfda9bef4029d680d0b1b1515deadd194db214b862",
+    "chunks/chunk-IWORZ3FM.js": "6fb486a1ae70162056cd3dfcd1cbf499329e5676b183c244dbe7ff210247f02d",
+    "chunks/chunk-WAILP67R.js": "06fe69d8c52022ae9face42f39c711215b4603c3e9465b98c114eb1f6b181642",
+    "chunks/chunk-X365UUIF.js": "12e3b448a879206e8f31a0982392bd2e977b8ae7bb826a297868915844f2449d",
+    "chunks/cmaf-MGZQLSKA.js": "f6cc4c6cfcac2dd194e4a0988123885bba1a28c672b863b93dd031def8994d36",
+    "chunks/connection-2GUDKBLS.js": "bbae5881b39071f55dc3844c8df5a0dc8af500cbdbcb05af9acaae74a0dd2ce0",
+    "chunks/element-2LCGCLK2.js": "2f8c030c955cf394b90756c08b802bee432e9302c1997a76f6e134b2bc3509c2",
+    "chunks/element-NL6S22FL.js": "8be5f43488c3f0a850d6f19112a1f4f3ed81c5f8000d8d289972a13580d7a473",
+    "chunks/errors-Q62PA3NM.js": "428c3ce96df5011f08147f4f19e61c2fb0fc50837b4be8e0120e3caeb76111e7",
+    "chunks/libav-opus-aac-af-KOI223LE.js": "5db5491b11f688033791d01fe9e50df7b47961b82a5745209e8e8b127b5aa049",
+    "chunks/main-Q4PSB6MA.js": "e578ef04aaa9c2d3c3be7ce588e97620286b291ffe73232f1539657b3e259f99",
+    "chunks/src-FCPKPVEW.js": "b5557d757d3f67a7135d4fb8d8668de212199b2e350f93a92802058fd5382fd8",
+    "chunks/src-FCPKPVEW.js.LEGAL.txt": "a78c97640791a1ef7bebe352bb22cc4b6be0b18317b4fef8c6cb3ac0503b0cf8",
+    "chunks/src-LJHTQQSV.js": "0bb6d8ea1a925479a202b2509fda992e96cc5ad8050b616f3641460b6b8d0215",
+    "chunks/srt-parser-YKWOS4B2.js": "f14bb272231c62ae244ec0fb86158f758b0547230813eaa6c5ad552fe06bcb03",
+    "chunks/ssa-parser-55HSAOER.js": "abb74b0d9d1d52dda22c1c8dfcdfb7105ffbd21f3831495532461845a765d91a",
+    "elements.js": "5c96f71e7042553aec16b001378be0752f29f5e47d13c366f381b9dfc98a350b",
+    "libav-6.10.9.0-opus-aac-af.wasm.mjs": "a2737fbf90f743bd2a507a5de065c9b96bc513d093a77168ee01dfcd7b109c8e",
+    "libav-6.10.9.0-opus-aac-af.wasm.wasm": "b246c7e3581668525d4d5dff671958685e9dea9c39cfe3152b27a0d5923651ae",
+    "libav-README.md": "62511a17def2a0c94719a40cf4ac9458b2217cd3c86a794c8a6e12f846ea7b18",
+    "moq-LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+    "moq-LICENSE-MIT": "a1073dd45800c01420a85b3cf3ed705d53162b3cc05b461d9336960c812716e3",
+    "render-worklet.js": "18d4bbbc9e2b0e841f33cf1b665b2b255a1d3a9272e8f04beb12ad070134b26a"
+  }
+}
